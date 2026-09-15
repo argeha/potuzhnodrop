@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="uk" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ПОТУЖНО DROP — симулятор апгрейду CS2</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            dark: '#0B0E14',
+                            card: '#121722',
+                            border: '#1E2638',
+                            accent: '#F59E0B',
+                            accentHover: '#D97706',
+                            blue: '#3B82F6',
+                            purple: '#A855F7',
+                            red: '#EF4444',
+                            green: '#10B981',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #080A0F; color: #F3F4F6; overflow-x: hidden; }
+        .font-heading { font-family: 'Teko', sans-serif; letter-spacing: 1px; }
+        .glass-panel { background: linear-gradient(135deg, rgba(18, 23, 34, 0.85) 0%, rgba(13, 17, 25, 0.95) 100%); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.07); }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #080A0F; }
+        ::-webkit-scrollbar-thumb { background: #1E2638; border-radius: 3px; }
+        .live-feed-item { animation: slideIn 0.3s ease-out forwards; }
+        body.consent-locked { overflow: hidden; }
+        .demo-ribbon { background: repeating-linear-gradient(135deg, #f59e0b 0 10px, #d97706 10px 20px); }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
+
+    <div id="riskNotice" class="fixed inset-0 z-[100] bg-[#080a0f]/95 backdrop-blur-xl hidden items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="riskTitle">
+        <div class="w-full max-w-xl overflow-hidden rounded-3xl border border-amber-500/40 bg-[#111722] shadow-2xl">
+            <div class="demo-ribbon h-2"></div>
+            <div class="p-6 sm:p-9">
+                <span class="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-extrabold uppercase tracking-[.18em] text-amber-300">Важливе попередження</span>
+                <h2 id="riskTitle" class="font-heading mt-5 text-4xl font-bold uppercase leading-none text-white">Це лише симулятор</h2>
+                <p class="mt-4 text-sm leading-6 text-gray-300">Тут немає реальних виграшів, депозитів або трейдів. Не передавайте нікому пароль Steam, код Steam Guard, API-ключ чи свої скіни. Результати апгрейду не мають грошової цінності.</p>
+                <div class="mt-5 rounded-2xl border border-red-500/25 bg-red-500/10 p-4 text-sm text-red-100"><strong>Описана схема з переказом грошей чи скінів була б скамом — не продовжуйте й нічого не надсилайте.</strong> На цій сторінці така механіка вимкнена.</div>
+                <label class="mt-6 flex cursor-pointer items-start gap-3 rounded-xl border border-gray-700 p-4 hover:border-amber-500/50">
+                    <input id="riskConsent" type="checkbox" class="mt-0.5 h-5 w-5 accent-amber-500" onchange="updateConsentButton()">
+                    <span class="text-sm text-gray-200">Я прочитав(ла) попередження і розумію, що це демо без реальних грошей та скінів.</span>
+                </label>
+                <button id="riskContinue" type="button" disabled onclick="acceptRiskNotice()" class="mt-4 w-full rounded-xl bg-amber-500 px-5 py-3.5 font-extrabold text-black transition enabled:hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-35">Продовжити до демо</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOP BAR -->
+    <header class="sticky top-0 z-50 glass-panel border-b border-gray-800/80">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-4">
+            <a href="#" class="flex items-center gap-3 group">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-black font-extrabold text-2xl shadow-lg shadow-amber-500/20">
+                    <i class="fa-solid font-heading">P</i>
+                </div>
+                <span class="font-heading text-3xl font-extrabold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-amber-200 to-yellow-500 uppercase leading-none">
+                    ПОТУЖНО DROP <small class="ml-1 align-middle text-[10px] tracking-widest text-amber-300">DEMO</small>
+                </span>
+            </a>
+
+            <nav class="hidden md:flex items-center gap-8">
+                <a href="#upgrader" class="text-amber-400 font-semibold flex items-center gap-2"><i class="fa-solid fa-bolt text-xs"></i> Апгрейдер</a>
+                <a href="#partners" class="text-gray-300 hover:text-white font-medium transition flex items-center gap-2"><i class="fa-brands fa-twitch text-xs"></i> Партнери</a>
+                <a href="#upgrader" class="text-gray-300 hover:text-white font-medium transition flex items-center gap-2"><i class="fa-solid fa-shield-halved text-xs"></i> Безпечне демо</a>
+            </nav>
+
+            <div class="flex items-center gap-3">
+                <div id="userBalanceBox" class="hidden items-center gap-2 bg-brand-card border border-brand-border rounded-xl px-3 py-1.5">
+                    <div class="flex flex-col text-right">
+                        <span class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">Баланс</span>
+                        <span id="userBalance" class="text-amber-400 font-bold text-sm">0 ₴</span>
+                    </div>
+                    <a href="https://sabb.donatik.ua/" target="_blank" rel="noopener noreferrer" aria-label="Поповнити баланс" class="w-8 h-8 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold flex items-center justify-center transition">
+                        <i class="fa-solid fa-plus text-xs"></i>
+                    </a>
+                </div>
+
+                <a href="https://sabb.donatik.ua/" target="_blank" rel="noopener noreferrer" class="hidden sm:flex items-center gap-2 border border-amber-500/40 text-amber-300 font-bold px-4 py-2.5 rounded-xl hover:bg-amber-500/10 transition"><i class="fa-solid fa-wallet"></i><span>Поповнити</span></a>
+                <button id="steamAuthBtn" onclick="startSteamLogin()" class="flex items-center gap-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-bold px-5 py-2.5 rounded-xl transition shadow-lg shadow-amber-500/20">
+                    <i class="fa-brands fa-steam text-lg"></i>
+                    <span>Увійти через Steam</span>
+                </button>
+
+                <div id="userAvatarBox" class="hidden relative group cursor-pointer" onclick="openModal('inventoryModal')">
+                    <img id="userAvatarImg" src="" class="w-10 h-10 rounded-xl border-2 border-amber-500/80 object-cover">
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- LIVE FEED -->
+    <div class="bg-black/60 border-b border-brand-border py-2 px-4 overflow-hidden">
+        <div class="max-w-7xl mx-auto flex items-center gap-4">
+            <div class="flex items-center gap-2 text-xs font-bold text-amber-400 uppercase tracking-wider shrink-0 border-r border-gray-800 pr-4">
+                <span class="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span> Демо-результати
+            </div>
+            <div id="liveFeed" class="flex items-center gap-3 overflow-x-auto no-scrollbar py-1"></div>
+        </div>
+    </div>
+
+    <!-- MAIN CONTAINER -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full">
+        <section id="upgrader" class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            
+            <!-- LEFT: USER ITEM -->
+            <div class="lg:col-span-4 glass-panel rounded-2xl p-5 border border-brand-border flex flex-col h-[520px]">
+                <div class="flex items-center justify-between mb-4 border-b border-gray-800 pb-3">
+                    <span class="font-bold text-gray-200 flex items-center gap-2"><i class="fa-solid fa-hand-holding-dollar text-amber-400"></i> Твій предмет</span>
+                    <span id="inputItemValue" class="text-amber-400 font-extrabold">0 ₴</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2 p-1 bg-black/40 rounded-xl mb-4 border border-gray-800">
+                    <button id="tabSkinBtn" onclick="switchInputMode('skin')" class="py-2 text-xs font-bold rounded-lg bg-amber-500 text-black transition">Обрати Скін</button>
+                    <button id="tabBalanceBtn" onclick="switchInputMode('balance')" class="py-2 text-xs font-bold rounded-lg text-gray-400 hover:text-white transition">Демокредити</button>
+                </div>
+                <div id="inputDisplayArea" class="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-gray-800 rounded-xl p-4 bg-black/20 group hover:border-gray-700 transition cursor-pointer" onclick="openInventoryOrFocus()">
+                    <div id="inputEmptyState" class="text-center">
+                        <div class="w-16 h-16 rounded-2xl bg-brand-card flex items-center justify-center mx-auto mb-3 border border-gray-800"><i class="fa-solid fa-plus text-2xl text-amber-500/60"></i></div>
+                        <p class="text-sm font-semibold text-gray-300">Обери предмет з інвентарю</p>
+                    </div>
+                    <div id="inputSkinState" class="hidden w-full h-full flex flex-col items-center justify-between py-2">
+                        <img id="inputSkinImg" src="" onerror="this.src='https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpovbSsLQJf2PLacDBA5ciJn7-HnvDzMITElyUIu5Vz2-yWq9mh2VaxrRE9YW2gJ46ccVZoZgzZ_wLskb_qjJ66u8vAnXc1viRzsniMlwv330_Z8iZt/360fx360f'" class="h-32 object-contain my-auto">
+                        <div class="text-center w-full">
+                            <h4 id="inputSkinName" class="font-bold text-sm text-gray-100 truncate">--</h4>
+                            <p id="inputSkinRarity" class="text-[11px] text-amber-400 uppercase font-semibold mt-0.5">--</p>
+                        </div>
+                    </div>
+                    <div id="inputBalanceState" class="hidden w-full flex flex-col items-center justify-center gap-4">
+                        <label class="text-xs font-medium text-gray-400">Вкажи кількість демокредитів</label>
+                        <input type="number" id="balanceStakeInput" value="50" min="1" max="10000" oninput="updateBalanceStake()" class="w-full max-w-[200px] bg-brand-card border border-amber-500/40 rounded-xl py-3 px-4 text-center font-bold text-amber-400 text-xl focus:outline-none">
+                    </div>
+                </div>
+                <button onclick="openModal('inventoryModal')" class="mt-4 w-full py-3 bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl font-semibold text-sm text-gray-200 transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-boxes-stacked text-amber-400"></i> Інвентар
+                </button>
+            </div>
+
+            <!-- CENTER: UPGRADE WHEEL -->
+            <div class="lg:col-span-4 flex flex-col items-center justify-between glass-panel rounded-2xl p-6 border border-brand-border h-[520px] relative">
+                <div class="w-full flex items-center justify-between border-b border-gray-800 pb-3">
+                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Шанс Виграшу</span>
+                    <span id="winChanceText" class="font-heading text-3xl font-extrabold text-amber-400">0.00 %</span>
+                </div>
+                <div class="relative w-64 h-64 my-auto flex items-center justify-center">
+                    <canvas id="upgradeCanvas" width="260" height="260" class="w-full h-full transform -rotate-90"></canvas>
+                    <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
+                        <span class="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Множник</span>
+                        <span id="multiplierText" class="font-heading text-3xl font-extrabold text-white">x0.00</span>
+                        <span id="rollStatusText" class="text-xs font-bold text-amber-400 mt-1">ОБЕРИ ПРЕДМЕТИ</span>
+                    </div>
+                    <div class="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-6 z-10 text-amber-400">
+                        <i class="fa-solid fa-caret-down text-2xl"></i>
+                    </div>
+                </div>
+                <div class="w-full space-y-3">
+                    <div class="grid grid-cols-2 gap-2 bg-black/40 p-1 rounded-xl border border-gray-800">
+                        <button id="modeOverBtn" onclick="setRollMode('over')" class="py-1.5 text-xs font-bold rounded-lg bg-amber-500 text-black transition">Понад (OVER)</button>
+                        <button id="modeUnderBtn" onclick="setRollMode('under')" class="py-1.5 text-xs font-bold rounded-lg text-gray-400 hover:text-white transition">Під (UNDER)</button>
+                    </div>
+                    <button id="upgradeActionBtn" onclick="executeUpgrade()" class="w-full py-4 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-400 text-black font-extrabold text-lg uppercase tracking-wider rounded-xl shadow-lg shadow-amber-500/25 transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-bolt"></i> АПГРЕЙД
+                    </button>
+                </div>
+            </div>
+
+            <!-- RIGHT: TARGET ITEM -->
+            <div class="lg:col-span-4 glass-panel rounded-2xl p-5 border border-brand-border flex flex-col h-[520px]">
+                <div class="flex items-center justify-between mb-4 border-b border-gray-800 pb-3">
+                    <span class="font-bold text-gray-200 flex items-center gap-2"><i class="fa-solid fa-bullseye text-amber-400"></i> Цільовий Скін</span>
+                    <span id="targetItemValue" class="text-amber-400 font-extrabold">0 ₴</span>
+                </div>
+                <div id="targetDisplayArea" class="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-gray-800 rounded-xl p-4 bg-black/20 group hover:border-gray-700 transition cursor-pointer" onclick="openModal('shopModal')">
+                    <div id="targetEmptyState" class="text-center">
+                        <div class="w-16 h-16 rounded-2xl bg-brand-card flex items-center justify-center mx-auto mb-3 border border-gray-800"><i class="fa-solid fa-crosshair text-2xl text-amber-500/60"></i></div>
+                        <p class="text-sm font-semibold text-gray-300">Обрати бажаний скін</p>
+                    </div>
+                    <div id="targetSkinState" class="hidden w-full h-full flex flex-col items-center justify-between py-2">
+                        <img id="targetSkinImg" src="" onerror="this.src='https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpovbSsLQJf2PLacDBA5ciJn7-HnvDzMITElyUIu5Vz2-yWq9mh2VaxrRE9YW2gJ46ccVZoZgzZ_wLskb_qjJ66u8vAnXc1viRzsniMlwv330_Z8iZt/360fx360f'" class="h-32 object-contain my-auto">
+                        <div class="text-center w-full">
+                            <h4 id="targetSkinName" class="font-bold text-sm text-gray-100 truncate">--</h4>
+                            <p id="targetSkinRarity" class="text-[11px] text-amber-400 uppercase font-semibold mt-0.5">--</p>
+                        </div>
+                    </div>
+                </div>
+                <button onclick="openModal('shopModal')" class="mt-4 w-full py-3 bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl font-semibold text-sm text-gray-200 transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-store text-amber-400"></i> Каталог Скінів
+                </button>
+            </div>
+        </section>
+
+        <!-- PARTNERS -->
+        <section id="partners" class="mt-20">
+            <div class="text-center mb-10">
+                <h2 class="font-heading text-4xl font-extrabold tracking-wider text-white uppercase">НАШІ ПАРТНЕРИ</h2>
+                <div class="w-16 h-1 bg-amber-500 mx-auto mt-2 rounded-full"></div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+                <div class="glass-panel rounded-2xl p-6 border border-brand-border flex flex-col items-center text-center">
+                    <img src="assets/partners/sabb_s1.jpg" alt="Фото партнера sabb_s1" width="70" height="70" loading="lazy" decoding="async" class="w-20 h-20 rounded-full object-cover border-2 border-amber-500/70 shadow-lg shadow-amber-500/10 mb-4">
+                    <h3 class="font-bold text-xl text-white mb-4">sabb_s1</h3>
+                    <a href="https://www.twitch.tv/sabb_s1" target="_blank" class="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl transition text-sm"><i class="fa-brands fa-twitch"></i> Twitch</a>
+                </div>
+                <div class="glass-panel rounded-2xl p-6 border border-brand-border flex flex-col items-center text-center">
+                    <img src="assets/partners/zheksve1.png" alt="Фото партнера zheksve1" width="70" height="70" loading="lazy" decoding="async" class="w-20 h-20 rounded-full object-cover border-2 border-amber-500/70 shadow-lg shadow-amber-500/10 mb-4">
+                    <h3 class="font-bold text-xl text-white mb-4">zheksve1</h3>
+                    <a href="https://www.twitch.tv/zheksve1" target="_blank" class="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl transition text-sm"><i class="fa-brands fa-twitch"></i> Twitch</a>
+                </div>
+                <div class="glass-panel rounded-2xl p-6 border border-brand-border flex flex-col items-center text-center">
+                    <img src="assets/partners/argehabeats.jpg" alt="Фото партнера argehabeats" width="70" height="70" loading="lazy" decoding="async" class="w-20 h-20 rounded-full object-cover border-2 border-amber-500/70 shadow-lg shadow-amber-500/10 mb-4">
+                    <h3 class="font-bold text-xl text-white mb-4">argehabeats</h3>
+                    <a href="https://www.twitch.tv/argehabeats" target="_blank" class="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl transition text-sm"><i class="fa-brands fa-twitch"></i> Twitch</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- MODALS -->
+    <div id="steamModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
+        <div class="glass-panel rounded-2xl max-w-md w-full p-6 border border-brand-border relative">
+            <button onclick="closeModal('steamModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            <h3 class="font-heading text-2xl font-bold text-white uppercase mb-2">Steam-профіль</h3>
+            <p class="mb-4 text-xs leading-5 text-gray-400">Вхід відбувається тільки на офіційній сторінці Steam. Сайт не бачить пароль або Steam Guard.</p>
+            <button onclick="startSteamLogin()" class="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-extrabold rounded-xl transition text-sm"><i class="fa-brands fa-steam mr-2"></i>Продовжити через Steam</button>
+        </div>
+    </div>
+
+    <div id="depositModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
+        <div class="glass-panel rounded-2xl max-w-md w-full p-6 border border-brand-border relative">
+            <button onclick="closeModal('depositModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            <h3 class="font-heading text-2xl font-bold text-white uppercase mb-2">Поповнення балансу</h3>
+            <p class="mb-4 text-sm leading-6 text-gray-400">Поповнення відкривається на захищеній сторінці партнера.</p>
+            <a href="https://sabb.donatik.ua/" target="_blank" rel="noopener noreferrer" class="block text-center w-full py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold rounded-xl transition text-sm">Перейти до поповнення</a>
+        </div>
+    </div>
+
+    <div id="inventoryModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
+        <div class="glass-panel rounded-2xl max-w-3xl w-full p-6 border border-brand-border relative max-h-[85vh] flex flex-col">
+            <button onclick="closeModal('inventoryModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            <h3 class="font-heading text-2xl font-bold text-white uppercase mb-1">Твій Інвентар</h3>
+            <p id="inventoryStatus" class="text-xs text-gray-400 mb-4">Увійди через Steam, щоб завантажити публічний інвентар CS2.</p>
+            <div id="userInventoryGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 overflow-y-auto pr-1 flex-1"></div>
+        </div>
+    </div>
+
+    <div id="shopModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
+        <div class="glass-panel rounded-2xl max-w-4xl w-full p-6 border border-brand-border relative max-h-[85vh] flex flex-col">
+            <button onclick="closeModal('shopModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            <div class="pr-10 mb-4">
+                <div class="flex items-end justify-between gap-4">
+                    <h3 class="font-heading text-2xl font-bold text-white uppercase">Каталог Скінів</h3>
+                    <span id="shopCount" class="text-xs font-bold text-amber-400">Завантаження…</span>
+                </div>
+                <p class="text-[11px] text-gray-500 mt-1">Усі базові дизайни без окремих wear, StatTrak™ і Souvenir-версій. Ціни орієнтовні.</p>
+            </div>
+            <div class="grid sm:grid-cols-[1fr_180px] gap-2 mb-4">
+                <label class="relative">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs"></i>
+                    <input id="shopSearch" type="search" oninput="filterShop()" placeholder="Пошук: AK-47, Asiimov…" class="w-full bg-black/30 border border-brand-border rounded-xl py-2.5 pl-9 pr-3 text-sm text-white focus:outline-none focus:border-amber-500/60">
+                </label>
+                <select id="shopCategory" onchange="filterShop()" class="bg-brand-card border border-brand-border rounded-xl px-3 py-2.5 text-sm text-gray-200 focus:outline-none focus:border-amber-500/60">
+                    <option value="all">Уся зброя</option>
+                </select>
+            </div>
+            <div id="shopGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 overflow-y-auto pr-1 flex-1"></div>
+            <button id="shopMoreBtn" onclick="showMoreSkins()" class="hidden mt-4 py-2.5 rounded-xl border border-brand-border bg-brand-card hover:bg-gray-800 text-sm font-bold text-amber-400 transition">Показати ще</button>
+        </div>
+    </div>
+
+    <!-- MAIN APP SCRIPT -->
+    <script>
+        // Повна робоча база скінів з валідними посиланнями на CDN Steam
+        let CS2_SKINS = [
+            { id: 1, name: "★ Butterfly Knife | Doppler", price: 54000, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpovbSsLQJf2PLacDBA5ciJn7-HnvDzMITElyUIu5Vz2-yWq9mh2VaxrRE9YW2gJ46ccVZoZgzZ_wLskb_qjJ66u8vAnXc1viRzsniMlwv330_Z8iZt/360fx360f", rarity: "Extraordinary" },
+            { id: 2, name: "★ Karambit | Fade", price: 48000, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpovbSsLQJf2PLacDBA5ciJn7-HnvDzMITElyUIu5Vz2-yWq9mh2VaxrRE9YW2gJ46ccVZoZgzZ_wLskb_qjJ66u8vAnXc1viRzsniMlwv330_Z8iZt/360fx360f", rarity: "Extraordinary" },
+            { id: 3, name: "★ M9 Bayonet | Marble Fade", price: 39000, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpovbSsLQJf2PLacDBA5ciJn7-HnvDzMITElyUIu5Vz2-yWq9mh2VaxrRE9YW2gJ46ccVZoZgzZ_wLskb_qjJ66u8vAnXc1viRzsniMlwv330_Z8iZt/360fx360f", rarity: "Extraordinary" },
+            { id: 4, name: "★ Sport Gloves | Vice", price: 65000, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpovbSsLQJf2PLacDBA5ciJn7-HnvDzMITElyUIu5Vz2-yWq9mh2VaxrRE9YW2gJ46ccVZoZgzZ_wLskb_qjJ66u8vAnXc1viRzsniMlwv330_Z8iZt/360fx360f", rarity: "Extraordinary" },
+            { id: 5, name: "AWP | Dragon Lore", price: 145000, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpot621FBRw7P7NYghD_tW1n4mOmPjjOr7VglRd4cJ5nqeW8ois2Qbj-0A-YGHzLdCccVZoZwvYr1G3kLrt0ZO5vJ2bzHdksnRx53fD30v33096y2vPmw/360fx360f", rarity: "Covert" },
+            { id: 6, name: "AWP | Asiimov", price: 3200, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpot621FBRw7P7NYghD_tW1n4mOmPjjOr7VglRd4cJ5nqeW8ois2Qbj-0A-YGHzLdCccVZoZwvYr1G3kLrt0ZO5vJ2bzHdksnRx53fD30v33096y2vPmw/360fx360f", rarity: "Covert" },
+            { id: 7, name: "AWP | Atheris", price: 180, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpot621FBRw7P7NYghD_tW1n4mOmPjjOr7VglRd4cJ5nqeW8ois2Qbj-0A-YGHzLdCccVZoZwvYr1G3kLrt0ZO5vJ2bzHdksnRx53fD30v33096y2vPmw/360fx360f", rarity: "Restricted" },
+            { id: 8, name: "AK-47 | Case Hardened", price: 28000, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpot7HxfDhjxszJemkV09u_mI-ImfbmNqjCnDBp68hyied3jNqi2wSy-hc9MDr0cdeccFU7ZVjY-Vfsxr3qg8O-v8udy3Ng7CV35yvemhax0xhEPLY9j8-qfA/360fx360f", rarity: "Classified" },
+            { id: 9, name: "AK-47 | Fire Serpent", price: 34000, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpot7HxfDhjxszJemkV09u_mI-ImfbmNqjCnDBp68hyied3jNqi2wSy-hc9MDr0cdeccFU7ZVjY-Vfsxr3qg8O-v8udy3Ng7CV35yvemhax0xhEPLY9j8-qfA/360fx360f", rarity: "Covert" },
+            { id: 10, name: "AK-47 | Redline", price: 650, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpot7HxfDhjxszJemkV09u_mI-ImfbmNqjCnDBp68hyied3jNqi2wSy-hc9MDr0cdeccFU7ZVjY-Vfsxr3qg8O-v8udy3Ng7CV35yvemhax0xhEPLY9j8-qfA/360fx360f", rarity: "Classified" },
+            { id: 11, name: "M4A1-S | Printstream", price: 4200, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpOwMR1LjJf2PLacDBA5ciJn7-HnvDzMITElyUIu5Vz2-yWq9mh2VaxrRE9YW2gJ46ccVZoZgzZ_wLskb_qjJ66u8vAnXc1viRzsniMlwv330_Z8iZt/360fx360f", rarity: "Covert" },
+            { id: 12, name: "M4A4 | Howl", price: 85000, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpOwMR1LjJf2PLacDBA5ciJn7-HnvDzMITElyUIu5Vz2-yWq9mh2VaxrRE9YW2gJ46ccVZoZgzZ_wLskb_qjJ66u8vAnXc1viRzsniMlwv330_Z8iZt/360fx360f", rarity: "Contraband" },
+            { id: 13, name: "Desert Eagle | Printstream", price: 1800, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgposr-kLAtl7PLZTjlH_9mkgL-OkvnxN7LEmyUE68Yl2-rA89ii2VHkqhQ9ZTqhdtOSdFNoaV-CqALvl-_vjJS6uMvKnHY37iVz4GGdwUInhQ/360fx360f", rarity: "Classified" },
+            { id: 14, name: "USP-S | Kill Confirmed", price: 3100, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpoovrFEeflxyT3eTBH_9mkgL-OlvnxN7LEmyUGu5Yoj7jDrY6l3wO2rkZsNj3xd9SRJwU3Z1rWr1O_xr27hMfqvsnKynQw6Cc8pCvD30v3308VwA7j/360fx360f", rarity: "Covert" },
+            { id: 15, name: "Glock-18 | Water Elemental", price: 350, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgposbaqKAxl7PLKYQJH_uO1gb-Gw_alIITGnXBX7fp3i-vJ8Ij33wKxrhVuMW7wd9SWcAQ7ZAzYr1K2xb3rh8S6t5ibynE16HYl53rfnRbpgg/360fx360f", rarity: "Restricted" },
+            { id: 16, name: "★ Talon Knife | Fade", price: 29000, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpovbSsLQJf2PLacDBA5ciJn7-HnvDzMITElyUIu5Vz2-yWq9mh2VaxrRE9YW2gJ46ccVZoZgzZ_wLskb_qjJ66u8vAnXc1viRzsniMlwv330_Z8iZt/360fx360f", rarity: "Extraordinary" },
+            { id: 17, name: "★ Skeleton Knife | Slaughter", price: 31000, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpovbSsLQJf2PLacDBA5ciJn7-HnvDzMITElyUIu5Vz2-yWq9mh2VaxrRE9YW2gJ46ccVZoZgzZ_wLskb_qjJ66u8vAnXc1viRzsniMlwv330_Z8iZt/360fx360f", rarity: "Extraordinary" },
+            { id: 18, name: "AWP | Neo-Noir", price: 850, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpot621FBRw7P7NYghD_tW1n4mOmPjjOr7VglRd4cJ5nqeW8ois2Qbj-0A-YGHzLdCccVZoZwvYr1G3kLrt0ZO5vJ2bzHdksnRx53fD30v33096y2vPmw/360fx360f", rarity: "Classified" },
+            { id: 19, name: "AK-47 | Neon Rider", price: 1100, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpot7HxfDhjxszJemkV09u_mI-ImfbmNqjCnDBp68hyied3jNqi2wSy-hc9MDr0cdeccFU7ZVjY-Vfsxr3qg8O-v8udy3Ng7CV35yvemhax0xhEPLY9j8-qfA/360fx360f", rarity: "Covert" },
+            { id: 20, name: "M4A1-S | Hyper Beast", price: 950, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpOwMR1LjJf2PLacDBA5ciJn7-HnvDzMITElyUIu5Vz2-yWq9mh2VaxrRE9YW2gJ46ccVZoZgzZ_wLskb_qjJ66u8vAnXc1viRzsniMlwv330_Z8iZt/360fx360f", rarity: "Covert" }
+        ];
+        const CS2_SKINS_API = 'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/skins.json';
+        let filteredSkins = CS2_SKINS;
+        let visibleSkinCount = 80;
+
+        let currentUser = null;
+        let selectedInputMode = 'skin';
+        let selectedInputSkin = null;
+        let balanceStake = 50;
+        let selectedTargetSkin = null;
+        let rollMode = 'over';
+        let isRolling = false;
+
+        let userInventory = [
+            { id: 101, name: "AK-47 | Redline", price: 650, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpot7HxfDhjxszJemkV09u_mI-ImfbmNqjCnDBp68hyied3jNqi2wSy-hc9MDr0cdeccFU7ZVjY-Vfsxr3qg8O-v8udy3Ng7CV35yvemhax0xhEPLY9j8-qfA/360fx360f", rarity: "Classified" },
+            { id: 102, name: "Glock-18 | Water Elemental", price: 350, img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgposbaqKAxl7PLKYQJH_uO1gb-Gw_alIITGnXBX7fp3i-vJ8Ij33wKxrhVuMW7wd9SWcAQ7ZAzYr1K2xb3rh8S6t5ibynE16HYl53rfnRbpgg/360fx360f", rarity: "Restricted" }
+        ];
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const noticeAccepted = localStorage.getItem('potuzhno_demo_notice_v1') === 'accepted';
+            if (!noticeAccepted) {
+                document.body.classList.add('consent-locked');
+                document.getElementById('riskNotice').classList.remove('hidden');
+                document.getElementById('riskNotice').classList.add('flex');
+            }
+            renderCanvas(0);
+            renderInventoryGrid();
+            renderShopGrid(CS2_SKINS);
+            processSteamCallback();
+            loadCompleteSkinCatalog();
+            startLiveFeedSimulation();
+        });
+
+        function updateConsentButton() {
+            document.getElementById('riskContinue').disabled = !document.getElementById('riskConsent').checked;
+        }
+
+        function acceptRiskNotice() {
+            if (!document.getElementById('riskConsent').checked) return;
+            localStorage.setItem('potuzhno_demo_notice_v1', 'accepted');
+            document.body.classList.remove('consent-locked');
+            document.getElementById('riskNotice').classList.add('hidden');
+            document.getElementById('riskNotice').classList.remove('flex');
+        }
+
+        async function loadCompleteSkinCatalog() {
+            try {
+                const response = await fetch(CS2_SKINS_API);
+                if (!response.ok) throw new Error('Catalog request failed');
+                const catalog = await response.json();
+                const existingPrices = new Map(CS2_SKINS.map(s => [s.name, s.price]));
+                CS2_SKINS = catalog
+                    .filter(s => s.image && s.weapon && s.category?.name !== 'Gloves')
+                    .map((s, index) => ({
+                        id: s.id || `cs2-${index}`,
+                        name: s.name,
+                        weapon: s.weapon.name,
+                        category: s.category?.name || 'Інше',
+                        rarity: s.rarity?.name || 'Consumer Grade',
+                        rarityColor: s.rarity?.color || '#b0c3d9',
+                        img: s.image,
+                        price: existingPrices.get(s.name) || estimateSkinPrice(s)
+                    }))
+                    .sort((a, b) => a.weapon.localeCompare(b.weapon) || a.name.localeCompare(b.name));
+                populateCategoryFilter();
+                filterShop();
+            } catch (error) {
+                filteredSkins = CS2_SKINS;
+                renderShopGrid(filteredSkins);
+                document.getElementById('shopCount').textContent = `${CS2_SKINS.length} вибраних скінів`;
+                document.querySelector('#shopModal p').textContent = 'Повний каталог тимчасово недоступний — показано вибрані скіни.';
+            }
+        }
+
+        function estimateSkinPrice(skin) {
+            const rarityPrices = { 'Consumer Grade': 18, 'Industrial Grade': 38, 'Mil-Spec Grade': 95, Restricted: 260, Classified: 780, Covert: 2400, Contraband: 85000, Extraordinary: 12500 };
+            const base = rarityPrices[skin.rarity?.name] || 55;
+            const hash = [...skin.id].reduce((total, char) => total + char.charCodeAt(0), 0);
+            return Math.round(base * (0.72 + (hash % 57) / 100));
+        }
+
+        function populateCategoryFilter() {
+            const select = document.getElementById('shopCategory');
+            const labels = { Rifles: 'Гвинтівки', Pistols: 'Пістолети', SMGs: 'Пістолети-кулемети', Heavy: 'Важка зброя', Knives: 'Ножі', Equipment: 'Спорядження' };
+            const categories = [...new Set(CS2_SKINS.map(s => s.category))].sort();
+            select.innerHTML = '<option value="all">Уся зброя</option>' + categories.map(category => `<option value="${category}">${labels[category] || category}</option>`).join('');
+        }
+
+        function filterShop() {
+            const query = document.getElementById('shopSearch').value.trim().toLocaleLowerCase('uk');
+            const category = document.getElementById('shopCategory').value;
+            filteredSkins = CS2_SKINS.filter(s => (category === 'all' || s.category === category) && (!query || `${s.name} ${s.weapon || ''}`.toLocaleLowerCase('uk').includes(query)));
+            visibleSkinCount = 80;
+            renderShopGrid(filteredSkins);
+        }
+
+        function showMoreSkins() {
+            visibleSkinCount += 80;
+            renderShopGrid(filteredSkins);
+        }
+
+        function openModal(id) { document.getElementById(id).classList.remove('hidden'); document.getElementById(id).classList.add('flex'); }
+        function closeModal(id) { document.getElementById(id).classList.add('hidden'); document.getElementById(id).classList.remove('flex'); }
+
+        function startSteamLogin() { window.location.href = '/api/steam/auth'; }
+
+        async function processSteamCallback() {
+            const params = new URLSearchParams(location.search);
+            const steamId = params.get('steamid') || localStorage.getItem('potuzhno_steam_id');
+            if (params.has('steam_error')) {
+                document.getElementById('inventoryStatus').textContent = 'Не вдалося підтвердити вхід через Steam.';
+                return;
+            }
+            if (!steamId) return;
+            localStorage.setItem('potuzhno_steam_id', steamId);
+            history.replaceState({}, '', location.pathname);
+            currentUser = { name: `Steam ${steamId.slice(-4)}`, balance: 0, avatar: `https://avatars.cloudflare.steamstatic.com/default.jpg` };
+            document.getElementById('steamAuthBtn').classList.add('hidden');
+            document.getElementById('userBalanceBox').classList.remove('hidden');
+            document.getElementById('userBalanceBox').classList.add('flex');
+            document.getElementById('userAvatarBox').classList.remove('hidden');
+            document.getElementById('userAvatarImg').src = currentUser.avatar;
+            document.getElementById('userBalance').textContent = '0 ₴';
+            document.getElementById('inventoryStatus').textContent = 'Завантаження публічного інвентарю Steam…';
+            try {
+                const response = await fetch(`/api/steam/inventory?steamid=${encodeURIComponent(steamId)}`);
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error);
+                userInventory = data.items.map((item, index) => ({ ...item, price: estimateInventoryPrice(item, index) }));
+                document.getElementById('inventoryStatus').textContent = userInventory.length ? `Завантажено ${userInventory.length} предметів із Steam.` : 'У публічному інвентарі немає доступних предметів CS2.';
+                renderInventoryGrid();
+            } catch (error) {
+                userInventory = [];
+                document.getElementById('inventoryStatus').textContent = error.message || 'Не вдалося завантажити інвентар Steam.';
+                renderInventoryGrid();
+            }
+        }
+
+        function estimateInventoryPrice(item, index) {
+            const match = CS2_SKINS.find(s => item.name.includes(s.name.replace('★ ', '')));
+            return match?.price || 25 + ((index * 137) % 975);
+        }
+
+        function switchInputMode(mode) {
+            selectedInputMode = mode;
+            const skinBtn = document.getElementById('tabSkinBtn');
+            const balBtn = document.getElementById('tabBalanceBtn');
+            if (mode === 'skin') {
+                skinBtn.className = "py-2 text-xs font-bold rounded-lg bg-amber-500 text-black transition";
+                balBtn.className = "py-2 text-xs font-bold rounded-lg text-gray-400 hover:text-white transition";
+                document.getElementById('inputSkinState').classList.toggle('hidden', !selectedInputSkin);
+                document.getElementById('inputEmptyState').classList.toggle('hidden', !!selectedInputSkin);
+                document.getElementById('inputBalanceState').classList.add('hidden');
+            } else {
+                balBtn.className = "py-2 text-xs font-bold rounded-lg bg-amber-500 text-black transition";
+                skinBtn.className = "py-2 text-xs font-bold rounded-lg text-gray-400 hover:text-white transition";
+                document.getElementById('inputSkinState').classList.add('hidden');
+                document.getElementById('inputEmptyState').classList.add('hidden');
+                document.getElementById('inputBalanceState').classList.remove('hidden');
+            }
+            recalculateUpgrade();
+        }
+
+        function openInventoryOrFocus() { if (selectedInputMode === 'skin') openModal('inventoryModal'); }
+
+        function selectInventoryItem(item) {
+            selectedInputSkin = item;
+            document.getElementById('inputSkinImg').src = item.img;
+            document.getElementById('inputSkinName').textContent = item.name;
+            document.getElementById('inputSkinRarity').textContent = item.rarity;
+            document.getElementById('inputSkinState').classList.remove('hidden');
+            document.getElementById('inputEmptyState').classList.add('hidden');
+            closeModal('inventoryModal');
+            recalculateUpgrade();
+        }
+
+        function updateBalanceStake() {
+            balanceStake = parseFloat(document.getElementById('balanceStakeInput').value) || 0;
+            recalculateUpgrade();
+        }
+
+        function selectTargetItem(item) {
+            selectedTargetSkin = item;
+            document.getElementById('targetSkinImg').src = item.img;
+            document.getElementById('targetSkinName').textContent = item.name;
+            document.getElementById('targetSkinRarity').textContent = item.rarity;
+            document.getElementById('targetSkinState').classList.remove('hidden');
+            document.getElementById('targetEmptyState').classList.add('hidden');
+            closeModal('shopModal');
+            recalculateUpgrade();
+        }
+
+        function setRollMode(mode) {
+            rollMode = mode;
+            const overBtn = document.getElementById('modeOverBtn');
+            const underBtn = document.getElementById('modeUnderBtn');
+            if (mode === 'over') {
+                overBtn.className = "py-1.5 text-xs font-bold rounded-lg bg-amber-500 text-black transition";
+                underBtn.className = "py-1.5 text-xs font-bold rounded-lg text-gray-400 hover:text-white transition";
+            } else {
+                underBtn.className = "py-1.5 text-xs font-bold rounded-lg bg-amber-500 text-black transition";
+                overBtn.className = "py-1.5 text-xs font-bold rounded-lg text-gray-400 hover:text-white transition";
+            }
+            recalculateUpgrade();
+        }
+
+        function getInputVal() { return selectedInputMode === 'skin' ? (selectedInputSkin ? selectedInputSkin.price : 0) : balanceStake; }
+        function getTargetVal() { return selectedTargetSkin ? selectedTargetSkin.price : 0; }
+
+        function recalculateUpgrade() {
+            const inputVal = getInputVal();
+            const targetVal = getTargetVal();
+            document.getElementById('inputItemValue').textContent = `${inputVal.toFixed(0)} ₴`;
+            document.getElementById('targetItemValue').textContent = `${targetVal.toFixed(0)} ₴`;
+            if (!inputVal || !targetVal) {
+                document.getElementById('winChanceText').textContent = '0.00 %';
+                document.getElementById('multiplierText').textContent = 'x0.00';
+                renderCanvas(0);
+                return;
+            }
+            let chance = Math.min(80, Math.max(1, (inputVal / targetVal) * 0.95 * 100));
+            const multiplier = targetVal / inputVal;
+            document.getElementById('winChanceText').textContent = `${chance.toFixed(2)} %`;
+            document.getElementById('multiplierText').textContent = `x${multiplier.toFixed(2)}`;
+            renderCanvas(chance);
+        }
+
+        function renderCanvas(chancePercent, currentPointerAngle = 0) {
+            const canvas = document.getElementById('upgradeCanvas');
+            const ctx = canvas.getContext('2d');
+            const cx = canvas.width / 2, cy = canvas.height / 2, radius = 100;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            ctx.lineWidth = 14;
+            ctx.strokeStyle = '#121722';
+            ctx.stroke();
+            if (chancePercent > 0) {
+                const chanceRad = (chancePercent / 100) * Math.PI * 2;
+                const startAngle = rollMode === 'under' ? 0 : (Math.PI * 2) - chanceRad;
+                ctx.beginPath();
+                ctx.arc(cx, cy, radius, startAngle, startAngle + chanceRad);
+                ctx.lineWidth = 14;
+                ctx.strokeStyle = '#F59E0B';
+                ctx.stroke();
+            }
+            if (isRolling) {
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(currentPointerAngle);
+                ctx.beginPath();
+                ctx.moveTo(radius - 12, 0);
+                ctx.lineTo(radius + 12, 0);
+                ctx.lineWidth = 4;
+                ctx.strokeStyle = '#FFFFFF';
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        function executeUpgrade() {
+            if (isRolling) return;
+            const inputVal = getInputVal(), targetVal = getTargetVal();
+            if (!inputVal || !targetVal) return alert('Обери скін/баланс та цільовий предмет!');
+            if (selectedInputMode === 'balance') {
+                if (!currentUser || currentUser.balance < balanceStake) return alert('Недостатньо коштів!');
+                currentUser.balance -= balanceStake;
+                document.getElementById('userBalance').textContent = `${currentUser.balance.toFixed(0)} ₴`;
+            }
+            isRolling = true;
+            document.getElementById('rollStatusText').textContent = 'ОБЕРТАННЯ...';
+            let chance = Math.min(80, Math.max(1, (inputVal / targetVal) * 0.95 * 100));
+            const roll = Math.random() * 100;
+            const isWin = rollMode === 'under' ? roll <= chance : roll >= (100 - chance);
+            const startTime = performance.now();
+            const finalAngle = (5 * Math.PI * 2) + ((roll / 100) * Math.PI * 2);
+
+            function animate(now) {
+                const progress = Math.min((now - startTime) / 3500, 1);
+                renderCanvas(chance, (1 - Math.pow(1 - progress, 3)) * finalAngle);
+                if (progress < 1) requestAnimationFrame(animate);
+                else {
+                    isRolling = false;
+                    if (isWin) {
+                        document.getElementById('rollStatusText').textContent = 'ВИГРАШ!';
+                        userInventory.push({ ...selectedTargetSkin, id: Date.now() });
+                        renderInventoryGrid();
+                        alert(`Демоуспіх! ${selectedTargetSkin.name} додано лише до тестового інвентарю.`);
+                    } else {
+                        document.getElementById('rollStatusText').textContent = 'НЕВДАЧА';
+                        if (selectedInputMode === 'skin') {
+                            userInventory = userInventory.filter(i => i.id !== selectedInputSkin.id);
+                            selectedInputSkin = null;
+                            document.getElementById('inputSkinState').classList.add('hidden');
+                            document.getElementById('inputEmptyState').classList.remove('hidden');
+                            renderInventoryGrid();
+                        }
+                    }
+                    recalculateUpgrade();
+                }
+            }
+            requestAnimationFrame(animate);
+        }
+
+        function renderShopGrid(skins) {
+            const grid = document.getElementById('shopGrid');
+            const shown = skins.slice(0, visibleSkinCount);
+            document.getElementById('shopCount').textContent = `${skins.length.toLocaleString('uk-UA')} скінів`;
+            document.getElementById('shopMoreBtn').classList.toggle('hidden', shown.length >= skins.length);
+            if (!shown.length) {
+                grid.innerHTML = '<div class="col-span-full py-16 text-center"><i class="fa-solid fa-crosshairs text-3xl text-amber-500/40 mb-3"></i><p class="font-bold text-gray-300">Скінів не знайдено</p><p class="text-xs text-gray-500 mt-1">Зміни запит або категорію</p></div>';
+                return;
+            }
+            grid.innerHTML = shown.map(s => `
+                <button type="button" data-skin-id="${escapeHtml(String(s.id))}" class="skin-card text-left bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 flex flex-col items-center justify-between cursor-pointer transition group focus:outline-none focus:border-amber-500">
+                    <img src="${escapeHtml(s.img)}" alt="${escapeHtml(s.name)}" class="h-20 w-full object-contain group-hover:scale-105 transition" loading="lazy" decoding="async">
+                    <div class="text-center w-full mt-2 min-w-0">
+                        <p class="font-bold text-xs text-white truncate" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</p>
+                        <p class="text-[10px] truncate mt-1" style="color:${escapeHtml(s.rarityColor || '#f59e0b')}">${escapeHtml(s.rarity)}</p>
+                        <p class="text-amber-400 font-extrabold text-xs mt-0.5">${s.price.toFixed(0)} ₴</p>
+                    </div>
+                </button>
+            `).join('');
+            grid.querySelectorAll('.skin-card').forEach(card => card.addEventListener('click', () => {
+                const skin = CS2_SKINS.find(item => String(item.id) === card.dataset.skinId);
+                if (skin) selectTargetItem(skin);
+            }));
+        }
+
+        function escapeHtml(value) {
+            return String(value).replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
+        }
+
+        function renderInventoryGrid() {
+            const grid = document.getElementById('userInventoryGrid');
+            if (!userInventory.length) { grid.innerHTML = '<div class="col-span-full py-12 text-center text-sm text-gray-500">Інвентар порожній або приватний</div>'; return; }
+            grid.innerHTML = userInventory.map(s => `
+                <button type="button" data-inventory-id="${escapeHtml(String(s.id))}" class="bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 flex flex-col items-center justify-between cursor-pointer transition group">
+                    <img src="${escapeHtml(s.img)}" alt="${escapeHtml(s.name)}" class="h-20 object-contain group-hover:scale-105 transition" loading="lazy">
+                    <div class="text-center w-full mt-2">
+                        <p class="font-bold text-xs text-white truncate">${escapeHtml(s.name)}</p>
+                        <p class="text-amber-400 font-extrabold text-xs mt-1">${s.price.toFixed(0)} ₴</p>
+                    </div>
+                </button>
+            `).join('');
+            grid.querySelectorAll('[data-inventory-id]').forEach(card => card.addEventListener('click', () => selectInventoryItem(userInventory.find(item => String(item.id) === card.dataset.inventoryId))));
+        }
+
+        function startLiveFeedSimulation() {
+            const feed = document.getElementById('liveFeed');
+            const players = ['Демо №14', 'Демо №27', 'Симуляція', 'Тестовий раунд', 'Демо №63'];
+            setInterval(() => {
+                const skin = CS2_SKINS[Math.floor(Math.random() * CS2_SKINS.length)];
+                const item = document.createElement('div');
+                item.className = "live-feed-item flex items-center gap-2 bg-brand-card border border-gray-800 rounded-lg px-2.5 py-1 text-xs shrink-0";
+                item.innerHTML = `<img src="${skin.img}" class="w-6 h-6 object-contain"><span class="text-gray-400 text-[10px]">${players[Math.floor(Math.random()*players.length)]}</span><span class="font-bold text-amber-400">${skin.price} ₴</span>`;
+                feed.prepend(item);
+                if (feed.children.length > 12) feed.removeChild(feed.lastChild);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
