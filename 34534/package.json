@@ -1,0 +1,13 @@
+{
+  "name": "potuzhno-drop-demo",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Potuzhno Drop — transparent parody game with virtual CS2 inventory.",
+  "type": "module",
+  "engines": {
+    "node": ">=20 <25"
+  },
+  "devDependencies": {
+    "@netlify/functions": "^6.0.0"
+  }
+}
