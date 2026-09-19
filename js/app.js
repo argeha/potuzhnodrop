@@ -181,10 +181,10 @@ const XP_WIN_BONUS = 70;
 const XP_PER_CASE = 45;
 const ROUND_HISTORY_LIMIT = 20;
 const SELL_RATE = 0.9;
-const CHANCE_K = 0.45;
-const CHANCE_POWER = 1.05;
-const CHANCE_MAX = 60;
-const CHANCE_MIN = 0.25;
+const CHANCE_K = 0.92;
+const CHANCE_POWER = 1.0;
+const CHANCE_MAX = 80;
+const CHANCE_MIN = 0.50;
 
 /* ===== KEY-DROP EDITION: КАТАЛОГ КЕЙСІВ ===== */
 const CASE_TYPES = {
@@ -903,21 +903,19 @@ function renderCanvas(chancePercent, pointerAngle = 0) {
 
     // neon glow shadow
     ctx.save();
-    ctx.shadowColor = '#f59e0b';
-    ctx.shadowBlur = 18;
+    ctx.shadowColor = 'rgba(245, 158, 11, 0.75)';
+    ctx.shadowBlur = 22;
 
     ctx.beginPath();
-    if (rollMode === 'under') {
-      ctx.arc(cx, cy, arcR, st, st + sweep);
-    } else {
-      ctx.arc(cx, cy, arcR, st - sweep, st);
-    }
-    ctx.lineWidth = 18;
-    ctx.lineCap = 'round';
+    // Arc always drawn starting from top (-Math.PI/2) clockwise matching the rotation
+    ctx.arc(cx, cy, arcR, st, st + sweep);
+    ctx.lineWidth = 22;
+    ctx.lineCap = sweepFrac >= 0.98 ? 'butt' : 'round';
     const g = ctx.createLinearGradient(0, 0, size, size);
     g.addColorStop(0, '#f59e0b');
-    g.addColorStop(0.5, '#fcd34d');
-    g.addColorStop(1, '#fb923c');
+    g.addColorStop(0.35, '#fde047');
+    g.addColorStop(0.7, '#fbbf24');
+    g.addColorStop(1, '#f97316');
     ctx.strokeStyle = g;
     ctx.stroke();
     ctx.restore();
@@ -2585,7 +2583,7 @@ function setRollMode(mode) {
   const hint = document.getElementById('rollModeHint');
   if (hint) {
     hint.textContent = mode === 'under'
-      ? 'Захист: +15% до шансу, максимум 60%.'
+      ? 'Захист: +15% до шансу виграшу (максимум 80%).'
       : 'Бонус: при виграші +5% вартості цілі у DC.';
   }
   recalculateUpgrade();
@@ -2650,6 +2648,7 @@ function recalculateUpgrade() {
   if (winChanceText) winChanceText.textContent = `${c.toFixed(2)} %`;
   if (multiplierText) multiplierText.textContent = `x${(tv / iv).toFixed(2)}`;
   renderCanvas(c);
+  if (iv > 0) renderSmartSuggestions(iv);
 }
 
 /* ───── Upgrader 2.0 helper: multiplier preset ─────────────────────────── */
@@ -2693,9 +2692,9 @@ function renderSmartSuggestions(inputVal) {
   if (!el || !inputVal) return;
 
   const presets = [
-    { key: 'safe',    icon: '🛡',  label: 'Safe',    chance: 50, mult: 2,    accent: '#22c55e', bg: 'rgba(34,197,94,0.08)',   border: 'rgba(34,197,94,0.25)' },
-    { key: 'balance', icon: '⚡',  label: 'Balance', chance: 30, mult: 3.3,  accent: '#f59e0b', bg: 'rgba(245,158,11,0.08)',  border: 'rgba(245,158,11,0.25)' },
-    { key: 'jackpot', icon: '💎', label: 'Jackpot', chance: 8,  mult: 12.5, accent: '#a855f7', bg: 'rgba(168,85,247,0.08)',  border: 'rgba(168,85,247,0.25)' },
+    { key: 'safe',    icon: '🛡',  label: 'Safe',    mult: 2,    accent: '#22c55e', bg: 'rgba(34,197,94,0.08)',   border: 'rgba(34,197,94,0.25)' },
+    { key: 'balance', icon: '⚡',  label: 'Balance', mult: 3.3,  accent: '#f59e0b', bg: 'rgba(245,158,11,0.08)',  border: 'rgba(245,158,11,0.25)' },
+    { key: 'jackpot', icon: '💎', label: 'Jackpot', mult: 12.5, accent: '#a855f7', bg: 'rgba(168,85,247,0.08)',  border: 'rgba(168,85,247,0.25)' },
   ];
 
   el.innerHTML = presets.map(p => {
@@ -2709,9 +2708,8 @@ function renderSmartSuggestions(inputVal) {
     }
     if (!best) return '';
 
-    // Use setImageSource-compatible fallback chain
+    const actualChance = calcChance(inputVal, best.price || targetPrice);
     const sk = getSkinKey ? getSkinKey(best) : '';
-    const imgUrl = best.img || (typeof IMG_BASE !== 'undefined' ? IMG_BASE + sk + '.png' : '');
     const safeN = best.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
     const displayName = best.name.length > 18 ? best.name.slice(0, 16) + '…' : best.name;
     const priceStr = typeof formatCredits === 'function' ? formatCredits(best.price || 0) : (best.price || 0) + ' DC';
@@ -2722,7 +2720,7 @@ function renderSmartSuggestions(inputVal) {
     <div class="upg-sugg-label" style="color:${p.accent}">${p.label}</div>
     <div class="upg-sugg-name">${displayName}</div>
     <div class="upg-sugg-meta">
-      <span class="upg-sugg-chance" style="color:${p.accent}">${p.chance}%</span>
+      <span class="upg-sugg-chance" style="color:${p.accent}">${actualChance.toFixed(1)}%</span>
       <span class="upg-sugg-price">${priceStr}</span>
     </div>
   </div>
@@ -2754,10 +2752,14 @@ function applySuggestion(skinName) {
 
 function chainUpgradeWonSkin() {
   if (!lastWonUpgraderSkin) { showToast('Немає виграного скіна', 'warn'); return; }
+  const won = lastWonUpgraderSkin;
+  lastWonUpgraderSkin = null;
+  const _rua = document.getElementById('resultUpgraderActions');
+  if (_rua) _rua.classList.add('hidden');
   closeModal('resultModal');
   // Switch to skin mode and set won skin as input
   switchInputMode('skin');
-  selectedInputSkin = lastWonUpgraderSkin;
+  selectedInputSkin = won;
   const ies = document.getElementById('inputEmptyState');
   const iss = document.getElementById('inputSkinState');
   const iimg = document.getElementById('inputSkinImg');
@@ -2765,28 +2767,40 @@ function chainUpgradeWonSkin() {
   const irar = document.getElementById('inputSkinRarity');
   if (ies) ies.classList.add('hidden');
   if (iss) iss.classList.remove('hidden');
-  if (iimg) setImageSource(iimg, lastWonUpgraderSkin.img, lastWonUpgraderSkin.name, getSkinKey(lastWonUpgraderSkin));
-  if (inm)  inm.textContent  = lastWonUpgraderSkin.name;
-  if (irar) irar.textContent = lastWonUpgraderSkin.rarity || '';
-  lastWonUpgraderSkin = null;
+  if (iimg) setImageSource(iimg, won.img, won.name, getSkinKey(won));
+  if (inm)  inm.textContent  = won.name;
+  if (irar) irar.textContent = won.rarity || '';
   recalculateUpgrade();
   showToast('Скін встановлено як вхідний!', 'success');
 }
 
 function quickSellUpgradedSkin() {
   if (!lastWonUpgraderSkin) { showToast('Немає виграного скіна', 'warn'); return; }
-  const price = lastWonUpgraderSkin.price || 0;
+  const won = lastWonUpgraderSkin;
+  lastWonUpgraderSkin = null;
+  const _rua = document.getElementById('resultUpgraderActions');
+  if (_rua) _rua.classList.add('hidden');
+  closeModal('resultModal');
+  const price = won.price || 0;
   const earned = Math.round(price * SELL_RATE);
   currentUser.balance += earned;
-  userInventory = userInventory.filter(i => i.id !== lastWonUpgraderSkin.id);
+  userInventory = userInventory.filter(i => i.id !== won.id);
+  ensureDailyState();
+  ensureWeeklyState();
+  gameState.stats.sells = (gameState.stats.sells || 0) + 1;
+  gameState.daily.sells = (gameState.daily.sells || 0) + 1;
+  gameState.daily.sellValue = (gameState.daily.sellValue || 0) + earned;
+  gameState.weekly.sells = (gameState.weekly.sells || 0) + 1;
+  updateAllTimeOnSell(earned);
   updateBalanceUI();
   renderInventoryGrid();
   renderProfileInventory();
   updateAvatarBadge();
   saveState();
+  checkAchievements();
+  renderGameHub();
   showToast(`Продано за ${formatCredits(earned)} DC`, 'success');
-  lastWonUpgraderSkin = null;
-  closeModal('resultModal');
+  soundSell();
 }
 
 function showResultModal(win, skin, bonus = 0) {
@@ -2864,6 +2878,28 @@ function executeUpgrade() {
     gameState.allTime.multiInputs = (gameState.allTime.multiInputs || 0) + 1;
   }
 
+  // Deduct/consume inputs IMMEDIATELY to prevent dupes via rapid clicking or page hopping
+  if (selectedInputMode === 'skin' && inSkin) {
+    if (!userInventory.some(i => i.id === inSkin.id)) {
+      showToast('Обраного скіна вже немає в інвентарі', 'warn');
+      return;
+    }
+    userInventory = userInventory.filter(i => i.id !== inSkin.id);
+    selectedInputSkin = null;
+    document.getElementById('inputSkinState')?.classList.add('hidden');
+    document.getElementById('inputEmptyState')?.classList.remove('hidden');
+  } else if (selectedInputMode === 'multi') {
+    const ids = new Set(multiAtStart.map(x => x.id));
+    const allExist = multiAtStart.every(m => userInventory.some(i => i.id === m.id));
+    if (!allExist) {
+      showToast('Деяких скінів уже немає в інвентарі', 'warn');
+      return;
+    }
+    userInventory = userInventory.filter(i => !ids.has(i.id));
+    multiInputSkins = [];
+    renderMultiSlots();
+  }
+
   isRolling = true;
   document.querySelector('.upg-wheel-box')?.classList.add('is-spinning');
   const btn = document.getElementById('upgradeActionBtn');
@@ -2873,33 +2909,22 @@ function executeUpgrade() {
   if (ob) ob.disabled = true;
   if (ub) ub.disabled = true;
 
+  renderInventoryGrid();
+  renderProfileInventory();
+  updateAvatarBadge();
+  saveState();
+
   const rollStatus = document.getElementById('rollStatusText');
   if (rollStatus) rollStatus.textContent = 'ОБЕРТАННЯ...';
 
   const chance = calcChance(iv, tv);
   const winBonus = getWinBonus(tv);
   const roll = Math.random() * 100;
-  const isWin = rollMode === 'under' ? roll <= chance : roll >= (100 - chance);
+  const isWin = roll <= chance;
 
   const start = performance.now(), dur = 3200, turns = 5;
   const finalAngle = turns * Math.PI * 2 + (roll / 100) * Math.PI * 2;
   const tick = setInterval(() => beep(380 + Math.random() * 240, 0.03, 'square'), 90);
-
-  function consumeInputs() {
-    if (selectedInputMode === 'skin' && inSkin) {
-      userInventory = userInventory.filter(i => i.id !== inSkin.id);
-      if (selectedInputSkin?.id === inSkin.id) {
-        selectedInputSkin = null;
-        document.getElementById('inputSkinState')?.classList.add('hidden');
-        document.getElementById('inputEmptyState')?.classList.remove('hidden');
-      }
-    } else if (selectedInputMode === 'multi') {
-      const ids = new Set(multiAtStart.map(x => x.id));
-      userInventory = userInventory.filter(i => !ids.has(i.id));
-      multiInputSkins = [];
-      renderMultiSlots();
-    }
-  }
 
   function anim(now) {
     const p = Math.min((now - start) / dur, 1);
@@ -2921,7 +2946,6 @@ function executeUpgrade() {
     if (isWin) {
       if (rollStatus) rollStatus.textContent = 'ВИГРАШ!';
       soundWin();
-      consumeInputs();
       const ni = makeDemoItem(tgtSkin);
       lastWonUpgraderSkin = ni;
       userInventory.push(ni);
@@ -2941,7 +2965,6 @@ function executeUpgrade() {
     } else {
       if (rollStatus) rollStatus.textContent = 'НЕВДАЧА';
       soundLose();
-      consumeInputs();
       renderInventoryGrid();
       renderProfileInventory();
       updateAvatarBadge();
@@ -2968,7 +2991,6 @@ function executeUpgrade() {
     if (isWin) {
       if (rollStatus) rollStatus.textContent = 'ВИГРАШ!';
       soundWin();
-      consumeInputs();
       const ni = makeDemoItem(tgtSkin);
       lastWonUpgraderSkin = ni;
       userInventory.push(ni);
@@ -2982,7 +3004,6 @@ function executeUpgrade() {
     } else {
       if (rollStatus) rollStatus.textContent = 'НЕВДАЧА';
       soundLose();
-      consumeInputs();
       renderInventoryGrid(); renderProfileInventory(); updateAvatarBadge(); saveState();
       addActivityEvent({ player: currentUser.name || 'Ти', skin: tgtSkin, outcome: 'loss' });
       recordRound({ win: false, target: tgtSkin, chance, mode: selectedInputMode === 'multi' ? 'multi' : rollMode, inputValue: iv, bonus: 0 });
@@ -3465,26 +3486,38 @@ function quickSellCaseResult() {
     return;
   }
 
-  let totalRefund = 0;
-  const idsToSell = new Set(lastWonCaseItems.map(it => it.id));
+  const itemsToSell = [...lastWonCaseItems];
+  lastWonCaseItems = [];
+  closeModal('caseModal');
 
-  lastWonCaseItems.forEach(it => {
+  let totalRefund = 0;
+  const idsToSell = new Set(itemsToSell.map(it => it.id));
+
+  itemsToSell.forEach(it => {
     totalRefund += Math.max(1, Math.round((Number(it.price) || 0) * SELL_RATE));
   });
 
   userInventory = userInventory.filter(it => !idsToSell.has(it.id));
   currentUser.balance += totalRefund;
 
+  ensureDailyState();
+  ensureWeeklyState();
+  gameState.stats.sells = (gameState.stats.sells || 0) + itemsToSell.length;
+  gameState.daily.sells = (gameState.daily.sells || 0) + itemsToSell.length;
+  gameState.daily.sellValue = (gameState.daily.sellValue || 0) + totalRefund;
+  gameState.weekly.sells = (gameState.weekly.sells || 0) + itemsToSell.length;
+  updateAllTimeOnSell(totalRefund);
+
   soundSell();
   showToast(`Продано за +${formatCredits(totalRefund)}!`, 'success');
-  lastWonCaseItems = [];
 
   updateBalanceUI();
   renderInventoryGrid();
   renderProfileInventory();
   updateAvatarBadge();
   saveState();
-  closeModal('caseModal');
+  checkAchievements();
+  renderGameHub();
 }
 
 function sendCaseDropToUpgrader() {
@@ -3493,14 +3526,26 @@ function sendCaseDropToUpgrader() {
     return;
   }
 
-  const bestItem = [...lastWonCaseItems].sort((a, b) => (b.price || 0) - (a.price || 0))[0];
-  selectedInputSkin = bestItem;
-  selectedInputMode = 'skin';
-
+  const items = [...lastWonCaseItems];
+  lastWonCaseItems = [];
   closeModal('caseModal');
-  showPage('upgrader');
 
-  updateInputStateUI();
+  const bestItem = items.sort((a, b) => (b.price || 0) - (a.price || 0))[0];
+  switchInputMode('skin');
+  selectedInputSkin = bestItem;
+
+  const ies = document.getElementById('inputEmptyState');
+  const iss = document.getElementById('inputSkinState');
+  const iimg = document.getElementById('inputSkinImg');
+  const inm  = document.getElementById('inputSkinName');
+  const irar = document.getElementById('inputSkinRarity');
+  if (ies) ies.classList.add('hidden');
+  if (iss) iss.classList.remove('hidden');
+  if (iimg) setImageSource(iimg, bestItem.img, bestItem.name, getSkinKey(bestItem));
+  if (inm)  inm.textContent  = bestItem.name;
+  if (irar) irar.textContent = `${bestItem.rarity || 'CS2'} · ${getWear(bestItem).name}`;
+
+  showPage('upgrader');
   recalculateUpgrade();
   showToast(`🎯 Скін «${bestItem.name}» встановлено в Апгрейдер!`, 'success');
 }
@@ -3679,6 +3724,15 @@ function spinCoin(isPlayerWin) {
 
 function startBattle() {
   if (battleInProgress || !battlePlayerItem || !battleBotItem) return;
+  if (!userInventory.some(i => i.id === battlePlayerItem.id)) {
+    showToast('Обраного скіна вже немає в твоєму інвентарі', 'warn');
+    battlePlayerItem = null;
+    document.getElementById('battlePlayerEmpty')?.classList.remove('hidden');
+    document.getElementById('battlePlayerFilled')?.classList.add('hidden');
+    const startBtn = document.getElementById('battleStartBtn');
+    if (startBtn) startBtn.disabled = true;
+    return;
+  }
   battleInProgress = true;
   const startBtn = document.getElementById('battleStartBtn');
   if (startBtn) {
@@ -4071,6 +4125,23 @@ function startRoyale() {
     return;
   }
 
+  // Validate that all skins are still in userInventory
+  const allExist = royalePlayerSkins.every(s => userInventory.some(u => u.id === s.id));
+  if (!allExist) {
+    showToast('Деяких скінів уже немає в інвентарі! Оновлюємо...', 'warn');
+    royalePlayerSkins = royalePlayerSkins.filter(s => userInventory.some(u => u.id === s.id));
+    renderRoyalePlayerSlots();
+    return;
+  }
+
+  // Deduct player skins immediately to prevent duplication while wheel spins
+  const playerIds = new Set(royalePlayerSkins.map(s => s.id));
+  userInventory = userInventory.filter(s => !playerIds.has(s.id));
+  renderInventoryGrid();
+  renderProfileInventory();
+  updateAvatarBadge();
+  saveState();
+
   royaleInProgress = true;
   const startBtn = document.getElementById('royaleStartBtn');
   const addBtn   = document.getElementById('royaleAddBtn');
@@ -4092,19 +4163,14 @@ function startRoyale() {
     if (rand < cumulative) { winnerIdx = i; break; }
   }
 
-  // Compute the final angle so the pointer lands on winner's sector
-  // Sectors are ordered 0(player), 1(bot0), 2(bot1), 3(bot2)
+  // Compute final angle so pointer at top points exactly to the winner's sector center
   const fracs = shares.map(v => v / total);
   let sectorStart = 0;
   for (let i = 0; i < winnerIdx; i++) sectorStart += fracs[i];
-  const sectorMid  = sectorStart + fracs[winnerIdx] / 2;
-  // Pointer is at top (–π/2). Wheel starts drawing from –π/2. 
-  // We want sectorMid fraction to land at the top after spinning.
-  // Pointer at top = angle 0 in our drawing system (we offset by -π/2 when drawing).
-  // So we need: rotationRad + sectorMid*2π = 0 (mod 2π), i.e. rotationRad = -sectorMid*2π
+  const sectorMid = sectorStart + fracs[winnerIdx] / 2;
   const targetAngle = -(sectorMid * Math.PI * 2);
-  const extraSpins  = (5 + Math.floor(Math.random() * 3)) * Math.PI * 2; // 5–7 full spins
-  const finalAngle  = targetAngle - extraSpins;
+  const extraSpins = (6 + Math.floor(Math.random() * 3)) * Math.PI * 2;
+  const finalAngle = targetAngle - extraSpins;
 
   // Wheel pulse
   document.getElementById('royaleWheelWrap')?.classList.add('is-spinning');
@@ -4169,10 +4235,6 @@ function royaleSettle(winnerIdx) {
   const chance = total > 0 ? Math.round((pv / total) * 100) : 0;
 
   if (userWon) {
-    // Remove player's own skins from inventory (they're in the pot now)
-    const playerIds = new Set(royalePlayerSkins.map(s => s.id));
-    userInventory = userInventory.filter(s => !playerIds.has(s.id));
-
     // Add ALL pot skins to inventory
     allPotSkins.forEach(s => {
       const ni = makeDemoItem(s, '-royale');
@@ -4310,6 +4372,13 @@ function executeContract() {
   const items = contractItems.filter(Boolean);
   if (items.length !== 5) {
     showToast(`Потрібно 5 предметів (у тебе ${items.length})`, 'warn');
+    return;
+  }
+  const allExist = items.every(it => userInventory.some(u => u.id === it.id));
+  if (!allExist) {
+    showToast('Деяких предметів уже немає в інвентарі! Оновлюємо...', 'warn');
+    contractItems = contractItems.map(it => it && userInventory.some(u => u.id === it.id) ? it : null);
+    renderContractSlots();
     return;
   }
   const total = items.reduce((s, i) => s + (i.price || 0), 0);
