@@ -97,6 +97,11 @@ body[data-theme="violet"] #xpBar{background:linear-gradient(90deg,#8b5cf6,#ddd6f
 .theme-drop-menu button:hover{background:rgba(255,255,255,.05);color:#fff}
 .theme-drop-menu button.is-active{background:rgba(245,158,11,.12);color:#fbbf24}
 .theme-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0}
+.case-hero{position:relative;isolation:isolate;overflow:hidden;min-height:240px;border:1px solid rgba(245,158,11,.26);border-radius:20px;background:radial-gradient(circle at 50% 18%,rgba(253,230,138,.45),transparent 18%),radial-gradient(circle at 50% 66%,rgba(245,158,11,.28),transparent 54%),linear-gradient(135deg,#1e160b,#0e111a 65%)}
+.case-hero::before{content:'';position:absolute;inset:-45% -20%;z-index:-1;background:conic-gradient(from 0deg,transparent 0 18%,rgba(251,191,36,.32) 24%,transparent 30% 58%,rgba(251,191,36,.20) 64%,transparent 70%);animation:caseAura 7s linear infinite}
+@keyframes caseAura{to{transform:rotate(360deg)}}
+.case-hero-icon{filter:drop-shadow(0 14px 15px rgba(0,0,0,.55)) drop-shadow(0 0 20px rgba(251,191,36,.45));animation:caseFloat 2.8s ease-in-out infinite}
+@keyframes caseFloat{0%,100%{transform:translateY(4px) rotate(-3deg)}50%{transform:translateY(-7px) rotate(3deg)}}
 .odds-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:8px 12px;border-radius:8px;background:rgba(0,0,0,.25);border:1px solid #1E2638}
 .partner-card{display:flex;flex-direction:column;align-items:center;text-align:center;padding:24px 20px;border-radius:18px;border:1px solid #1E2638;background:linear-gradient(135deg,rgba(18,23,34,.85),rgba(13,17,25,.95));transition:.2s}
 .partner-card:hover{border-color:rgba(245,158,11,.35);transform:translateY(-2px)}
@@ -150,47 +155,27 @@ body[data-theme="violet"] #xpBar{background:linear-gradient(90deg,#8b5cf6,#ddd6f
 .royale-slot{position:relative;border-radius:16px;padding:12px;text-align:center;transition:.3s}
 .royale-slot.is-winner{border-color:#fbbf24!important;box-shadow:0 0 30px rgba(251,191,36,.5);transform:scale(1.05)}
 .royale-slot.is-loser{opacity:.35;filter:grayscale(.8)}
-
-/* ===== КЕЙСИ: СІТКА ЯК KEY-DROP ===== */
-.cases-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-@media(min-width:640px){.cases-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}
-@media(min-width:1024px){.cases-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}}
-@media(min-width:1280px){.cases-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}}
-
-.case-tile{position:relative;background:linear-gradient(160deg,#141a26 0%,#0e121a 100%);border:1px solid #1E2638;border-radius:16px;overflow:hidden;cursor:pointer;transition:transform .25s cubic-bezier(.2,.9,.3,1),border-color .25s,box-shadow .25s;aspect-ratio:1/1.05;display:flex;flex-direction:column}
-.case-tile:hover{transform:translateY(-4px);border-color:rgba(245,158,11,.55);box-shadow:0 18px 40px rgba(0,0,0,.5),0 0 30px rgba(245,158,11,.15)}
-.case-tile:hover .case-tile-art{transform:scale(1.08) rotate(-2deg)}
-.case-tile:hover .case-tile-glow{opacity:.85}
-
-.case-tile-art{position:relative;flex:1;display:flex;align-items:center;justify-content:center;padding:20px 16px 8px;transition:transform .35s cubic-bezier(.2,.9,.3,1)}
-.case-tile-art svg{width:75%;height:75%;max-width:170px;max-height:170px;filter:drop-shadow(0 12px 20px rgba(0,0,0,.6)) drop-shadow(0 0 22px rgba(251,191,36,.3))}
-.case-tile-glow{position:absolute;inset:-30% -30% auto -30%;height:180%;background:radial-gradient(circle at 50% 40%,rgba(251,191,36,.35) 0%,transparent 55%);opacity:.55;transition:opacity .3s;pointer-events:none;z-index:0}
-.case-tile.tile-gray .case-tile-glow{background:radial-gradient(circle at 50% 40%,rgba(156,163,175,.35) 0%,transparent 55%)}
-.case-tile.tile-blue .case-tile-glow{background:radial-gradient(circle at 50% 40%,rgba(96,165,250,.4) 0%,transparent 55%)}
-.case-tile.tile-violet .case-tile-glow{background:radial-gradient(circle at 50% 40%,rgba(168,85,247,.42) 0%,transparent 55%)}
-.case-tile.tile-gold .case-tile-glow{background:radial-gradient(circle at 50% 40%,rgba(251,191,36,.5) 0%,transparent 55%)}
-
-.case-tile-price{position:absolute;top:10px;right:10px;z-index:3;background:rgba(0,0,0,.75);border:1px solid rgba(245,158,11,.5);color:#fbbf24;font-weight:800;font-size:11px;padding:4px 9px;border-radius:8px;letter-spacing:.02em;backdrop-filter:blur(6px)}
-.case-tile-badge{position:absolute;top:10px;left:10px;z-index:3;background:rgba(245,158,11,.9);color:#000;font-weight:900;font-size:9px;padding:3px 7px;border-radius:6px;text-transform:uppercase;letter-spacing:.08em}
-
-.case-tile-footer{position:relative;z-index:2;padding:10px 12px 12px;background:linear-gradient(180deg,transparent,rgba(0,0,0,.55));border-top:1px solid rgba(255,255,255,.05);display:flex;align-items:center;gap:8px}
-.case-tile-footer-info{flex:1;min-width:0}
-.case-tile-footer-name{font-weight:800;font-size:13px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.case-tile-footer-desc{font-size:10px;color:#6b7280;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.case-tile-heart{width:26px;height:26px;flex-shrink:0;border-radius:8px;border:1px solid #2a3344;background:rgba(0,0,0,.4);color:#6b7280;display:flex;align-items:center;justify-content:center;font-size:11px;transition:.15s}
-.case-tile-heart:hover,.case-tile-heart.is-liked{color:#f87171;border-color:rgba(248,113,113,.5);background:rgba(248,113,113,.12)}
-
-.case-tile-drop-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;padding:6px;background:rgba(0,0,0,.35);border-top:1px solid rgba(255,255,255,.04)}
-.case-tile-drop-strip img{height:22px;width:100%;object-fit:contain;opacity:.85}
-
-.case-section-title{display:flex;align-items:center;gap:10px;margin-bottom:14px;margin-top:26px}
-.case-section-title h2{font-family:'Teko',sans-serif;font-size:24px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#fff}
-.case-section-title .line{flex:1;height:1px;background:linear-gradient(90deg,rgba(245,158,11,.35),transparent)}
-
-.case-details-odds{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px}
-.case-odds-cell{background:rgba(0,0,0,.35);border:1px solid #1E2638;border-radius:10px;padding:10px;text-align:center}
-.case-odds-cell .label{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#6b7280}
-.case-odds-cell .value{font-family:'Teko',sans-serif;font-size:22px;font-weight:700;line-height:1;margin-top:4px}
+.case-scroll-container{display:flex;gap:16px;overflow-x:auto;padding-bottom:16px;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}
+.case-scroll-container::-webkit-scrollbar{height:6px}
+.case-scroll-container::-webkit-scrollbar-thumb{background:#1E2638;border-radius:3px}
+.case-card{flex:0 0 280px;scroll-snap-align:start;background:linear-gradient(135deg,rgba(18,23,34,.85),rgba(13,17,25,.95));border:1px solid #1E2638;border-radius:16px;overflow:hidden;transition:.2s;cursor:pointer}
+.case-card:hover{border-color:rgba(245,158,11,.5);transform:translateY(-2px);box-shadow:0 12px 24px rgba(0,0,0,.3)}
+.case-card-preview{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:12px;background:rgba(0,0,0,.35);border-bottom:1px solid rgba(255,255,255,.05)}
+.case-card-preview img{height:36px;width:100%;object-fit:contain}
+.case-card-preview .price{font-size:9px;font-weight:800;color:#fbbf24;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.case-card-body{padding:14px;display:flex;flex-direction:column;gap:8px}
+.case-card-header{display:flex;align-items:center;gap:12px}
+.case-card-icon{width:48px;height:48px;flex-shrink:0}
+.case-card-info{flex:1;min-width:0}
+.case-card-name{font-weight:800;font-size:15px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.case-card-desc{font-size:10px;color:#6b7280;margin-top:2px}
+.case-card-price{font-weight:800;font-size:14px;color:#fbbf24;margin-top:4px}
+.case-card-actions{display:flex;gap:8px;margin-top:4px}
+.case-card-actions button{flex:1;padding:8px;border-radius:8px;font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:.05em;transition:.15s;border:1px solid}
+.btn-open-case{background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.5);color:#fbbf24}
+.btn-open-case:hover{background:#f59e0b;color:#000}
+.btn-details-case{background:rgba(255,255,255,.03);border-color:#1E2638;color:#d1d5db}
+.btn-details-case:hover{background:rgba(255,255,255,.1);color:#fff}
 </style>
 </head>
 <body class="min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
@@ -369,20 +354,14 @@ body[data-theme="violet"] #xpBar{background:linear-gradient(90deg,#8b5cf6,#ddd6f
 <div class="text-center max-w-3xl mx-auto mb-6">
 <span class="text-xs font-extrabold uppercase tracking-[.2em] text-amber-400">Колекційна механіка</span>
 <h1 class="font-heading mt-1 text-4xl sm:text-5xl font-extrabold uppercase tracking-wider text-white">Потужні кейси</h1>
-<p class="mt-3 text-sm text-gray-400">Чотири типи кейсів — різні ціни та шанси. Обери свій ризик.</p>
+<p class="mt-3 text-sm text-gray-400">Обери кейс — від бюджетного до легендарного. Кожен має власний пул скінів та шанси.</p>
 </div>
 
-<div class="case-section-title">
-<span class="text-amber-400 text-lg"><i class="fa-solid fa-star"></i></span>
-<h2>Всі кейси</h2>
-<div class="line"></div>
-</div>
-
-<div class="cases-grid" id="casesGrid">
+<div class="case-scroll-container" id="caseScroll">
 <!-- Картки кейсів рендеряться через JS -->
 </div>
 
-<div class="grid lg:grid-cols-2 gap-5 max-w-5xl mx-auto mt-10">
+<div class="grid lg:grid-cols-2 gap-5 max-w-5xl mx-auto mt-8">
 <div class="glass-panel rounded-2xl border border-amber-500/25 p-6">
 <h3 class="font-heading text-2xl font-extrabold uppercase text-white mb-4"><i class="fa-solid fa-percent mr-2 text-amber-400"></i>Шанси за типом</h3>
 <div class="space-y-2 text-xs">
@@ -394,7 +373,7 @@ body[data-theme="violet"] #xpBar{background:linear-gradient(90deg,#8b5cf6,#ddd6f
 <p class="mt-3 text-[10px] text-gray-500 text-center">Формат: звичайний / незвичайний / рідкісний / легендарний</p>
 </div>
 <div class="glass-panel rounded-2xl border border-brand-border p-6">
-<div class="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3">
+<div class="mt-4 rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3">
 <div class="flex items-center justify-between gap-3">
 <div>
 <p class="text-xs font-extrabold text-emerald-200"><i class="fa-solid fa-calendar-check mr-1"></i>Безкоштовний кейс</p>
@@ -750,14 +729,13 @@ body[data-theme="violet"] #xpBar{background:linear-gradient(90deg,#8b5cf6,#ddd6f
 <div id="caseReelModal" class="modal-backdrop fixed inset-0 z-[95] bg-black/90 backdrop-blur-md hidden items-center justify-center p-4"><div class="glass-panel rounded-3xl max-w-2xl w-full p-6 border border-amber-500/35 relative"><div class="text-center mb-4"><p class="text-xs font-extrabold uppercase tracking-[.22em] text-amber-400" id="caseReelTitle">Потужний кейс · 300 DC</p><h3 class="font-heading mt-1 text-3xl font-extrabold uppercase text-white">Крутимо…</h3></div><div class="case-reel-window"><div class="case-reel-track" id="caseReelTrack"></div><div class="case-reel-pointer"></div></div><p id="caseReelStatus" class="mt-4 text-center text-sm font-bold text-amber-300">Готуємось…</p><button id="caseReelBtn" onclick="startCaseReel()" class="mt-4 w-full py-3 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 text-black font-extrabold rounded-xl transition text-sm uppercase tracking-wider"><i class="fa-solid fa-play mr-2"></i>Почати обертання</button></div></div>
 
 <div id="caseDetailsModal" class="modal-backdrop fixed inset-0 z-[95] bg-black/90 backdrop-blur-md hidden items-center justify-center p-4">
-  <div class="glass-panel rounded-3xl max-w-6xl w-full p-6 border border-amber-500/35 relative max-h-[90vh] flex flex-col">
+  <div class="glass-panel rounded-3xl max-w-5xl w-full p-6 border border-amber-500/35 relative max-h-[88vh] flex flex-col">
     <button onclick="closeModal('caseDetailsModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
     <div class="mb-4 pr-10">
       <p class="text-xs font-extrabold uppercase tracking-[.22em] text-amber-400" id="caseDetailsHeader">Кейс</p>
       <h3 class="font-heading mt-1 text-3xl font-extrabold uppercase text-white" id="caseDetailsTitle">Всі предмети та шанси</h3>
       <p class="text-xs text-gray-500 mt-1">Шанси показано у відсотках для кожного предмета</p>
     </div>
-    <div class="case-details-odds" id="caseDetailsOdds"></div>
     <div id="caseDetailsGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 overflow-y-auto pr-1 flex-1"></div>
   </div>
 </div>
@@ -792,7 +770,11 @@ document.querySelectorAll('[data-nav]').forEach(el=>el.classList.toggle('active'
 localStorage.setItem(STORAGE.page,id);location.hash=id;
 document.getElementById('mobileMenu')?.classList.add('hidden');
 window.scrollTo({top:0,behavior:'smooth'});
-if(id==='case'){renderCaseTopDrops();updateFreeCaseBtn();renderCaseButtons();}
+if(id==='case'){
+  renderCaseTopDrops();updateFreeCaseBtn();renderCaseButtons();
+  const heroIcon=document.getElementById('caseHeroIcon');
+  if(heroIcon&&!heroIcon.dataset.filled){heroIcon.innerHTML=createCaseSVG('gold');heroIcon.dataset.filled='1'}
+}
 if(id==='tasks')renderGameHub();
 if(id==='profile'){renderGameHub();renderProfileInventory();renderAllTime();renderRecentAch();}
 if(id==='battle')resetCoinVisual();
@@ -834,7 +816,7 @@ let CS2_SKINS=[
 {id:20,name:"AWP | Wildfire",price:5200,img:"https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpot621FBRw7P7NYghD_tW1n4mOmPjjOr7VglRd4cJ5nqeW8ois2Qbj-0A-YGHzLdCccVZoZwvYr1G3kLrt0ZO5vJ2bzHdksnRx53fD30v33096y2vPmw/360fx360f",rarity:"Covert",rarityColor:"#eb4b4b"},
 {id:21,name:"AK-47 | Asiimov",price:1100,img:"https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpot7HxfDhjxszJemkV09u_mI-ImfbmNqjCnDBp68hyied3jNqi2wSy-hc9MDr0cdeccFU7ZVjY-Vfsxr3qg8O-v8udy3Ng7CV35yvemhax0xhEPLY9j8-qfA/360fx360f",rarity:"Covert",rarityColor:"#eb4b4b"},
 {id:22,name:"Glock-18 | Fade",price:8500,img:"https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgposbaqKAxl7PLKYQJH_uO1gb-Gw_alIITGnXBX7fp3i-vJ8Ij33wKxrhVuMW7wd9SWcAQ7ZAzYr1K2xb3rh8S6t5ibynE16HYl53rfnRbpgg/360fx360f",rarity:"Restricted",rarityColor:"#8847ff"},
-{id:23,name:"P250 | See Ya Later",price:420,img:"https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpopujwezhoys3BJQJH_uO1gb-Gw_alIITGnXBX7fp3i-vJ8Ij33wKxrhVuMW7wd9SWcAQ7ZAzYr1K2xb3rh8S6t5ibynE16HYl53rfnRbpgg/360fx360f",rarity:"Restricted",rarityColor:"#8847ff"}
+{id:23,name:"P250 | See Ya Later",price:420,img:"https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpopujwezhoys3BJQJH_uO1gb-Dg_alIITGnXBX7fp3i-vJ8Ij33wKxrhVuMW7wd9SWcAQ7ZAzYr1K2xb3rh8S6t5ibynE16HYl53rfnRbpgg/360fx360f",rarity:"Restricted",rarityColor:"#8847ff"}
 ];
 const CATEGORY_LABELS={Rifles:'Гвинтівки',Pistols:'Пістолети',SMGs:'ПП',Heavy:'Важка зброя',Knives:'Ножі',Gloves:'Рукавиці',Equipment:'Спорядження'};
 const CS2_SKINS_APIS=['/api/catalog/skins','https://bymykel.github.io/CSGO-API/api/en/skins.json','https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/skins.json'];
@@ -856,10 +838,66 @@ const CHANCE_K=0.45,CHANCE_POWER=1.05,CHANCE_MAX=60,CHANCE_MIN=0.25;
 
 /* v3.6: типи кейсів з УНІКАЛЬНИМИ пулами предметів */
 const CASE_TYPES={
-  budget:{id:'budget',name:'Бюджетний кейс',cost:100,theme:'gray',badge:'NEW',desc:'Дешево й сердито · малі ставки',priceRange:[10, 700],tierRanges:{common:[10,70],uncommon:[70,200],rare:[200,450],legendary:[450,700]},odds:[0.70,0.22,0.065,0.015]},
-  standard:{id:'standard',name:'Стандартний кейс',cost:300,theme:'blue',badge:'HOT',desc:'Баланс ціни й шансів',priceRange:[60, 3000],tierRanges:{common:[60,250],uncommon:[250,700],rare:[700,1800],legendary:[1800,3000]},odds:[0.65,0.25,0.08,0.02]},
-  premium:{id:'premium',name:'Преміум кейс',cost:1000,theme:'violet',badge:'',desc:'Більше шансів на рідкісне',priceRange:[300, 12000],tierRanges:{common:[300,900],uncommon:[900,2200],rare:[2200,5500],legendary:[5500,12000]},odds:[0.62,0.26,0.09,0.03]},
-  legendary:{id:'legendary',name:'Легендарний кейс',cost:5000,theme:'gold',badge:'TOP',desc:'Тільки ножі та топ-скіни',priceRange:[1200, 250000],tierRanges:{common:[1200,4500],uncommon:[4500,12000],rare:[12000,35000],legendary:[35000,250000]},odds:[0.60,0.27,0.10,0.03]}
+  budget:{
+    id:'budget',
+    name:'Бюджетний кейс',
+    cost:100,
+    theme:'gray',
+    desc:'Дешево й сердито · малі ставки',
+    priceRange:[10, 700],
+    tierRanges:{
+      common:    [10, 70],
+      uncommon:  [70, 200],
+      rare:      [200, 450],
+      legendary: [450, 700]
+    },
+    odds:[0.70, 0.22, 0.065, 0.015]
+  },
+  standard:{
+    id:'standard',
+    name:'Стандартний кейс',
+    cost:300,
+    theme:'blue',
+    desc:'Баланс ціни й шансів',
+    priceRange:[60, 3000],
+    tierRanges:{
+      common:    [60, 250],
+      uncommon:  [250, 700],
+      rare:      [700, 1800],
+      legendary: [1800, 3000]
+    },
+    odds:[0.65, 0.25, 0.08, 0.02]
+  },
+  premium:{
+    id:'premium',
+    name:'Преміум кейс',
+    cost:1000,
+    theme:'violet',
+    desc:'Більше шансів на рідкісне',
+    priceRange:[300, 12000],
+    tierRanges:{
+      common:    [300, 900],
+      uncommon:  [900, 2200],
+      rare:      [2200, 5500],
+      legendary: [5500, 12000]
+    },
+    odds:[0.62, 0.26, 0.09, 0.03]
+  },
+  legendary:{
+    id:'legendary',
+    name:'Легендарний кейс',
+    cost:5000,
+    theme:'gold',
+    desc:'Тільки ножі та топ-скіни',
+    priceRange:[1200, 250000],
+    tierRanges:{
+      common:    [1200, 4500],
+      uncommon:  [4500, 12000],
+      rare:      [12000, 35000],
+      legendary: [35000, 250000]
+    },
+    odds:[0.60, 0.27, 0.10, 0.03]
+  }
 };
 
 function createCaseSVG(theme){
@@ -871,251 +909,112 @@ function createCaseSVG(theme){
   };
   const t=themes[theme]||themes.gold;
   const uid=theme+'_'+Math.random().toString(36).slice(2,7);
-  return `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="body-${uid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${t.c1}"/><stop offset="1" stop-color="${t.c2}"/></linearGradient><linearGradient id="lid-${uid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${t.accent}"/><stop offset="1" stop-color="${t.c1}"/></linearGradient><radialGradient id="glow-${uid}" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="${t.accent}" stop-opacity=".85"/><stop offset="1" stop-color="${t.accent}" stop-opacity="0"/></radialGradient></defs><circle cx="60" cy="62" r="52" fill="url(#glow-${uid})" opacity=".55"/><rect x="22" y="48" width="76" height="52" rx="8" fill="url(#body-${uid})" stroke="${t.accent}" stroke-width="2"/><path d="M18 48 Q18 34 32 34 L88 34 Q102 34 102 48 Z" fill="url(#lid-${uid})" stroke="${t.accent}" stroke-width="2"/><rect x="52" y="60" width="16" height="20" rx="3" fill="#0b0e14" stroke="${t.accent}" stroke-width="1.5"/><circle cx="60" cy="68" r="2.5" fill="${t.accent}"/><rect x="58.5" y="70" width="3" height="8" rx="1.5" fill="${t.accent}"/><circle cx="30" cy="90" r="2.5" fill="${t.accent}"/><circle cx="90" cy="90" r="2.5" fill="${t.accent}"/><circle cx="30" cy="58" r="2" fill="${t.accent}" opacity=".7"/><circle cx="90" cy="58" r="2" fill="${t.accent}" opacity=".7"/><path d="M28 42 L92 42" stroke="rgba(255,255,255,.25)" stroke-width="2" stroke-linecap="round"/></svg>`;
+  return `
+<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" class="w-full h-full">
+  <defs>
+    <linearGradient id="body-${uid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${t.c1}"/><stop offset="1" stop-color="${t.c2}"/>
+    </linearGradient>
+    <linearGradient id="lid-${uid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${t.accent}"/><stop offset="1" stop-color="${t.c1}"/>
+    </linearGradient>
+    <radialGradient id="glow-${uid}" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="${t.accent}" stop-opacity=".85"/>
+      <stop offset="1" stop-color="${t.accent}" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="62" r="52" fill="url(#glow-${uid})" opacity=".55"/>
+  <rect x="22" y="48" width="76" height="52" rx="8" fill="url(#body-${uid})" stroke="${t.accent}" stroke-width="2"/>
+  <path d="M18 48 Q18 34 32 34 L88 34 Q102 34 102 48 Z" fill="url(#lid-${uid})" stroke="${t.accent}" stroke-width="2"/>
+  <rect x="52" y="60" width="16" height="20" rx="3" fill="#0b0e14" stroke="${t.accent}" stroke-width="1.5"/>
+  <circle cx="60" cy="68" r="2.5" fill="${t.accent}"/>
+  <rect x="58.5" y="70" width="3" height="8" rx="1.5" fill="${t.accent}"/>
+  <circle cx="30" cy="90" r="2.5" fill="${t.accent}"/>
+  <circle cx="90" cy="90" r="2.5" fill="${t.accent}"/>
+  <circle cx="30" cy="58" r="2" fill="${t.accent}" opacity=".7"/>
+  <circle cx="90" cy="58" r="2" fill="${t.accent}" opacity=".7"/>
+  <path d="M28 42 L92 42" stroke="rgba(255,255,255,.25)" stroke-width="2" stroke-linecap="round"/>
+</svg>`;
 }
 
-const TASK_POOL = [
-{id:'rolls_3',title:'Зроби 3 ролли',goal:3,reward:100,icon:'fa-dice',value:s=>s.rolls},
-{id:'wins_3',title:'Переможи 3 рази',goal:3,reward:320,icon:'fa-trophy',value:s=>s.wins},
-{id:'cases_3',title:'Відкрий 3 кейси',goal:3,reward:380,icon:'fa-box-open',value:s=>s.cases},
-{id:'cases_5',title:'Відкрий 5 кейсів',goal:5,reward:600,icon:'fa-box-open',value:s=>s.cases},
-{id:'sell_3',title:'Продай 3 предмети',goal:3,reward:260,icon:'fa-sack-dollar',value:s=>s.sells},
-{id:'sell_5',title:'Продай 5 предметів',goal:5,reward:420,icon:'fa-sack-dollar',value:s=>s.sells},
-{id:'battle_win_1',title:'Переможи в бою',goal:1,reward:320,icon:'fa-swords',value:s=>s.battleWins},
-{id:'contract_1',title:'Уклади 1 контракт',goal:1,reward:280,icon:'fa-boxes-packing',value:s=>s.contracts},
-{id:'multi_3',title:'Мульти-апгрейд 3 рази',goal:3,reward:360,icon:'fa-layer-group',value:s=>s.multiInputs},
-{id:'bigwin_2000',title:'Виграй предмет від 2 000 DC',goal:2000,reward:420,icon:'fa-gem',value:s=>s.bestWinValue},
-{id:'streak_3',title:'Серія з 3 перемог',goal:3,reward:470,icon:'fa-fire',value:s=>s.bestStreak},
-{id:'streak_5',title:'Серія з 5 перемог',goal:5,reward:950,icon:'fa-fire',value:s=>s.bestStreak}
-];
-const DAILY_TASK_COUNT=5;
-function seededRandom(seed){let h=2166136261;for(let i=0;i<seed.length;i++){h^=seed.charCodeAt(i);h=Math.imul(h,16777619)}return()=>{h=Math.imul(h^(h>>>15),2246822507);h=Math.imul(h^(h>>>13),3266489909);h=(h^(h>>>16))>>>0;return h/4294967296}}
-function getDailyTasks(){const date=getTodayKey();const rng=seededRandom(date+'|potuzhno');const pool=[...TASK_POOL];for(let i=pool.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]]}return pool.slice(0,DAILY_TASK_COUNT)}
-
-const WEEKLY_TASK_POOL=[
-{id:'w_rolls_20',title:'20 роллів за тиждень',goal:20,reward:800,icon:'fa-dice',value:s=>s.rolls},
-{id:'w_wins_10',title:'10 перемог за тиждень',goal:10,reward:1200,icon:'fa-trophy',value:s=>s.wins},
-{id:'w_cases_10',title:'10 кейсів за тиждень',goal:10,reward:1500,icon:'fa-box-open',value:s=>s.cases},
-{id:'w_battles_5',title:'5 боїв за тиждень',goal:5,reward:900,icon:'fa-swords',value:s=>s.battles}
-];
-const WEEKLY_TASK_COUNT=3;
-function getWeekKey(){const now=new Date();const day=now.getDay()||7;const thu=new Date(now);thu.setDate(now.getDate()-day+4);const y=thu.getFullYear();const start=new Date(y,0,1);const w=Math.ceil(((thu-start)/86400000+1)/7);return`${y}-W${String(w).padStart(2,'0')}`}
-function getWeeklyTasks(){const key=getWeekKey();const rng=seededRandom(key+'|potuzhno-w');const pool=[...WEEKLY_TASK_POOL];for(let i=pool.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]]}return pool.slice(0,WEEKLY_TASK_COUNT)}
-
-const ACHIEVEMENT_DEFINITIONS=[
-{id:'first-roll',title:'Перший крок',description:'Зроби перший ролл',reward:100,icon:'fa-flag-checkered',met:()=>gameState.stats.rounds>=1},
-{id:'first-win',title:'Є контакт',description:'Здобудь першу перемогу',reward:180,icon:'fa-trophy',met:()=>gameState.stats.wins>=1},
-{id:'streak-three',title:'На потужному ходу',description:'3 перемоги поспіль',reward:350,icon:'fa-fire',met:()=>gameState.stats.bestStreak>=3},
-{id:'high-value',title:'Велика ціль',description:'Виграй предмет від 10 000 DC',reward:500,icon:'fa-gem',met:()=>gameState.stats.bestValue>=10000},
-{id:'case-opener',title:'Кейсоман',description:'Відкрий 3 кейси',reward:250,icon:'fa-boxes-stacked',met:()=>gameState.stats.cases>=3},
-{id:'seller',title:'Торговець',description:'Продай 5 предметів',reward:300,icon:'fa-sack-dollar',met:()=>gameState.stats.sells>=5},
-{id:'fighter',title:'Боєць',description:'Виграй 3 бої',reward:400,icon:'fa-swords',met:()=>gameState.stats.battles>=3},
-{id:'contractor',title:'Контрактер',description:'Уклади 3 контракти',reward:350,icon:'fa-boxes-packing',met:()=>gameState.stats.contracts>=3},
-{id:'collector-10',title:'Колекціонер',description:'10 предметів в інвентарі',reward:500,icon:'fa-boxes-stacked',met:()=>userInventory.length>=10},
-{id:'case-10',title:'Кейсоманія',description:'10 кейсів за весь час',reward:800,icon:'fa-box-open',met:()=>(gameState.allTime?.cases||0)>=10},
-{id:'battle-10',title:'Чемпіон боїв',description:'10 перемог в боях',reward:1000,icon:'fa-swords',met:()=>(gameState.allTime?.battleWins||0)>=10},
-{id:'legendary',title:'Мисливець за легендами',description:'Отримай легендарний предмет з кейсу',reward:2000,icon:'fa-gem',met:()=>(gameState.allTime?.legendaryDrops||0)>=1},
-{id:'royale-1',title:'Король арени',description:'Переможи в Battle Royale',reward:1500,icon:'fa-crown',met:()=>(gameState.allTime?.royaleWins||0)>=1}
-];
-const COLLECTION_DEFINITIONS=[
-{id:'snipers',title:'Точний постріл',description:'Збери 5 різних AWP',items:['AWP | Atheris','AWP | Asiimov','AWP | Neo-Noir','AWP | Wildfire','AWP | Dragon Lore'],reward:{dc:15000,skin:{id:'excl-awp',name:'★ AWP | Paragon (Exclusive)',price:35000,img:'',rarity:'Extraordinary',rarityColor:'#eb4b4b'}}},
-{id:'rifles',title:'Основний склад',description:'Збери 5 гвинтівок',items:['AK-47 | Redline','AK-47 | Case Hardened','M4A1-S | Printstream','M4A4 | Howl','AK-47 | Asiimov'],reward:{dc:12000,skin:{id:'excl-ak',name:'★ AK-47 | Prime (Exclusive)',price:28000,img:'',rarity:'Extraordinary',rarityColor:'#eb4b4b'}}},
-{id:'pistols',title:'Другий шанс',description:'Збери 5 пістолетів',items:['Glock-18 | Water Elemental','USP-S | Kill Confirmed','Desert Eagle | Printstream','Glock-18 | Fade','P250 | See Ya Later'],reward:{dc:8000,skin:{id:'excl-deagle',name:'★ Desert Eagle | Crown (Exclusive)',price:15000,img:'',rarity:'Extraordinary',rarityColor:'#eb4b4b'}}}
-];
-const MOCK_LEADERBOARD=[{name:'sabb_s1',xp:14250},{name:'zheksve1',xp:11800},{name:'argehabeats',xp:9640},{name:'Bohdan_47',xp:7320},{name:'Voxxa',xp:5810},{name:'m0rsik',xp:4230}];
-const AVATAR_URL='https://avatars.akamai.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb_full.jpg';
-
-function formatCredits(v){return`${Math.max(0,Math.round(Number(v)||0)).toLocaleString('uk-UA')} DC`}
-function escapeHtml(v){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
-
-function createDefaultDaily(){return{date:'',rolls:0,wins:0,cases:0,pistolWins:0,rifleWins:0,sniperWins:0,smgWins:0,heavyWins:0,sells:0,sellValue:0,battles:0,battleWins:0,contracts:0,creditInputs:0,multiInputs:0,targetValue:0,bestWinValue:0,bestStreak:0,claimed:[]}}
-function createDefaultWeekly(){return{week:'',rolls:0,wins:0,cases:0,battles:0,contracts:0,sells:0,bestWinValue:0,bestStreak:0,claimed:[]}}
-function createDefaultAllTime(){return{rounds:0,wins:0,cases:0,battles:0,battleWins:0,contracts:0,sells:0,sellValue:0,freeCases:0,biggestWin:0,legendaryDrops:0,multiInputs:0,creditInputs:0,royaleWins:0}}
-function createDefaultGameState(){return{xp:0,theme:'amber',prestige:0,stats:{rounds:0,wins:0,currentStreak:0,bestStreak:0,bestValue:0,cases:0,pistolWins:0,sells:0,battles:0,battleWins:0,contracts:0},daily:createDefaultDaily(),weekly:createDefaultWeekly(),allTime:createDefaultAllTime(),achievements:{},favorites:[],rounds:[],collectionRewards:{},likedCases:[]}}
-function getTodayKey(){const n=new Date();const o=n.getTimezoneOffset()*60000;return new Date(n.getTime()-o).toISOString().slice(0,10)}
-function ensureDailyState(){if(!gameState)gameState=createDefaultGameState();if(gameState.daily.date!==getTodayKey()){gameState.daily=createDefaultDaily();gameState.daily.date=getTodayKey()}}
-function ensureWeeklyState(){if(!gameState)gameState=createDefaultGameState();if(gameState.weekly.week!==getWeekKey()){gameState.weekly=createDefaultWeekly();gameState.weekly.week=getWeekKey()}}
-function loadGameState(){const d=createDefaultGameState();try{const s=JSON.parse(localStorage.getItem(STORAGE.game)||'null');gameState=s?{...d,...s,stats:{...d.stats,...(s.stats||{})},daily:{...createDefaultDaily(),...(s.daily||{})},weekly:{...createDefaultWeekly(),...(s.weekly||{})},allTime:{...createDefaultAllTime(),...(s.allTime||{})},achievements:s.achievements||{},favorites:Array.isArray(s.favorites)?s.favorites.map(String):[],rounds:Array.isArray(s.rounds)?s.rounds.slice(0,ROUND_HISTORY_LIMIT):[],collectionRewards:s.collectionRewards||{},likedCases:Array.isArray(s.likedCases)?s.likedCases:[]}:d}catch{gameState=d}ensureDailyState();ensureWeeklyState()}
-function getXpMultiplier(){return 1+(gameState?.prestige||0)*.10}
-function getPlayerLevel(){return Math.floor((gameState?.xp||0)/750)+1}
-function getLevelProgress(){const xp=gameState?.xp||0;return{current:xp%750,total:750,percent:((xp%750)/750)*100}}
-function addXp(v){if(!gameState)return;gameState.xp=Math.max(0,gameState.xp+Math.round((v||0)*getXpMultiplier()))}
-
-function loadAccount(){try{const r=localStorage.getItem(STORAGE.account);if(r)account=JSON.parse(r)}catch{}if(!account){account={nick:'Гравець_'+Math.random().toString(36).slice(2,6).toUpperCase(),createdAt:Date.now()};localStorage.setItem(STORAGE.account,JSON.stringify(account))}if(currentUser?.steamId&&!account.steamId){account.steamId=currentUser.steamId;account.nick=`Steam_${currentUser.steamId.slice(-4)}`;localStorage.setItem(STORAGE.account,JSON.stringify(account))}}
-function saveAccountNick(){const i=document.getElementById('accountNickInput');const nick=String(i.value||'').trim().slice(0,24);if(!nick){showToast('Введи нікнейм','warn');return}account.nick=nick;localStorage.setItem(STORAGE.account,JSON.stringify(account));if(currentUser)currentUser.name=nick;updateAccountUI();saveState();renderGameHub();showToast('Нікнейм збережено','success')}
-function updateAccountUI(){const n=document.getElementById('profileName');if(n)n.textContent=account?.nick||'Гість';const i=document.getElementById('accountNickInput');if(i&&!i.value)i.value=account?.nick||'';const s=document.getElementById('accountSteamId');if(s)s.textContent=currentUser?.steamId||'не підключено';const x=document.getElementById('accountXp');if(x)x.textContent=String(gameState?.xp||0);const lv=document.getElementById('accountLevel');if(lv)lv.textContent=String(getPlayerLevel());updatePrestigeUI()}
-function updatePrestigeUI(){const p=gameState?.prestige||0;const badge=document.getElementById('prestigeBadge');const lbl=document.getElementById('prestigeLevelLabel');if(badge&&lbl){if(p>0){badge.classList.remove('hidden');lbl.textContent=`P${p}`}else badge.classList.add('hidden')}const multi=document.getElementById('xpMultiplierLabel');if(multi)multi.textContent=p>0?`(x${getXpMultiplier().toFixed(2)})`:'';const cl=document.getElementById('prestigeCurLevel');if(cl)cl.textContent=String(getPlayerLevel());const cp=document.getElementById('prestigeCurPrestige');if(cp)cp.textContent=`P${p}`;const btn=document.getElementById('prestigeConfirmBtn');if(btn)btn.disabled=getPlayerLevel()<10;const pBtn=document.getElementById('prestigeBtn');if(pBtn)pBtn.disabled=getPlayerLevel()<10}
-
-function getSkinPreviewType(name){const v=String(name||'').toLowerCase();if(/(knife|bayonet|karambit|daggers|falchion|bowie|butterfly|navaja|kukri|talon|stiletto|ursus|nomad|paracord|skeleton)/.test(v))return'KNIFE';if(/glove|wraps|hydra/.test(v))return'GLOVES';if(/(awp|ssg 08|g3sg1|scar-20)/.test(v))return'SNIPER';if(/(ak-47|m4a|m4a1|galil|famas|aug|sg 553)/.test(v))return'RIFLE';if(/(glock|usp|p2000|deagle|revolver|tec-9|five-seven|cz75|dual berettas|p250)/.test(v))return'PISTOL';if(/(mp9|mac-10|ump-45|p90|mp7|mp5)/.test(v))return'SMG';return'CS2'}
-function createSkinPreview(name){
-const title=String(name||'CS2 Skin');const seed=[...title].reduce((t,c)=>t+c.charCodeAt(0),0);
-const palettes=[['#f59e0b','#7c2d12'],['#38bdf8','#1d4ed8'],['#f472b6','#831843'],['#a78bfa','#4c1d95'],['#34d399','#065f46'],['#fb7185','#9f1239']];
-const[bright,dark]=palettes[seed%palettes.length];const type=getSkinPreviewType(title);
-const design=title.includes('|')?title.split('|').slice(1).join('|').trim():title;
-const glyph=type==='KNIFE'?'◆':type==='GLOVES'?'✦':type==='SNIPER'?'◎':type==='RIFLE'?'▰':type==='PISTOL'?'◖':type==='SMG'?'▱':'✹';
-const safe=String(design).slice(0,20).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&apos;','"':'&quot;'}[c]));
-const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${bright}"/><stop offset="1" stop-color="${dark}"/></linearGradient></defs><rect width="320" height="200" rx="22" fill="#111722"/><path d="M-20 175L135 20 340 76 340 220H-20z" fill="url(#g)" opacity=".92"/><text x="32" y="116" fill="#fff" font-family="Arial, sans-serif" font-size="66" font-weight="900">${glyph}</text><text x="32" y="151" fill="#fff" font-family="Arial, sans-serif" font-size="28" font-weight="800">${type}</text><text x="32" y="177" fill="#fff" fill-opacity=".82" font-family="Arial, sans-serif" font-size="16" font-weight="700">${safe}</text></svg>`;
-return`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`}
-function useImageFallback(image){if(!image)return;image.src=createSkinPreview(image.dataset.skinName||image.alt||'CS2 Skin');image.classList.add('image-skeleton','fallback-skin')}
-function setImageSource(image,source,skinName='',skinId=''){if(!image)return;image.classList.remove('image-skeleton','fallback-skin');image.dataset.skinName=skinName||image.alt||'CS2 Skin';image.dataset.skinId=skinId?String(skinId):'';image.src=source||createSkinPreview(image.dataset.skinName)}
-function getSkinKey(s){return String(s?.sourceSkinId||s?.id||'')}
-function isUsableSkin(s){return Boolean(s&&getSkinKey(s))}
-function markSkinUnavailable(id){const k=String(id||'');if(!k)return;unavailableSkinIds.add(k);CS2_SKINS=CS2_SKINS.filter(s=>getSkinKey(s)!==k);filteredSkins=filteredSkins.filter(s=>getSkinKey(s)!==k)}
-function verifySkinImage(s){if(!isUsableSkin(s))return Promise.resolve(false);if(!s.img)return Promise.resolve(true);return new Promise(r=>{const p=new Image();const f=ok=>{p.onload=null;p.onerror=null;r(ok)};p.onload=()=>f(true);p.onerror=()=>f(false);p.src=s.img})}
-function handleSkinImageError(image,location='card'){if(image){image.src=createSkinPreview(image.dataset.skinName||image.alt||'CS2 Skin');image.classList.add('image-skeleton','fallback-skin')}}
-
-function makeDemoItem(skin,suffix=''){const wear=skin.wear&&WEAR_TIERS.find(w=>w.code===skin.wear.code)?skin.wear:rollWear();const basePrice=Number(skin.basePrice??skin.price)||0;return{...skin,sourceSkinId:skin.sourceSkinId||skin.id,id:`demo-${Date.now()}-${Math.random().toString(36).slice(2,8)}${suffix}`,basePrice,wear,price:priceWithWear(basePrice,wear),virtual:true,addedAt:Date.now()}}
-function createStarterInventory(){const p=[CS2_SKINS[5],CS2_SKINS[6],CS2_SKINS[9],CS2_SKINS[12],CS2_SKINS[13]].filter(Boolean);return p.map((s,i)=>makeDemoItem(s,`-${i}`))}
-
-const CANVAS_SIZE=260;let canvasCtx=null;
-function initCanvas(){const c=document.getElementById('upgradeCanvas');if(!c)return;const dpr=Math.min(window.devicePixelRatio||1,2);c.width=CANVAS_SIZE*dpr;c.height=CANVAS_SIZE*dpr;c.style.width=CANVAS_SIZE+'px';c.style.height=CANVAS_SIZE+'px';canvasCtx=c.getContext('2d');canvasCtx.setTransform(dpr,0,0,dpr,0,0)}
-function renderCanvas(chancePercent,pointerAngle=0){
-if(!canvasCtx)return;
-const ctx=canvasCtx,size=CANVAS_SIZE,cx=size/2,cy=size/2,radius=size/2-16;
-ctx.clearRect(0,0,size,size);
-ctx.beginPath();ctx.arc(cx,cy,radius,0,Math.PI*2);ctx.lineWidth=16;ctx.strokeStyle='#121722';ctx.stroke();
-if(chancePercent>0){
-const r=(Math.min(chancePercent,100)/100)*Math.PI*2,st=-Math.PI/2;
-ctx.beginPath();
-if(rollMode==='under')ctx.arc(cx,cy,radius,st,st+r);else ctx.arc(cx,cy,radius,st-r,st);
-ctx.lineWidth=16;ctx.lineCap='round';
-const g=ctx.createLinearGradient(0,0,size,size);g.addColorStop(0,'#F59E0B');g.addColorStop(1,'#FCD34D');ctx.strokeStyle=g;ctx.stroke();
+function getCaseItems(caseType){
+  const cfg = CASE_TYPES[caseType];
+  if(!cfg) return [];
+  const [minP, maxP] = cfg.priceRange;
+  return CS2_SKINS.filter(s => isUsableSkin(s) && (s.price||0) >= minP && (s.price||0) <= maxP).sort((a,b) => (b.price||0) - (a.price||0));
 }
-if(isRolling||pointerAngle!==0){
-const a=-Math.PI/2+pointerAngle,px=cx+Math.cos(a)*radius,py=cy+Math.sin(a)*radius;
-ctx.beginPath();ctx.arc(px,py,7,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.lineWidth=2;ctx.strokeStyle='#F59E0B';ctx.stroke();
-}}
 
-function saveState(){if(currentUser){if(currentUser.steamId)localStorage.setItem(STORAGE.steamId,currentUser.steamId);localStorage.setItem(STORAGE.balance,String(currentUser.balance))}localStorage.setItem(STORAGE.inventory,JSON.stringify(userInventory));localStorage.setItem(STORAGE.started,'1');if(gameState)localStorage.setItem(STORAGE.game,JSON.stringify(gameState));if(account)localStorage.setItem(STORAGE.account,JSON.stringify(account))}
-function loadState(){
-loadGameState();loadAccount();
-const sid=localStorage.getItem(STORAGE.steamId);
-const started=localStorage.getItem(STORAGE.started)==='1';
-const bal=parseFloat(localStorage.getItem(STORAGE.balance)||String(DEMO_STARTING_BALANCE))||DEMO_STARTING_BALANCE;
-soundEnabled=localStorage.getItem(STORAGE.sound)!=='off';updateSoundUI();
-try{userInventory=JSON.parse(localStorage.getItem(STORAGE.inventory)||'[]')}catch{userInventory=[]}
-userInventory=userInventory.map(it=>{if(!it)return null;const wear=it.wear&&WEAR_TIERS.find(w=>w.code===it.wear.code)?it.wear:WEAR_TIERS[2];const bp=Number(it.basePrice??it.price??0);return{...it,wear,basePrice:bp,price:priceWithWear(bp,wear),addedAt:it.addedAt||Date.now()}}).filter(Boolean);
-currentUser={steamId:sid||null,name:account?.nick||'Гість',balance:bal,avatar:AVATAR_URL};
-if(!started){currentUser.balance=DEMO_STARTING_BALANCE;userInventory=createStarterInventory();saveState()}
-applyLoggedInUI();updateAccountUI();renderGameHub();updateGiftButtonUI();updateThemeMenuState();updateAvatarBadge()
+function getItemTier(item, caseType){
+  const cfg = CASE_TYPES[caseType];
+  if(!cfg) return null;
+  const p = item.price || 0;
+  for(const key of ['legendary','rare','uncommon','common']){
+    const [min, max] = cfg.tierRanges[key];
+    if(p >= min && p <= max) return key;
+  }
+  return null;
 }
-function applyLoggedInUI(){if(!currentUser)return;document.getElementById('userBalanceBox').classList.remove('hidden');const sb=document.getElementById('steamAuthBtn'),ab=document.getElementById('userAvatarBox');if(currentUser.steamId){sb.classList.add('hidden');ab.classList.remove('hidden');setImageSource(document.getElementById('userAvatarImg'),currentUser.avatar,currentUser.name||'Steam')}else{sb.classList.remove('hidden');ab.classList.add('hidden')}updateBalanceUI();if(gameState)renderProfileProgress()}
-function updateBalanceUI(){if(currentUser)document.getElementById('userBalance').textContent=formatCredits(currentUser.balance)}
-function updateAvatarBadge(){const b=document.getElementById('avatarBadge');if(!b)return;const n=userInventory.length;if(n>0){b.textContent=n>99?'99+':String(n);b.classList.remove('hidden')}else b.classList.add('hidden')}
-function updateGiftButtonUI(){const btn=document.getElementById('giftBtn'),timer=document.getElementById('giftTimer'),icon=document.getElementById('giftIcon');if(!btn||!timer)return;const last=parseInt(localStorage.getItem(STORAGE.bonusAt)||'0',10);const cd=24*60*60*1000;const left=cd-(Date.now()-last);if(left>0&&left<cd){btn.classList.add('gift-cooldown');btn.classList.remove('bg-amber-500','hover:bg-amber-400','text-black');btn.classList.add('bg-gray-800','text-gray-500','border','border-gray-700');icon.className='fa-solid fa-clock text-xs';timer.classList.remove('hidden');const totalMin=Math.max(1,Math.ceil(left/60000));const h=Math.floor(totalMin/60),m=totalMin%60;timer.textContent=h>0?`${h}г${m>0?' '+m+'хв':''}`:`${m}хв`}else{btn.classList.remove('gift-cooldown');btn.classList.add('bg-amber-500','hover:bg-amber-400','text-black');btn.classList.remove('bg-gray-800','text-gray-500','border','border-gray-700');icon.className='fa-solid fa-gift text-xs';timer.classList.add('hidden')}}
-setInterval(()=>{try{updateGiftButtonUI();updateFreeCaseBtn()}catch{}},30000);
 
-function normalizeSkinName(name){return String(name||'').replace(/^★\s*/,'').replace(/^StatTrak™\s*/i,'').replace(/\s*\([^)]*\)\s*$/,'').replace(/\s+/g,' ').trim().toLowerCase()}
-function getOwnedSkinNames(){return new Set(userInventory.map(it=>normalizeSkinName(it?.name)))}
-function getCollectionProgress(collection){const total=collection.items.length;const owned=getOwnedSkinNames();let count=0;for(const name of collection.items){const n=normalizeSkinName(name);if(owned.has(n))count++}count=Math.min(count,total);return{count,total,complete:count>=total}}
+function getItemDropChance(item, caseType){
+  const cfg = CASE_TYPES[caseType];
+  if(!cfg) return 0;
+  const tier = getItemTier(item, caseType);
+  if(!tier) return 0;
+  const [tMin, tMax] = cfg.tierRanges[tier];
+  const tierItems = CS2_SKINS.filter(s => {
+    if(!isUsableSkin(s)) return false;
+    const p = s.price || 0;
+    return p >= tMin && p <= tMax;
+  }).sort((a,b) => (a.price||0) - (b.price||0));
+  const N = tierItems.length;
+  if(!N) return 0;
+  const idx = tierItems.findIndex(s => getSkinKey(s) === getSkinKey(item));
+  if(idx === -1) return 0;
+  const weight = N - idx;
+  const totalWeight = N * (N + 1) / 2;
+  const tierIdx = ['common','uncommon','rare','legendary'].indexOf(tier);
+  const tierChance = cfg.odds[tierIdx];
+  return tierChance * (weight / totalWeight) * 100;
+}
 
-function renderProfileProgress(){if(!gameState)return;const level=getPlayerLevel(),p=getLevelProgress(),s=gameState.stats;const wr=s.rounds?Math.round((s.wins/s.rounds)*100):0;const name=account?.nick||currentUser?.name||'Гість';const n=document.getElementById('profileName');if(n)n.textContent=name;const pl=document.getElementById('profileLevel');if(pl)pl.textContent=`LVL ${level}`;const xt=document.getElementById('xpText');if(xt)xt.textContent=`${p.current.toLocaleString('uk-UA')} / ${p.total} XP`;const xb=document.getElementById('xpBar');if(xb)xb.style.width=`${p.percent}%`;const sr=document.getElementById('statRounds');if(sr)sr.textContent=String(s.rounds);const sw=document.getElementById('statWinRate');if(sw)sw.textContent=`${wr}%`;const ss=document.getElementById('statStreak');if(ss)ss.textContent=String(s.currentStreak);const sb=document.getElementById('statBestValue');if(sb)sb.textContent=formatCredits(s.bestValue)}
-
-function renderDailyTasks(){if(!gameState)return;ensureDailyState();const h=document.getElementById('dailyTasks');if(!h)return;const tasks=getDailyTasks();const doneCount=tasks.filter(t=>gameState.daily.claimed.includes(t.id)).length;h.innerHTML=tasks.map(t=>{const raw=Number(t.value(gameState.daily))||0;const prog=Math.min(t.goal,Math.max(0,raw));const done=prog>=t.goal;const claimed=gameState.daily.claimed.includes(t.id);const pct=Math.round((prog/t.goal)*100);const btn=claimed?'<span class="rounded-lg bg-green-500/15 px-2 py-1 text-[10px] font-extrabold uppercase text-green-300">Готово</span>':done?`<button onclick="claimDailyTask('${t.id}')" class="rounded-lg bg-amber-500 px-2 py-1 text-[10px] font-extrabold uppercase text-black hover:bg-amber-400">Забрати</button>`:`<span class="text-[11px] font-bold text-amber-300">+${formatCredits(t.reward)}</span>`;return`<div class="rounded-xl border ${claimed?'border-green-500/25 bg-green-500/5':done?'border-amber-500/40 bg-amber-500/5':'border-gray-800 bg-black/20'} p-3"><div class="flex items-center justify-between gap-2"><p class="min-w-0 truncate text-xs font-bold text-gray-200"><i class="fa-solid ${t.icon} mr-1.5 text-amber-400"></i>${t.title}</p>${btn}</div><div class="mt-2 flex items-center gap-2"><div class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-800"><div class="h-full rounded-full ${claimed?'bg-green-400':'bg-amber-400'}" style="width:${pct}%"></div></div><span class="shrink-0 text-right text-[10px] font-bold text-gray-400">${prog} / ${t.goal}</span></div></div>`}).join('');const summary=document.createElement('div');summary.className='col-span-full mt-2 flex items-center justify-between rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-xs';summary.innerHTML=`<span class="font-bold text-amber-200"><i class="fa-solid fa-list-check mr-1"></i>Виконано ${doneCount} / ${tasks.length}</span><span class="text-gray-400">Скидання о 00:00</span>`;h.appendChild(summary)}
-function claimDailyTask(id){if(!gameState||!currentUser)return;ensureDailyState();const t=getDailyTasks().find(x=>x.id===id);if(!t)return;if(gameState.daily.claimed.includes(t.id))return;if((Number(t.value(gameState.daily))||0)<t.goal)return;gameState.daily.claimed.push(t.id);currentUser.balance+=t.reward;addXp(40);updateBalanceUI();saveState();renderGameHub();checkAchievements();soundCoin();showToast(`Завдання виконано: +${formatCredits(t.reward)}`,'success')}
-
-function renderWeeklyTasks(){if(!gameState)return;ensureWeeklyState();const h=document.getElementById('weeklyTasks');if(!h)return;const tasks=getWeeklyTasks();const doneCount=tasks.filter(t=>gameState.weekly.claimed.includes(t.id)).length;h.innerHTML=tasks.map(t=>{const raw=Number(t.value(gameState.weekly))||0;const prog=Math.min(t.goal,Math.max(0,raw));const done=prog>=t.goal;const claimed=gameState.weekly.claimed.includes(t.id);const pct=Math.round((prog/t.goal)*100);const btn=claimed?'<span class="rounded-lg bg-green-500/15 px-2 py-1 text-[10px] font-extrabold uppercase text-green-300">Готово</span>':done?`<button onclick="claimWeeklyTask('${t.id}')" class="rounded-lg bg-violet-500 px-2 py-1 text-[10px] font-extrabold uppercase text-black hover:bg-violet-400">Забрати</button>`:`<span class="text-[11px] font-bold text-violet-300">+${formatCredits(t.reward)}</span>`;return`<div class="rounded-xl border ${claimed?'border-green-500/25 bg-green-500/5':done?'border-violet-500/40 bg-violet-500/5':'border-gray-800 bg-black/20'} p-3"><div class="flex items-center justify-between gap-2"><p class="min-w-0 truncate text-xs font-bold text-gray-200"><i class="fa-solid ${t.icon} mr-1.5 text-violet-400"></i>${t.title}</p>${btn}</div><div class="mt-2 flex items-center gap-2"><div class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-800"><div class="h-full rounded-full ${claimed?'bg-green-400':'bg-violet-400'}" style="width:${pct}%"></div></div><span class="shrink-0 text-right text-[10px] font-bold text-gray-400">${prog} / ${t.goal}</span></div></div>`}).join('')}
-function claimWeeklyTask(id){if(!gameState||!currentUser)return;ensureWeeklyState();const t=getWeeklyTasks().find(x=>x.id===id);if(!t)return;if(gameState.weekly.claimed.includes(t.id))return;if((Number(t.value(gameState.weekly))||0)<t.goal)return;gameState.weekly.claimed.push(t.id);currentUser.balance+=t.reward;addXp(80);updateBalanceUI();saveState();renderGameHub();checkAchievements();soundCoin();showToast(`Тижнева місія: +${formatCredits(t.reward)}`,'success')}
-
-function renderAchievements(){if(!gameState)return;const h=document.getElementById('achievementsGrid');if(!h)return;const unlocked=ACHIEVEMENT_DEFINITIONS.filter(a=>gameState.achievements[a.id]).length;const ac=document.getElementById('achievementCount');if(ac)ac.textContent=`${unlocked} / ${ACHIEVEMENT_DEFINITIONS.length}`;h.innerHTML=ACHIEVEMENT_DEFINITIONS.map(a=>{const active=Boolean(gameState.achievements[a.id]);return`<div class="rounded-xl border p-3 ${active?'border-amber-500/35 bg-amber-500/10':'border-gray-800 bg-black/20 opacity-60'}"><div class="flex items-start gap-3"><span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${active?'bg-amber-500 text-black':'bg-gray-800 text-gray-500'}"><i class="fa-solid ${a.icon}"></i></span><div class="min-w-0"><p class="text-xs font-extrabold ${active?'text-amber-100':'text-gray-300'}">${a.title}</p><p class="mt-0.5 text-[10px] leading-4 text-gray-500">${a.description}</p></div></div></div>`}).join('')}
-function renderRecentAch(){const card=document.getElementById('recentAchCard');const grid=document.getElementById('recentAchGrid');if(!card||!grid||!gameState)return;const list=Object.entries(gameState.achievements||{}).map(([id,ts])=>({id,ts,def:ACHIEVEMENT_DEFINITIONS.find(a=>a.id===id)})).filter(x=>x.def).sort((a,b)=>b.ts-a.ts).slice(0,3);if(!list.length){card.classList.add('hidden');return}card.classList.remove('hidden');grid.innerHTML=list.map(x=>`<div class="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-center"><span class="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500 text-black"><i class="fa-solid ${x.def.icon}"></i></span><p class="mt-2 text-xs font-extrabold text-amber-100">${escapeHtml(x.def.title)}</p></div>`).join('')}
-function renderCollections(){if(!gameState)return;const h=document.getElementById('collectionsGrid');if(!h)return;const completed=COLLECTION_DEFINITIONS.filter(c=>getCollectionProgress(c).complete).length;const cc=document.getElementById('collectionCount');if(cc)cc.textContent=`${completed} / ${COLLECTION_DEFINITIONS.length}`;h.innerHTML=COLLECTION_DEFINITIONS.map(c=>{const p=getCollectionProgress(c);const pct=p.total?Math.round((p.count/p.total)*100):0;return`<div class="rounded-xl border border-gray-800 bg-black/20 p-3"><div class="flex items-center justify-between gap-3"><div><p class="text-xs font-extrabold text-gray-200">${c.title}</p><p class="mt-0.5 text-[10px] text-gray-500">${c.description}</p></div><span class="text-xs font-extrabold ${p.complete?'text-green-400':'text-amber-300'}">${p.count}/${p.total}</span></div><div class="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-800"><div class="h-full rounded-full ${p.complete?'bg-green-400':'bg-amber-400'}" style="width:${pct}%"></div></div></div>`}).join('')}
-function renderAllTime(){if(!gameState)return;const a=gameState.allTime||createDefaultAllTime();const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v};set('atRounds',String(a.rounds||0));set('atWins',String(a.wins||0));set('atCases',String(a.cases||0));set('atBattles',String(a.battles||0));set('atRoyale',String(a.royaleWins||0));set('atContracts',String(a.contracts||0));set('atSells',String(a.sells||0));set('atSellValue',Math.round(a.sellValue||0).toLocaleString('uk-UA'));set('atBiggestWin',Math.round(a.biggestWin||0).toLocaleString('uk-UA'));set('atLegendary',String(a.legendaryDrops||0));set('atMulti',String(a.multiInputs||0));set('atCredits',String(a.creditInputs||0))}
-function renderRoundHistory(){if(!gameState)return;const h=document.getElementById('roundHistory');if(!h)return;if(!gameState.rounds.length){h.innerHTML='<div class="rounded-xl border border-dashed border-gray-700 p-6 text-center"><i class="fa-solid fa-dice text-xl text-gray-600"></i><p class="mt-2 text-sm font-bold text-gray-400">Тут з’явиться історія</p></div>';return}h.innerHTML=gameState.rounds.map(r=>{const st=new Date(r.at).toLocaleTimeString('uk-UA',{hour:'2-digit',minute:'2-digit'});const mode=r.mode==='under'?'Під · захист':r.mode==='multi'?'Мульти':r.mode==='battle'?'Бій':r.mode==='contract'?'Контракт':'Понад · бонус';return`<div class="flex items-center gap-3 rounded-xl border ${r.win?'border-green-500/25 bg-green-500/5':'border-red-500/20 bg-red-500/5'} p-2.5"><span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${r.win?'bg-green-500/15 text-green-400':'bg-red-500/15 text-red-400'}"><i class="fa-solid ${r.win?'fa-check':'fa-xmark'}"></i></span><div class="min-w-0 flex-1"><p class="truncate text-xs font-extrabold text-gray-200">${escapeHtml(r.targetName)}</p><p class="mt-0.5 text-[10px] text-gray-500">${mode}${r.chance?` · ${Number(r.chance).toFixed(2)}%`:''}</p></div><div class="text-right"><p class="text-xs font-extrabold ${r.win?'text-green-300':'text-red-300'}">${r.win?'Виграш':'Невдача'}</p><p class="mt-0.5 text-[10px] text-gray-500">${st}</p></div></div>`}).join('')}
-function renderFavorites(){if(!gameState)return;const h=document.getElementById('favoritesGrid');if(!h)return;const skins=gameState.favorites.map(k=>CS2_SKINS.find(s=>getSkinKey(s)===String(k))).filter(Boolean);if(!skins.length){h.innerHTML='<div class="col-span-full rounded-xl border border-dashed border-gray-700 p-6 text-center"><i class="fa-regular fa-heart text-xl text-gray-600"></i><p class="mt-2 text-sm font-bold text-gray-400">Додай скіни з каталогу</p></div>';return}h.innerHTML=skins.slice(0,9).map(s=>`<article class="relative overflow-hidden rounded-xl border border-gray-800 bg-black/20 p-2"><button type="button" data-favorite-select="${escapeHtml(getSkinKey(s))}" class="w-full text-left"><img src="${escapeHtml(s.img)}" alt="${escapeHtml(s.name)}" data-skin-name="${escapeHtml(s.name)}" class="h-16 w-full object-contain" onerror="handleSkinImageError(this)"><p class="mt-1 truncate text-[10px] font-extrabold text-gray-200">${escapeHtml(s.name)}</p><p class="text-[10px] font-bold text-amber-300">${formatCredits(s.price)}</p></button></article>`).join('');h.querySelectorAll('[data-favorite-select]').forEach(b=>b.addEventListener('click',()=>{const s=CS2_SKINS.find(x=>getSkinKey(x)===b.dataset.favoriteSelect);if(s)selectTargetItem(s)}))}
-function renderLeaderboard(){const h=document.getElementById('leaderboardList');if(!h)return;const meXp=gameState?.xp||0;const meName=account?.nick||currentUser?.name||'Ти';const rows=MOCK_LEADERBOARD.map(r=>({...r,isMe:false}));rows.push({name:meName,xp:meXp,isMe:true});rows.sort((a,b)=>b.xp-a.xp);const myIdx=rows.findIndex(r=>r.isMe);const lbl=document.getElementById('myRankLabel');if(lbl)lbl.textContent=`#${myIdx+1}`;h.innerHTML=rows.map((r,i)=>{const lvl=Math.floor(r.xp/750)+1;const cls=i<3?`lb-rank-${i+1}`:'text-gray-500';return`<div class="lb-row ${r.isMe?'is-me':''}"><div class="lb-rank ${cls}">#${i+1}</div><div class="min-w-0"><p class="truncate text-sm font-extrabold ${r.isMe?'text-amber-200':'text-white'}">${escapeHtml(r.name)}${r.isMe?' <span class="text-[10px] font-bold text-amber-400">(ти)</span>':''}</p><p class="text-[11px] font-bold text-gray-500">${r.xp.toLocaleString('uk-UA')} XP · LVL ${lvl}</p></div></div>`}).join('')}
-function renderGameHub(){if(!gameState)return;renderProfileProgress();renderDailyTasks();renderWeeklyTasks();renderAchievements();renderCollections();renderRoundHistory();renderFavorites();renderLeaderboard();renderAllTime();renderRecentAch();applyTheme();updateAccountUI();updateThemeMenuState()}
-function checkAchievements(){if(!gameState||!currentUser)return;let changed=false;ACHIEVEMENT_DEFINITIONS.forEach(a=>{if(!gameState.achievements[a.id]&&a.met()){gameState.achievements[a.id]=Date.now();currentUser.balance+=a.reward;addXp(75);changed=true;soundWin();showToast(`Досягнення «${a.title}»: +${formatCredits(a.reward)}`,'success')}});if(changed)updateBalanceUI()}
-
-function categorizeWeapon(name){const raw=String(name||'');const n=normalizeSkinName(raw);if(/^★/.test(raw)||/knife|bayonet|karambit|butterfly|talon|stiletto|ursus|skeleton|nomad|paracord|falchion|bowie|navaja|kukri|daggers/i.test(raw))return'knife';if(/glove|wraps/i.test(raw))return'gloves';if(/^(glock-18|usp-s|p2000|p250|five-seven|tec-9|cz75-auto|dual berettas|revolver|desert eagle|r8 revolver)/i.test(n))return'pistol';if(/^(ak-47|m4a1-s|m4a4|galil ar|famas|aug|sg 553)/i.test(n))return'rifle';if(/^(awp|ssg 08|g3sg1|scar-20)/i.test(n))return'sniper';if(/^(mp9|mac-10|ump-45|p90|mp7|mp5-sd)/i.test(n))return'smg';if(/^(nova|xm1014|mag-7|sawed-off|m249|negev)/i.test(n))return'heavy';return'other'}
-function updateAllTimeOnRound(win,tv){if(!gameState)return;const a=gameState.allTime=gameState.allTime||createDefaultAllTime();a.rounds=(a.rounds||0)+1;if(win){a.wins=(a.wins||0)+1;if(Number(tv)>0)a.biggestWin=Math.max(a.biggestWin||0,Number(tv))}}
-function updateAllTimeOnCase(){if(!gameState)return;const a=gameState.allTime=gameState.allTime||createDefaultAllTime();a.cases=(a.cases||0)+1}
-function updateAllTimeOnBattle(win){if(!gameState)return;const a=gameState.allTime=gameState.allTime||createDefaultAllTime();a.battles=(a.battles||0)+1;if(win)a.battleWins=(a.battleWins||0)+1}
-function updateAllTimeOnContract(){if(!gameState)return;const a=gameState.allTime=gameState.allTime||createDefaultAllTime();a.contracts=(a.contracts||0)+1}
-function updateAllTimeOnSell(v){if(!gameState)return;const a=gameState.allTime=gameState.allTime||createDefaultAllTime();a.sells=(a.sells||0)+1;a.sellValue=(a.sellValue||0)+Number(v||0)}
-function updateAllTimeOnFreeCase(){if(!gameState)return;const a=gameState.allTime=gameState.allTime||createDefaultAllTime();a.freeCases=(a.freeCases||0)+1}
-
-function recordRound({win,target,chance,mode,inputValue,bonus}){if(!gameState||!target)return;ensureDailyState();ensureWeeklyState();gameState.stats.rounds+=1;gameState.daily.rolls+=1;if(win){gameState.stats.wins+=1;gameState.daily.wins+=1;gameState.stats.currentStreak+=1;gameState.stats.bestStreak=Math.max(gameState.stats.bestStreak,gameState.stats.currentStreak);gameState.stats.bestValue=Math.max(gameState.stats.bestValue,Number(target.price)||0);gameState.daily.bestStreak=Math.max(gameState.daily.bestStreak,gameState.stats.currentStreak);gameState.daily.bestWinValue=Math.max(gameState.daily.bestWinValue,Number(target.price)||0)}else gameState.stats.currentStreak=0;addXp(XP_PER_ROUND+(win?XP_WIN_BONUS:0));updateAllTimeOnRound(win,Number(target.price)||0);gameState.rounds.unshift({at:Date.now(),win,targetName:target.name,targetValue:target.price,chance,mode,inputValue,bonus});gameState.rounds=gameState.rounds.slice(0,ROUND_HISTORY_LIMIT);checkAchievements();saveState();renderGameHub()}
-function copyLatestResult(){const r=gameState?.rounds?.[0];if(!r){showToast('Спочатку зроби ролл','warn');return}const msg=`ПОТУЖНО DROP 3.6 · ${r.win?'Виграш':'Невдача'}: ${r.targetName}`;if(navigator.clipboard?.writeText)navigator.clipboard.writeText(msg).then(()=>showToast('Скопійовано','success')).catch(()=>showToast('Не вдалося','warn'))}
-
-function applyTheme(){const t=['amber','neon','violet'].includes(gameState?.theme)?gameState.theme:'amber';if(t==='amber')delete document.body.dataset.theme;else document.body.dataset.theme=t;document.querySelectorAll('[data-theme-choice]').forEach(b=>{const a=b.dataset.themeChoice===t;b.dataset.active=a?'true':'false'});updateThemeMenuState()}
-function setTheme(t){if(!gameState||!['amber','neon','violet'].includes(t))return;gameState.theme=t;applyTheme();saveState();const names={amber:'Потужне золото',neon:'Неон',violet:'Фіолет'};showToast(`Тема: ${names[t]}`,'success')}
-
-function showToast(message,type='info'){const c=document.getElementById('toastContainer');const colors={info:'border-amber-500/40 bg-amber-500/10 text-amber-100',success:'border-green-500/40 bg-green-500/10 text-green-100',warn:'border-red-500/40 bg-red-500/10 text-red-100',error:'border-red-500/40 bg-red-500/10 text-red-100'};const el=document.createElement('div');el.className=`toast-item pointer-events-auto rounded-xl border ${colors[type]||colors.info} px-4 py-3 text-sm font-semibold shadow-lg backdrop-blur`;el.textContent=message;c.appendChild(el);setTimeout(()=>{el.style.opacity='0';el.style.transform='translateX(30px)';setTimeout(()=>el.remove(),320)},3300)}
-let audioCtx=null;
-function beep(freq=440,dur=.08,type='sine'){if(!soundEnabled)return;try{audioCtx=audioCtx||new(window.AudioContext||window.webkitAudioContext)();const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=type;o.frequency.value=freq;g.gain.setValueAtTime(.07,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+dur);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+dur)}catch{}}
-function soundWin(){beep(880,.15,'triangle');setTimeout(()=>beep(1180,.2,'triangle'),140)}
-function soundLose(){beep(180,.28,'sawtooth')}
-function soundCase(){beep(700,.12,'triangle');setTimeout(()=>beep(1050,.16,'triangle'),120)}
-function soundCoin(){beep(760,.12,'triangle')}
-function soundSell(){beep(700,.08,'triangle')}
-function toggleSound(){soundEnabled=!soundEnabled;localStorage.setItem(STORAGE.sound,soundEnabled?'on':'off');updateSoundUI()}
-function updateSoundUI(){const i=document.getElementById('soundIcon');if(i)i.className=soundEnabled?'fa-solid fa-volume-high text-sm':'fa-solid fa-volume-xmark text-sm'}
-function updateConsentButton(){document.getElementById('riskContinue').disabled=!document.getElementById('riskConsent').checked}
-function acceptRiskNotice(){if(!document.getElementById('riskConsent').checked)return;localStorage.setItem(STORAGE.consent,'accepted');document.body.classList.remove('consent-locked');const el=document.getElementById('riskNotice');el.classList.add('hidden');el.classList.remove('flex')}
-function toggleMobileMenu(){document.getElementById('mobileMenu').classList.toggle('hidden')}
-
-function openModal(id){const el=document.getElementById(id);if(!el)return;el.classList.remove('hidden');el.classList.add('flex');if(id==='inventoryModal')renderInventoryGrid();if(id==='accountModal')updateAccountUI();if(id==='prestigeModal')updatePrestigeUI();if(id==='shopModal')filterShop()}
-function closeModal(id){const el=document.getElementById(id);if(!el)return;el.classList.add('hidden');el.classList.remove('flex')}
-function startSteamLogin(){openModal('steamModal')}
-function continueSteamLogin(){window.location.href='/api/steam/auth'}
-
-function claimDailyBonus(){if(!currentUser)return;const last=parseInt(localStorage.getItem(STORAGE.bonusAt)||'0',10);const now=Date.now(),cd=24*60*60*1000;if(now-last<cd){showToast('Бонус ще не готовий','warn');return}currentUser.balance+=500;localStorage.setItem(STORAGE.bonusAt,String(now));updateBalanceUI();saveState();updateGiftButtonUI();checkAchievements();showToast('+500 DC!','success');soundCoin()}
-function topupWatchAd(){const k=STORAGE.topup;let st={};try{st=JSON.parse(localStorage.getItem(k)||'{}')}catch{}const last=st.adAt||0;if(Date.now()-last<60000){showToast('Зачекай','warn');return}st.adAt=Date.now();localStorage.setItem(k,JSON.stringify(st));currentUser.balance+=150;updateBalanceUI();saveState();showToast('+150 DC','success')}
-function topupShareSite(){const k=STORAGE.topup;let st={};try{st=JSON.parse(localStorage.getItem(k)||'{}')}catch{}if(st.shared){showToast('Вже ділився','warn');return}st.shared=true;localStorage.setItem(k,JSON.stringify(st));currentUser.balance+=250;updateBalanceUI();saveState();showToast('+250 DC','success')}
-function topupLevelReward(){const k=STORAGE.topup;let st={};try{st=JSON.parse(localStorage.getItem(k)||'{}')}catch{}const lvl=getPlayerLevel();if(st.levelClaimed===lvl){showToast('Уже отримано','warn');return}const reward=100*lvl;st.levelClaimed=lvl;localStorage.setItem(k,JSON.stringify(st));currentUser.balance+=reward;updateBalanceUI();saveState();showToast(`+${formatCredits(reward)}`,'success')}
-function updateTopupUI(){const el=document.getElementById('topupLevelRewardLabel');if(el)el.textContent=`+${100*getPlayerLevel()} DC`}
-
-function doPrestige(){if(!gameState||!currentUser)return;if(getPlayerLevel()<10){showToast('Потрібен LVL 10+','warn');return}if(!window.confirm('Скинути XP?'))return;gameState.prestige=(gameState.prestige||0)+1;gameState.xp=0;saveState();renderGameHub();closeModal('prestigeModal');showToast(`Престиж P${gameState.prestige}!`,'success');soundWin()}
-
-function resetDemoGame(){if(!window.confirm('Почати спочатку?'))return;currentUser.balance=DEMO_STARTING_BALANCE;userInventory=createStarterInventory();const theme=gameState?.theme||'amber';gameState=createDefaultGameState();gameState.theme=theme;localStorage.removeItem(STORAGE.bonusAt);localStorage.removeItem(STORAGE.freeCase);updateBalanceUI();renderInventoryGrid();renderProfileInventory();updateAvatarBadge();saveState();renderGameHub();updateGiftButtonUI();updateFreeCaseBtn();showToast('Нову гру розпочато','success')}
-
-function renderInventoryGrid(){const g=document.getElementById('userInventoryGrid');if(!g)return;if(!userInventory.length){g.innerHTML='<div class="col-span-full py-12 text-center text-sm text-gray-500">Інвентар порожній</div>';return}g.innerHTML=userInventory.map(s=>{const wear=getWear(s);return`<div class="relative bg-brand-card border border-brand-border rounded-xl p-3 flex flex-col items-center"><img src="${escapeHtml(s.img||'')}" data-skin-name="${escapeHtml(s.name)}" class="h-20 w-full object-contain" onerror="handleSkinImageError(this)"><p class="font-bold text-xs text-white truncate mt-2">${escapeHtml(s.name)}</p><p class="text-amber-400 font-extrabold text-xs mt-1">${formatCredits(s.price)}</p></div>`}).join('')}
-
-function renderProfileInventoryCategoryChips(){const wrap=document.getElementById('invCategoryChips');if(!wrap)return;const cats=[{id:'all',label:'Усі'},{id:'rifle',label:'Гвинтівки'},{id:'pistol',label:'Пістолети'},{id:'sniper',label:'Снайперські'},{id:'knife',label:'Ножі'},{id:'gloves',label:'Рукавиці'}];wrap.innerHTML=cats.map(c=>`<button data-inv-cat="${c.id}" onclick="setInventoryFilter('${c.id}')" class="inv-chip ${profileInvFilter===c.id?'is-active':''}">${c.label}</button>`).join('')}
-function setInventoryFilter(cat){profileInvFilter=cat;renderProfileInventory()}
-function setInventorySort(val){profileInvSort=val;renderProfileInventory()}
-function renderProfileInventory(){renderProfileInventoryCategoryChips();const grid=document.getElementById('profileInventoryGrid');const empty=document.getElementById('profileInventoryEmpty');if(!grid||!empty)return;const q=(document.getElementById('invSearch')?.value||'').trim().toLowerCase();let list=[...userInventory];if(profileInvFilter!=='all')list=list.filter(it=>categorizeWeapon(it.name)===profileInvFilter);if(q)list=list.filter(it=>String(it.name||'').toLowerCase().includes(q));if(profileInvSort==='price-desc')list.sort((a,b)=>(b.price||0)-(a.price||0));else if(profileInvSort==='price-asc')list.sort((a,b)=>(a.price||0)-(b.price||0));else if(profileInvSort==='name-asc')list.sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));else if(profileInvSort==='newest')list.sort((a,b)=>(b.addedAt||0)-(a.addedAt||0));if(!userInventory.length){grid.innerHTML='';empty.classList.remove('hidden');return}empty.classList.add('hidden');const c=document.getElementById('invStatCount');if(c)c.textContent=String(userInventory.length);const v=document.getElementById('invStatValue');if(v)v.textContent=Math.round(userInventory.reduce((s,it)=>s+(it.price||0),0)).toLocaleString('uk-UA');const b=document.getElementById('invStatBest');if(b)b.textContent=Math.round(userInventory.reduce((m,it)=>Math.max(m,it.price||0),0)).toLocaleString('uk-UA');const u=document.getElementById('invStatUnique');if(u)u.textContent=String(new Set(userInventory.map(it=>normalizeSkinName(it.name))).size);grid.innerHTML=list.map(s=>{const wear=getWear(s);return`<div class="profile-inv-card ${s.exclusive?'is-exclusive':''}"><span class="wear-badge wear-${wear.code} absolute top-2 left-2 z-10">${wear.code}</span><img src="${escapeHtml(s.img||'')}" data-skin-name="${escapeHtml(s.name)}" onerror="handleSkinImageError(this)"><p class="inv-name">${escapeHtml(s.name)}</p><p class="inv-price">${formatCredits(s.price)}</p><div class="inv-actions"><button class="sell-btn" onclick="sellInventoryItem('${escapeHtml(String(s.id))}')">Продати</button></div></div>`}).join('')}
-
-function sellInventoryItem(itemId){const idx=userInventory.findIndex(i=>String(i.id)===String(itemId));if(idx===-1)return;const it=userInventory[idx];const payout=Math.round((it.price||0)*SELL_RATE);userInventory.splice(idx,1);currentUser.balance+=payout;updateAllTimeOnSell(payout);updateBalanceUI();saveState();renderInventoryGrid();renderProfileInventory();updateAvatarBadge();renderGameHub();showToast(`Продано за ${formatCredits(payout)}`,'success');soundSell()}
-function sellAllDuplicates(){if(!userInventory.length){showToast('Інвентар порожній','warn');return}const seen=new Map(),keep=new Set();for(const it of userInventory){const key=normalizeSkinName(it.name)+'|'+(it.wear?.code||'');if(!seen.has(key)){seen.set(key,it.id);keep.add(it.id)}}const toSell=userInventory.filter(it=>!keep.has(it.id));if(!toSell.length){showToast('Дублікатів немає','info');return}const total=toSell.reduce((s,it)=>s+Math.round((it.price||0)*SELL_RATE),0);if(!window.confirm(`Продати ${toSell.length} за ${formatCredits(total)}?`))return;userInventory=userInventory.filter(it=>keep.has(it.id));currentUser.balance+=total;updateAllTimeOnSell(total);updateBalanceUI();saveState();renderInventoryGrid();renderProfileInventory();updateAvatarBadge();renderGameHub();showToast(`Продано ${toSell.length} за ${formatCredits(total)}`,'success');soundSell()}
-function openInventoryOrFocus(){if(selectedInputMode==='skin'||selectedInputMode==='multi')openModal('inventoryModal')}
-function selectInventoryItem(it){if(!it)return;if(selectedInputMode==='multi'){addToMulti(it);return}selectedInputSkin=it;setImageSource(document.getElementById('inputSkinImg'),it.img,it.name,getSkinKey(it));document.getElementById('inputSkinName').textContent=it.name;document.getElementById('inputSkinRarity').textContent=`${it.rarity||'CS2'} · ${getWear(it).name}`;document.getElementById('inputSkinState').classList.remove('hidden');document.getElementById('inputEmptyState').classList.add('hidden');document.getElementById('inputMultiState').classList.add('hidden');document.getElementById('inputBalanceState').classList.add('hidden');closeModal('inventoryModal');recalculateUpgrade()}
-function selectTargetItem(it){if(!it)return;const iv=getInputVal();if(iv>0&&it.price<=iv){showToast(`Ціль має коштувати більше за ${formatCredits(iv)}`,'warn');return}selectedTargetSkin=it;setImageSource(document.getElementById('targetSkinImg'),it.img,it.name,getSkinKey(it));document.getElementById('targetSkinName').textContent=it.name;document.getElementById('targetSkinRarity').textContent=it.rarity||'CS2';document.getElementById('targetSkinState').classList.remove('hidden');document.getElementById('targetEmptyState').classList.add('hidden');closeModal('shopModal');recalculateUpgrade()}
-
-function addToMulti(item){if(!item)return;if(multiInputSkins.find(x=>x.id===item.id))return;if(multiInputSkins.length>=MULTI_INPUT_MAX)return;multiInputSkins.push(item);renderMultiSlots();renderInventoryGrid();recalculateUpgrade()}
-function removeFromMulti(id){multiInputSkins=multiInputSkins.filter(x=>String(x.id)!==String(id));renderMultiSlots();renderInventoryGrid();recalculateUpgrade()}
-function clearMultiInput(){multiInputSkins=[];renderMultiSlots();renderInventoryGrid();recalculateUpgrade()}
-function renderMultiSlots(){const g=document.getElementById('multiSlotsGrid');if(!g)return;if(!multiInputSkins.length){g.className='flex-1 flex items-center justify-center text-center';g.innerHTML='<div><i class="fa-solid fa-plus text-2xl text-gray-700 block mb-3"></i><p class="text-xs text-gray-500">Натисни «Додати»</p></div>'}else{g.className='flex-1 grid grid-cols-3 gap-1.5 overflow-y-auto content-start pr-1';g.innerHTML=multiInputSkins.map(s=>{const wear=getWear(s);return`<div class="multi-slot"><span class="wear-badge wear-${wear.code} absolute top-1 left-1">${wear.code}</span><span class="rm" onclick="event.stopPropagation();removeFromMulti('${escapeHtml(String(s.id))}')"><i class="fa-solid fa-xmark"></i></span><img src="${escapeHtml(s.img||'')}" data-skin-name="${escapeHtml(s.name)}" onerror="handleSkinImageError(this)"><div class="price">${formatCredits(s.price).replace(' DC','')}</div></div>`}).join('')}const lbl=document.getElementById('multiCountLabel');if(lbl)lbl.textContent=String(multiInputSkins.length)}
-
-function switchInputMode(mode){selectedInputMode=mode;const sb=document.getElementById('tabSkinBtn'),mb=document.getElementById('tabMultiBtn'),bb=document.getElementById('tabBalanceBtn');const a='py-2 text-[11px] font-bold rounded-lg bg-amber-500 text-black transition';const i='py-2 text-[11px] font-bold rounded-lg text-gray-400 hover:text-white transition';sb.className=i;mb.className=i;bb.className=i;if(mode==='skin')sb.className=a;else if(mode==='multi')mb.className=a;else bb.className=a;document.getElementById('inputSkinState').classList.add('hidden');document.getElementById('inputMultiState').classList.add('hidden');document.getElementById('inputBalanceState').classList.add('hidden');document.getElementById('inputEmptyState').classList.add('hidden');if(mode==='skin'){const h=!!selectedInputSkin;document.getElementById('inputSkinState').classList.toggle('hidden',!h);document.getElementById('inputEmptyState').classList.toggle('hidden',h)}else if(mode==='multi'){document.getElementById('inputMultiState').classList.remove('hidden');renderMultiSlots()}else{document.getElementById('inputBalanceState').classList.remove('hidden')}renderInventoryGrid();recalculateUpgrade()}
-function setStake(v){const i=document.getElementById('balanceStakeInput');if(v==='all'&&currentUser)i.value=String(Math.max(1,Math.floor(currentUser.balance)));else i.value=String(v);updateBalanceStake()}
-function updateBalanceStake(){const i=document.getElementById('balanceStakeInput');const r=parseFloat(i.value)||0;balanceStake=Math.min(Math.max(0,r),currentUser?.balance||0);i.value=String(Math.floor(balanceStake));recalculateUpgrade()}
-function setRollMode(mode){if(isRolling)return;rollMode=mode;const o=document.getElementById('modeOverBtn'),u=document.getElementById('modeUnderBtn');const a='py-1.5 text-xs font-bold rounded-lg bg-amber-500 text-black transition';const i='py-1.5 text-xs font-bold rounded-lg text-gray-400 hover:text-white transition';if(mode==='over'){o.className=a;u.className=i}else{u.className=a;o.className=i}document.getElementById('rollModeHint').textContent=mode==='under'?'Захист: +15% до шансу.':'Бонус: при виграші +5% вартості цілі.';
-recalculateUpgrade()}
-function getInputVal(){if(selectedInputMode==='skin')return selectedInputSkin?selectedInputSkin.price:0;if(selectedInputMode==='multi')return multiInputSkins.reduce((s,i)=>s+(i.price||0),0);return balanceStake}
-function getTargetVal(){return selectedTargetSkin?selectedTargetSkin.price:0}
-function calcChance(iv,tv){if(!iv||!tv)return 0;if(tv<=iv)return 0;const ratio=iv/tv;let base=100*Math.pow(ratio,CHANCE_POWER)*CHANCE_K;if(rollMode==='under')base*=SAFE_MODE_CHANCE_MULTIPLIER;return Math.min(CHANCE_MAX,Math.max(CHANCE_MIN,base))}
-function getWinBonus(tv){if(rollMode!=='over'||!tv)return 0;return Math.max(1,Math.round(tv*BONUS_MODE_RATE))}
-function recalculateUpgrade(){const iv=getInputVal(),tv=getTargetVal();const iiv=document.getElementById('inputItemValue');if(iiv)iiv.textContent=formatCredits(iv);const tiv=document.getElementById('targetItemValue');if(tiv)tiv.textContent=formatCredits(tv);if(!iv||!tv){const a=document.getElementById('winChanceText');if(a)a.textContent='0.00 %';const b=document.getElementById('multiplierText');if(b)b.textContent='x0.00';renderCanvas(0);return}if(tv<=iv){const a=document.getElementById('winChanceText');if(a)a.textContent='—';const b=document.getElementById('multiplierText');if(b)b.textContent='x<1';renderCanvas(0);return}const c=calcChance(iv,tv);const a=document.getElementById('winChanceText');if(a)a.textContent=`${c.toFixed(2)} %`;const b=document.getElementById('multiplierText');if(b)b.textContent=`x${(tv/iv).toFixed(2)}`;renderCanvas(c)}
-
-function showResultModal(win,skin,bonus=0){const icon=document.getElementById('resultIcon');const title=document.getElementById('resultTitle');const text=document.getElementById('resultText');const img=document.getElementById('resultImg');if(win&&skin){icon.innerHTML='<i class="fa-solid fa-trophy text-5xl text-green-400"></i>';title.textContent='ПЕРЕМОГА!';title.className='font-heading text-4xl font-extrabold uppercase mb-2 text-green-400';text.textContent=bonus?`«${skin.name}» додано. Бонус: +${formatCredits(bonus)}.`:`«${skin.name}» додано.`;setImageSource(img,skin.img,skin.name,getSkinKey(skin));img.classList.remove('hidden')}else{icon.innerHTML='<i class="fa-solid fa-heart-crack text-5xl text-red-400"></i>';title.textContent='НЕВДАЧА';title.className='font-heading text-4xl font-extrabold uppercase mb-2 text-red-400';text.textContent='Предмет зник.';img.classList.add('hidden')}openModal('resultModal')}
-
-function executeUpgrade(){if(isRolling)return;const iv=getInputVal(),tv=getTargetVal();const inSkin=selectedInputSkin,tgtSkin=selectedTargetSkin;const multiAtStart=[...multiInputSkins];if(!iv||!tv){showToast('Обери предмет та ціль','warn');return}if(tv<=iv){showToast('Ціль має бути дорожчою','warn');return}if(selectedInputMode==='multi'&&multiInputSkins.length<MULTI_INPUT_MIN){showToast(`Додай ${MULTI_INPUT_MIN} скіни`,'warn');return}if(selectedInputMode==='balance'&&balanceStake>currentUser.balance){showToast('Недостатньо кредитів','warn');return}ensureDailyState();if(selectedInputMode==='balance'){currentUser.balance-=balanceStake;updateBalanceUI();saveState()}isRolling=true;const btn=document.getElementById('upgradeActionBtn');btn.disabled=true;document.getElementById('rollStatusText').textContent='ОБЕРТАННЯ...';const chance=calcChance(iv,tv);const winBonus=getWinBonus(tv);const roll=Math.random()*100;const isWin=rollMode==='under'?roll<=chance:roll>=(100-chance);const start=performance.now(),dur=3200,turns=5;const finalAngle=turns*Math.PI*2+(roll/100)*Math.PI*2;const tick=setInterval(()=>beep(380+Math.random()*240,.03,'square'),90);function consume(){if(selectedInputMode==='skin'&&inSkin){userInventory=userInventory.filter(i=>i.id!==inSkin.id);if(selectedInputSkin?.id===inSkin.id)selectedInputSkin=null}else if(selectedInputMode==='multi'){const ids=new Set(multiAtStart.map(x=>x.id));userInventory=userInventory.filter(i=>!ids.has(i.id));multiInputSkins=[];renderMultiSlots()}}function anim(now){const p=Math.min((now-start)/dur,1);const e=1-Math.pow(1-p,3);renderCanvas(chance,e*finalAngle);if(p<1){requestAnimationFrame(anim);return}clearInterval(tick);isRolling=false;btn.disabled=false;if(isWin){soundWin();consume();const ni=makeDemoItem(tgtSkin);userInventory.push(ni);if(winBonus)currentUser.balance+=winBonus;renderInventoryGrid();renderProfileInventory();updateAvatarBadge();saveState();recordRound({win:true,target:tgtSkin,chance,mode:selectedInputMode==='multi'?'multi':rollMode,inputValue:iv,bonus:winBonus});setTimeout(()=>showResultModal(true,ni,winBonus),220)}else{soundLose();consume();renderInventoryGrid();renderProfileInventory();updateAvatarBadge();saveState();recordRound({win:false,target:tgtSkin,chance,mode:selectedInputMode==='multi'?'multi':rollMode,inputValue:iv,bonus:0});setTimeout(()=>showResultModal(false),220)}recalculateUpgrade()}requestAnimationFrame(anim)}
-
-/* ====== КЕЙСИ ====== */
-function getCaseItems(caseType){const cfg=CASE_TYPES[caseType];if(!cfg)return[];const[minP,maxP]=cfg.priceRange;return CS2_SKINS.filter(s=>isUsableSkin(s)&&(s.price||0)>=minP&&(s.price||0)<=maxP).sort((a,b)=>(b.price||0)-(a.price||0))}
-function getItemTier(item,caseType){const cfg=CASE_TYPES[caseType];if(!cfg)return null;const p=item.price||0;for(const key of['legendary','rare','uncommon','common']){const[min,max]=cfg.tierRanges[key];if(p>=min&&p<=max)return key}return null}
-function getItemDropChance(item,caseType){const cfg=CASE_TYPES[caseType];if(!cfg)return 0;const tier=getItemTier(item,caseType);if(!tier)return 0;const[tMin,tMax]=cfg.tierRanges[tier];const tierItems=CS2_SKINS.filter(s=>{if(!isUsableSkin(s))return false;const p=s.price||0;return p>=tMin&&p<=tMax}).sort((a,b)=>(a.price||0)-(b.price||0));const N=tierItems.length;if(!N)return 0;const idx=tierItems.findIndex(s=>getSkinKey(s)===getSkinKey(item));if(idx===-1)return 0;const weight=N-idx;const totalWeight=N*(N+1)/2;const tierIdx=['common','uncommon','rare','legendary'].indexOf(tier);const tierChance=cfg.odds[tierIdx];return tierChance*(weight/totalWeight)*100}
-
-async function pickVerifiedCaseSkin(poolType='regular',caseType='standard'){
-const av=CS2_SKINS.filter(isUsableSkin);if(!av.length)return null;
-if(poolType==='free'){const cheapOnly=av.filter(s=>(s.price||0)<=300);if(!cheapOnly.length)return null;return cheapOnly[Math.floor(Math.random()*cheapOnly.length)]}
-const caseItems=getCaseItems(caseType);if(!caseItems.length)return av[Math.floor(Math.random()*av.length)];
-const chances=caseItems.map(s=>getItemDropChance(s,caseType));const total=chances.reduce((a,b)=>a+b,0);
-let pick;
-if(total<=0){pick=caseItems[Math.floor(Math.random()*caseItems.length)]}else{let roll=Math.random()*total;pick=caseItems[0];for(let i=0;i<caseItems.length;i++){if(roll<=chances[i]){pick=caseItems[i];break}roll-=chances[i]}}
-return pick;
+async function pickVerifiedCaseSkin(poolType='regular', caseType='standard'){
+  const av = CS2_SKINS.filter(isUsableSkin);
+  if(!av.length) return null;
+  if(poolType === 'free'){
+    const cheapOnly = av.filter(s => (s.price||0) <= 300);
+    if(!cheapOnly.length){showToast('Немає дешевих предметів у каталозі','warn'); return null}
+    const cand = [...cheapOnly];
+    while(cand.length){
+      const i = Math.floor(Math.random()*cand.length);
+      const s = cand.splice(i,1)[0];
+      if(await verifySkinImage(s)) return s;
+      markSkinUnavailable(getSkinKey(s));
+    }
+    return cheapOnly[0] || null;
+  }
+  const caseItems = getCaseItems(caseType);
+  if(!caseItems.length){
+    return av[Math.floor(Math.random() * av.length)];
+  }
+  const chances = caseItems.map(s => getItemDropChance(s, caseType));
+  const total = chances.reduce((a,b) => a+b, 0);
+  let pick;
+  if(total <= 0){
+    pick = caseItems[Math.floor(Math.random() * caseItems.length)];
+  }else{
+    let roll = Math.random() * total;
+    pick = caseItems[0];
+    for(let i = 0; i < caseItems.length; i++){
+      if(roll <= chances[i]){ pick = caseItems[i]; break; }
+      roll -= chances[i];
+    }
+  }
+  const cand = [pick, ...caseItems.filter(s => s !== pick)];
+  for(const s of cand){
+    if(await verifySkinImage(s)) return s;
+    markSkinUnavailable(getSkinKey(s));
+  }
+  return pick;
 }
 
 async function openPowerCase(caseType='standard'){
@@ -1126,27 +1025,62 @@ isCaseOpening=true;
 let winner=null;
 try{winner=await pickVerifiedCaseSkin('regular',caseType)}finally{isCaseOpening=false}
 if(!winner){showToast('Каталог ще завантажується','warn');return}
-window.__caseWinner=winner;window.__caseType='paid';window.__casePaidCost=cfg.cost;window.__caseName=cfg.name;window.__caseTypeId=caseType;
+if(currentUser.balance<cfg.cost)return;
+window.__caseWinner=winner;window.__caseType='paid';
+window.__casePaidCost=cfg.cost;window.__caseName=cfg.name;
 document.getElementById('caseReelTitle').textContent=`${cfg.name} · ${formatCredits(cfg.cost)}`;
 openModal('caseReelModal');
 document.getElementById('caseReelStatus').textContent='Готуємось…';
 const btn=document.getElementById('caseReelBtn');
-btn.disabled=false;btn.textContent='ПОЧАТИ ОБЕРТАННЯ';
+btn.disabled=false;btn.textContent='ПОЧАТИ ОБЕРТАННЯ'
 }
 
 function getFreeCaseLastAt(){return parseInt(localStorage.getItem(STORAGE.freeCase)||'0',10)}
 function getFreeCaseLeft(){return Math.max(0,FREE_CASE_COOLDOWN-(Date.now()-getFreeCaseLastAt()))}
-function updateFreeCaseBtn(){const btn=document.getElementById('freeCaseBtn');const status=document.getElementById('freeCaseStatus');if(!btn||!status)return;const left=getFreeCaseLeft();if(left>0){btn.disabled=true;btn.textContent='Зачекай';const h=Math.floor(left/3600000),m=Math.floor((left%3600000)/60000);status.textContent=`Наступний через ${h}г ${m}хв`}else{btn.disabled=false;btn.textContent='Забрати';status.textContent='Раз на 24 години · тільки до 300 DC'}}
-async function openFreeDailyCase(){if(!currentUser||!gameState||isFreeCaseOpening||isRolling||isCaseOpening)return;if(getFreeCaseLeft()>0){showToast('Ще недоступний','warn');return}isFreeCaseOpening=true;let winner=null;try{winner=await pickVerifiedCaseSkin('free')}finally{isFreeCaseOpening=false}if(!winner){showToast('Каталог ще завантажується','warn');return}localStorage.setItem(STORAGE.freeCase,String(Date.now()));window.__caseWinner=winner;window.__caseType='free';document.getElementById('caseReelTitle').textContent='Безкоштовний кейс · 24 год';openModal('caseReelModal');document.getElementById('caseReelStatus').textContent='Готуємось…';const btn=document.getElementById('caseReelBtn');btn.disabled=false;btn.textContent='ПОЧАТИ ОБЕРТАННЯ';updateFreeCaseBtn()}
+function updateFreeCaseBtn(){
+const btn=document.getElementById('freeCaseBtn');const status=document.getElementById('freeCaseStatus');
+if(!btn||!status)return;
+const left=getFreeCaseLeft();
+if(left>0){
+btn.disabled=true;btn.textContent='Зачекай';
+const h=Math.floor(left/3600000),m=Math.floor((left%3600000)/60000);
+status.textContent=`Наступний через ${h}г ${m}хв`
+}else{
+btn.disabled=false;btn.textContent='Забрати';
+status.textContent='Раз на 24 години · тільки до 300 DC'
+}
+}
+async function openFreeDailyCase(){
+if(!currentUser||!gameState||isFreeCaseOpening||isRolling||isCaseOpening)return;
+if(getFreeCaseLeft()>0){showToast('Безкоштовний кейс ще недоступний','warn');return}
+isFreeCaseOpening=true;
+let winner=null;
+try{winner=await pickVerifiedCaseSkin('free')}finally{isFreeCaseOpening=false}
+if(!winner){showToast('Каталог ще завантажується','warn');return}
+localStorage.setItem(STORAGE.freeCase,String(Date.now()));
+window.__caseWinner=winner;window.__caseType='free';
+document.getElementById('caseReelTitle').textContent='Безкоштовний кейс · 24 год';
+openModal('caseReelModal');
+document.getElementById('caseReelStatus').textContent='Готуємось…';
+const btn=document.getElementById('caseReelBtn');
+btn.disabled=false;btn.textContent='ПОЧАТИ ОБЕРТАННЯ';
+updateFreeCaseBtn()
+}
 
 function buildCaseReel(winner,isFree){
 const track=document.getElementById('caseReelTrack');
 const items=[];const winnerIndex=45;
-const pool=isFree?CS2_SKINS.filter(s=>isUsableSkin(s)&&(s.price||0)<=300):getCaseItems(window.__caseTypeId||'standard');
-const fallback=CS2_SKINS.filter(isUsableSkin).sort((a,b)=>(a.price||0)-(b.price||0));
-const reelPool=pool.length?pool:fallback.slice(0,Math.max(1,Math.floor(fallback.length*0.72)));
-for(let i=0;i<50;i++){if(i===winnerIndex){items.push({...winner,isWinner:true,wear:rollWear()});continue}const s=reelPool.length?reelPool[Math.floor(Math.random()*reelPool.length)]:fallback[0];items.push({...s,isWinner:false,wear:rollWear()})}
-track.innerHTML=items.map(it=>`<div class="case-reel-card ${it.isWinner?'is-winner':''}"><img src="${escapeHtml(it.img||'')}" data-skin-name="${escapeHtml(it.name)}" onerror="handleSkinImageError(this)"><p>${escapeHtml(it.name.split('|').pop().trim().slice(0,18))}</p><p class="text-[10px] font-extrabold text-amber-300">${formatCredits(it.price||0)}</p></div>`).join('');
+const pool = isFree
+  ? [...CS2_SKINS.filter(s => isUsableSkin(s) && (s.price||0) <= 300)]
+  : getCaseItems(window.__caseName ? Object.keys(CASE_TYPES).find(k => CASE_TYPES[k].name === window.__caseName) || 'standard' : 'standard');
+const fallback = [...CS2_SKINS.filter(isUsableSkin)].sort((a,b)=>(a.price||0)-(b.price||0));
+const reelPool = pool.length ? pool : fallback.slice(0, Math.max(1, Math.floor(fallback.length*0.72)));
+for(let i=0;i<50;i++){
+if(i===winnerIndex){items.push({...winner,isWinner:true,wear:rollWear()});continue}
+const s=reelPool.length?reelPool[Math.floor(Math.random()*reelPool.length)]:fallback[0];
+items.push({...s,isWinner:false,wear:rollWear()})
+}
+track.innerHTML=items.map(it=>`<div class="case-reel-card ${it.isWinner?'is-winner':''}"><img src="${escapeHtml(it.img||'')}" alt="" data-skin-name="${escapeHtml(it.name)}" onerror="handleSkinImageError(this)"><p>${escapeHtml(it.name.split('|').pop().trim().slice(0,18))}</p><p class="text-[10px] font-extrabold text-amber-300">${formatCredits(it.price||0)}</p></div>`).join('');
 return{winnerIndex,cardWidth:132,gap:10}
 }
 
@@ -1174,11 +1108,14 @@ document.getElementById('caseReelStatus').textContent='Готово!';
 if(!isFree){const paidCost=window.__casePaidCost||POWER_CASE_COST;currentUser.balance-=paidCost;updateBalanceUI()}
 const item=makeDemoItem(winner,isFree?'-freecase':'-case');
 userInventory.push(item);
-ensureDailyState();gameState.stats.cases+=1;gameState.daily.cases+=1;updateAllTimeOnCase();
+ensureDailyState();ensureWeeklyState();
+gameState.stats.cases+=1;gameState.daily.cases+=1;gameState.weekly.cases=(gameState.weekly.cases||0)+1;
+updateAllTimeOnCase();
 if((winner.price||0)>=50000)gameState.allTime.legendaryDrops=(gameState.allTime.legendaryDrops||0)+1;
 if(isFree)updateAllTimeOnFreeCase();
 addXp(XP_PER_CASE);checkAchievements();
 updateBalanceUI();renderInventoryGrid();renderProfileInventory();updateAvatarBadge();saveState();renderGameHub();
+addActivityEvent({player:currentUser.name||'Ти',skin:item,outcome:'win'});
 soundCase();
 setTimeout(()=>{
 closeModal('caseReelModal');
@@ -1195,145 +1132,124 @@ openModal('caseModal')
 },4500)
 }
 
-function getCasePreviewItems(caseType,count=6){const cfg=CASE_TYPES[caseType];if(!cfg)return[];const caseItems=getCaseItems(caseType);if(!caseItems.length)return[];const take=(arr,k)=>{const copy=[...arr];for(let i=copy.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[copy[i],copy[j]]=[copy[j],copy[i]]}return copy.slice(0,k)};const byTier=key=>{const[min,max]=cfg.tierRanges[key];return caseItems.filter(s=>(s.price||0)>=min&&(s.price||0)<=max)};const pick=[];pick.push(...take(byTier('legendary'),1));pick.push(...take(byTier('rare'),1));pick.push(...take(byTier('uncommon'),2));pick.push(...take(byTier('common'),count-pick.length));if(pick.length<count){pick.push(...take(caseItems.filter(s=>!pick.includes(s)),count-pick.length))}return pick.slice(0,count)}
+function getCasePreviewItems(caseType, count = 6){
+  const cfg = CASE_TYPES[caseType];
+  if(!cfg) return [];
+  const caseItems = getCaseItems(caseType);
+  if(!caseItems.length) return [];
+  const take = (arr, k) => {
+    const copy = [...arr];
+    for(let i = copy.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy.slice(0, k);
+  };
+  const byTier = (key) => {
+    const [min, max] = cfg.tierRanges[key];
+    return caseItems.filter(s => (s.price||0) >= min && (s.price||0) <= max);
+  };
+  const pick = [];
+  pick.push(...take(byTier('legendary'), 1));
+  pick.push(...take(byTier('rare'), 1));
+  pick.push(...take(byTier('uncommon'), 2));
+  pick.push(...take(byTier('common'), count - pick.length));
+  if(pick.length < count){
+    const missing = count - pick.length;
+    pick.push(...take(caseItems.filter(s => !pick.includes(s)), missing));
+  }
+  return pick.slice(0, count);
+}
 
 function renderCaseButtons(){
-  const grid=document.getElementById('casesGrid');
-  if(!grid)return;
-  const types=['budget','standard','premium','legendary'];
-  grid.innerHTML=types.map(id=>{
-    const cfg=CASE_TYPES[id];
-    const previews=getCasePreviewItems(id,3);
-    const liked=(gameState?.likedCases||[]).includes(id);
+  const container = document.getElementById('caseScroll');
+  if(!container) return;
+  const types = [
+    {id:'budget', theme:'gray', name:'Бюджетний кейс', cost:100, desc:'Дешево й сердито'},
+    {id:'standard', theme:'blue', name:'Стандартний кейс', cost:300, desc:'Баланс ціни й шансів'},
+    {id:'premium', theme:'violet', name:'Преміум кейс', cost:1000, desc:'Більше шансів на рідкісне'},
+    {id:'legendary', theme:'gold', name:'Легендарний кейс', cost:5000, desc:'Тільки ножі та топ-скіни'}
+  ];
+  container.innerHTML = types.map(t => {
+    const previews = getCasePreviewItems(t.id, 6);
     return `
-      <div class="case-tile tile-${cfg.theme}" onclick="openPowerCase('${id}')">
-        <div class="case-tile-glow"></div>
-        ${cfg.badge?`<span class="case-tile-badge">${cfg.badge}</span>`:''}
-        <span class="case-tile-price">${formatCredits(cfg.cost)}</span>
-        <div class="case-tile-art">${createCaseSVG(cfg.theme)}</div>
-        <div class="case-tile-drop-strip">
-          ${previews.map(s=>`<img src="${escapeHtml(s.img||'')}" data-skin-name="${escapeHtml(s.name)}" onerror="handleSkinImageError(this)">`).join('')}
+      <div class="case-card" onclick="openPowerCase('${t.id}')">
+        <div class="case-card-preview">
+          ${previews.map(s => `
+            <div>
+              <img src="${escapeHtml(s.img||'')}" alt="" onerror="handleSkinImageError(this)">
+              <div class="price">${Math.round(s.price)}</div>
+            </div>
+          `).join('')}
         </div>
-        <div class="case-tile-footer">
-          <div class="case-tile-footer-info">
-            <div class="case-tile-footer-name">${cfg.name}</div>
-            <div class="case-tile-footer-desc">${cfg.desc}</div>
+        <div class="case-card-body">
+          <div class="case-card-header">
+            <div class="case-card-icon">${createCaseSVG(t.theme)}</div>
+            <div class="case-card-info">
+              <div class="case-card-name">${t.name}</div>
+              <div class="case-card-desc">${t.desc}</div>
+              <div class="case-card-price">${formatCredits(t.cost)}</div>
+            </div>
           </div>
-          <button class="case-tile-heart ${liked?'is-liked':''}" onclick="event.stopPropagation();toggleCaseLike('${id}')" title="В обране">
-            <i class="fa-${liked?'solid':'regular'} fa-heart"></i>
-          </button>
+          <div class="case-card-actions">
+            <button class="btn-open-case" onclick="event.stopPropagation();openPowerCase('${t.id}')">
+              <i class="fa-solid fa-play mr-1"></i> Відкрити
+            </button>
+            <button class="btn-details-case" onclick="event.stopPropagation();showCaseDetails('${t.id}')">
+              <i class="fa-solid fa-circle-info mr-1"></i> Скіни
+            </button>
+          </div>
         </div>
       </div>
     `;
   }).join('');
 }
 
-function toggleCaseLike(id){
-  if(!gameState)return;
-  gameState.likedCases=gameState.likedCases||[];
-  const idx=gameState.likedCases.indexOf(id);
-  if(idx===-1)gameState.likedCases.push(id);
-  else gameState.likedCases.splice(idx,1);
-  saveState();
-  renderCaseButtons();
-  showToast(idx===-1?'Додано в обране':'Видалено з обраного','success');
-}
-
 function showCaseDetails(caseType){
-  const cfg=CASE_TYPES[caseType];
-  if(!cfg)return;
-  const items=getCaseItems(caseType).sort((a,b)=>(b.price||0)-(a.price||0));
-  const header=document.getElementById('caseDetailsHeader');
-  const title=document.getElementById('caseDetailsTitle');
-  const grid=document.getElementById('caseDetailsGrid');
-  const odds=document.getElementById('caseDetailsOdds');
-  if(header)header.textContent=`${cfg.name} · ${formatCredits(cfg.cost)}`;
-  if(title)title.textContent='Всі предмети та шанси';
-  if(odds){
-    const o=cfg.odds;
-    odds.innerHTML=`
-      <div class="case-odds-cell"><div class="label">🟢 Звичайний</div><div class="value text-gray-300">${(o[0]*100).toFixed(1)}%</div></div>
-      <div class="case-odds-cell"><div class="label">🔵 Незвичний</div><div class="value text-blue-300">${(o[1]*100).toFixed(1)}%</div></div>
-      <div class="case-odds-cell"><div class="label">🟣 Рідкісний</div><div class="value text-violet-300">${(o[2]*100).toFixed(1)}%</div></div>
-      <div class="case-odds-cell"><div class="label">🟡 Легендарний</div><div class="value text-amber-300">${(o[3]*100).toFixed(1)}%</div></div>
-    `;
+  const cfg = CASE_TYPES[caseType];
+  if(!cfg) return;
+  const items = getCaseItems(caseType).sort((a,b) => (b.price||0) - (a.price||0));
+  const header = document.getElementById('caseDetailsHeader');
+  const title = document.getElementById('caseDetailsTitle');
+  const grid = document.getElementById('caseDetailsGrid');
+  if(header) header.textContent = `${cfg.name} · ${formatCredits(cfg.cost)}`;
+  if(title) title.textContent = 'Всі предмети та шанси';
+  if(!grid) return;
+  if(!items.length){
+    grid.innerHTML = '<div class="col-span-full py-16 text-center text-gray-500"><i class="fa-solid fa-inbox text-3xl mb-3"></i><p>Каталог ще завантажується…</p></div>';
+    openModal('caseDetailsModal');
+    return;
   }
-  if(!grid)return;
-  if(!items.length){grid.innerHTML='<div class="col-span-full py-16 text-center text-gray-500"><i class="fa-solid fa-inbox text-3xl mb-3"></i><p>Каталог ще завантажується…</p></div>';openModal('caseDetailsModal');return}
-  grid.innerHTML=items.slice(0,80).map(s=>{
-    const chance=getItemDropChance(s,caseType);
-    let chanceStr=chance<0.1?chance.toFixed(3)+'%':chance.toFixed(2)+'%';
-    let badgeColor='#6ee7b7';
-    if(chance<0.1)badgeColor='#f87171';
-    else if(chance<1)badgeColor='#fbbf24';
-    else if(chance<5)badgeColor='#a78bfa';
-    return `<div class="bg-brand-card border border-brand-border rounded-xl p-2 flex flex-col items-center">
-      <div class="relative w-full">
-        <img src="${escapeHtml(s.img||'')}" data-skin-name="${escapeHtml(s.name)}" class="h-16 w-full object-contain" onerror="handleSkinImageError(this)">
-        <span class="absolute top-0 right-0 text-[8px] font-extrabold bg-black/75 border px-1.5 py-0.5 rounded" style="color:${badgeColor};border-color:${badgeColor}40">${chanceStr}</span>
+  grid.innerHTML = items.slice(0, 80).map(s => {
+    const chance = getItemDropChance(s, caseType);
+    let chanceStr;
+    if(chance < 0.1)      chanceStr = chance.toFixed(3) + '%';
+    else                  chanceStr = chance.toFixed(2) + '%';
+    let badgeColor = '#6ee7b7';
+    if(chance < 0.1)      badgeColor = '#f87171';
+    else if(chance < 1)   badgeColor = '#fbbf24';
+    else if(chance < 5)   badgeColor = '#a78bfa';
+    return `
+      <div class="bg-brand-card border border-brand-border rounded-xl p-2 flex flex-col items-center">
+        <div class="relative w-full">
+          <img src="${escapeHtml(s.img||'')}" alt="" class="h-16 w-full object-contain" onerror="handleSkinImageError(this)">
+          <span class="case-chance-badge" style="color:${badgeColor};border-color:${badgeColor}40">CHANCE ${chanceStr}</span>
+        </div>
+        <p class="mt-1 text-[10px] font-bold text-white truncate w-full text-center" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</p>
+        <p class="text-amber-300 font-extrabold text-[11px] mt-0.5">${formatCredits(s.price)}</p>
       </div>
-      <p class="mt-1 text-[10px] font-bold text-white truncate w-full text-center" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</p>
-      <p class="text-amber-300 font-extrabold text-[11px] mt-0.5">${formatCredits(s.price)}</p>
-    </div>`;
+    `;
   }).join('');
   openModal('caseDetailsModal');
 }
 
-function renderCaseTopDrops(){const g=document.getElementById('caseTopDrops');if(!g)return;const list=CS2_SKINS.filter(isUsableSkin);if(!list.length)return;const sorted=[...list].sort((a,b)=>b.price-a.price).slice(0,6);g.innerHTML=sorted.map(s=>`<div class="rounded-lg border border-amber-500/25 bg-black/30 p-2 text-center"><img src="${escapeHtml(s.img)}" data-skin-name="${escapeHtml(s.name)}" class="h-14 mx-auto object-contain" onerror="handleSkinImageError(this)"><p class="mt-1 text-[9px] font-extrabold text-gray-200 truncate">${escapeHtml(s.name.split('|').pop().trim())}</p><p class="text-[10px] font-bold text-amber-300">${formatCredits(s.price)}</p></div>`).join('')}
-
-/* ===== BATTLE ===== */
-function pickBattlePlayerItem(){if(battleInProgress)return;if(!userInventory.length){showToast('Інвентар порожній','warn');return}const g=document.getElementById('battlePickGrid');g.innerHTML=userInventory.map(s=>`<button type="button" data-battle-pick="${escapeHtml(String(s.id))}" class="bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 flex flex-col items-center"><img src="${escapeHtml(s.img||'')}" data-skin-name="${escapeHtml(s.name)}" class="h-16 object-contain" onerror="handleSkinImageError(this)"><p class="mt-1 text-xs font-bold text-white truncate w-full text-center">${escapeHtml(s.name)}</p><p class="text-amber-400 text-xs font-extrabold">${formatCredits(s.price)}</p></button>`).join('');g.querySelectorAll('[data-battle-pick]').forEach(b=>b.addEventListener('click',()=>{const it=userInventory.find(x=>String(x.id)===b.dataset.battlePick);if(it){setBattlePlayer(it);closeModal('battlePickModal')}}));openModal('battlePickModal')}
-function setBattlePlayer(item){battlePlayerItem=item;document.getElementById('battlePlayerEmpty').classList.add('hidden');document.getElementById('battlePlayerFilled').classList.remove('hidden');setImageSource(document.getElementById('battlePlayerImg'),item.img,item.name,getSkinKey(item));document.getElementById('battlePlayerName').textContent=item.name;document.getElementById('battlePlayerPrice').textContent=formatCredits(item.price);document.getElementById('battlePlayerSlot').classList.add('filled');pickBotOpponent(item.price);document.getElementById('battleStartBtn').disabled=false}
-function pickBotOpponent(basePrice){const lo=basePrice*.65,hi=basePrice*1.45;const pool=CS2_SKINS.filter(s=>isUsableSkin(s)&&s.price>=lo&&s.price<=hi);const pick=pool.length?pool[Math.floor(Math.random()*pool.length)]:CS2_SKINS[Math.floor(Math.random()*CS2_SKINS.length)];battleBotItem={...pick,wear:rollWear(),basePrice:pick.price,price:priceWithWear(pick.price,rollWear())};document.getElementById('battleBotEmpty').classList.add('hidden');document.getElementById('battleBotFilled').classList.remove('hidden');setImageSource(document.getElementById('battleBotImg'),battleBotItem.img,battleBotItem.name,getSkinKey(battleBotItem));document.getElementById('battleBotName').textContent=battleBotItem.name;document.getElementById('battleBotPrice').textContent=formatCredits(battleBotItem.price);document.getElementById('battleBotSlot').classList.add('filled')}
-function rerollBattleBot(){if(battleInProgress)return;if(!battlePlayerItem)return;pickBotOpponent(battlePlayerItem.price)}
-function resetCoinVisual(){const coin=document.getElementById('battleCoin');if(!coin)return;coin.style.transition='none';coin.style.transform='rotateX(0deg)';document.getElementById('battleCoinStage')?.classList.remove('is-spinning','burst')}
-function startBattle(){if(battleInProgress||!battlePlayerItem||!battleBotItem)return;battleInProgress=true;document.getElementById('battleStartBtn').disabled=true;const outcome=document.getElementById('battleOutcome');outcome.innerHTML='<span class="text-amber-300 pulse-soft">Крутимо…</span>';const isPlayerWin=Math.random()<0.5;const stage=document.getElementById('battleCoinStage');const coin=document.getElementById('battleCoin');stage.classList.add('is-spinning');coin.style.transition='transform 3.6s cubic-bezier(.15,.6,.25,1)';requestAnimationFrame(()=>{coin.style.transform=`rotateX(${7*360+(isPlayerWin?0:180)}deg)`});setTimeout(()=>{stage.classList.remove('is-spinning');stage.classList.add('burst');updateAllTimeOnBattle(isPlayerWin);if(isPlayerWin){outcome.innerHTML='<span class="text-emerald-300">Перемога! Забираєш предмет бота</span>';document.getElementById('battlePlayerSlot').classList.add('is-winner');document.getElementById('battleBotSlot').classList.add('is-loser');userInventory.push(makeDemoItem(battleBotItem,'-battle'));soundWin()}else{outcome.innerHTML='<span class="text-red-300">Поразка…</span>';document.getElementById('battleBotSlot').classList.add('is-winner');document.getElementById('battlePlayerSlot').classList.add('is-loser');userInventory=userInventory.filter(i=>i.id!==battlePlayerItem.id);soundLose()}renderInventoryGrid();renderProfileInventory();updateAvatarBadge();saveState();renderGameHub();setTimeout(()=>{battleInProgress=false;battlePlayerItem=null;battleBotItem=null;document.getElementById('battlePlayerEmpty').classList.remove('hidden');document.getElementById('battleBotEmpty').classList.remove('hidden');document.getElementById('battlePlayerFilled').classList.add('hidden');document.getElementById('battleBotFilled').classList.add('hidden');document.getElementById('battleStartBtn').disabled=true;document.getElementById('battlePlayerSlot').classList.remove('filled','is-winner','is-loser');document.getElementById('battleBotSlot').classList.remove('filled','is-winner','is-loser');resetCoinVisual();outcome.textContent='Готуємось…'},3500)},3600)}
-
-/* ===== ROYALE ===== */
-let royalePlayerItem=null,royaleBots=[],royaleInProgress=false;
-function pickRoyalePlayerItem(){if(royaleInProgress)return;if(!userInventory.length){showToast('Інвентар порожній','warn');return}const g=document.getElementById('battlePickGrid');g.innerHTML=userInventory.map(s=>`<button type="button" data-royale-pick="${escapeHtml(String(s.id))}" class="bg-brand-card border border-brand-border rounded-xl p-3 flex flex-col items-center"><img src="${escapeHtml(s.img||'')}" data-skin-name="${escapeHtml(s.name)}" class="h-16 object-contain" onerror="handleSkinImageError(this)"><p class="mt-1 text-xs font-bold text-white truncate w-full text-center">${escapeHtml(s.name)}</p></button>`).join('');g.querySelectorAll('[data-royale-pick]').forEach(b=>b.addEventListener('click',()=>{const it=userInventory.find(x=>String(x.id)===b.dataset.royalePick);if(it){setRoyalePlayer(it);closeModal('battlePickModal')}}));openModal('battlePickModal')}
-function setRoyalePlayer(item){royalePlayerItem=item;document.getElementById('royalePlayerImg').src=item.img||createSkinPreview(item.name);document.getElementById('royalePlayerImg').classList.remove('hidden');document.getElementById('royalePlayerEmpty').classList.add('hidden');document.getElementById('royalePlayerName').textContent=item.name;document.getElementById('royalePlayerPrice').textContent=formatCredits(item.price);const lo=item.price*0.5,hi=item.price*1.5;const pool=CS2_SKINS.filter(s=>isUsableSkin(s)&&s.price>=lo&&s.price<=hi);royaleBots=[];for(let i=0;i<3;i++){const p=pool.length?pool[Math.floor(Math.random()*pool.length)]:CS2_SKINS[Math.floor(Math.random()*CS2_SKINS.length)];const wear=rollWear();royaleBots.push({...p,wear,basePrice:p.price,price:priceWithWear(p.price,wear)})}renderRoyaleArena();document.getElementById('royaleStartBtn').disabled=false}
-function renderRoyaleArena(){const all=[royalePlayerItem,...royaleBots];document.querySelectorAll('[data-royale-slot]').forEach((el,i)=>{const it=all[i];if(!it){el.querySelector('.royale-img').src='';el.querySelector('.royale-name').textContent='';return}el.querySelector('.royale-img').src=it.img||createSkinPreview(it.name);el.querySelector('.royale-name').textContent=it.name;el.querySelector('.royale-status').textContent=formatCredits(it.price)})}
-function resetRoyale(){royalePlayerItem=null;royaleBots=[];royaleInProgress=false;document.getElementById('royaleLog').innerHTML='';document.getElementById('royaleStartBtn').disabled=true}
-async function startRoyale(){if(royaleInProgress||!royalePlayerItem||royaleBots.length!==3)return;royaleInProgress=true;document.getElementById('royaleStartBtn').disabled=true;const log=document.getElementById('royaleLog');log.innerHTML='';const userItem=royalePlayerItem;const bots=[...royaleBots];log.innerHTML+=`<div class="text-xs text-amber-300">⚔️ ROYALE ПОЧАВСЯ!</div>`;await new Promise(r=>setTimeout(r,800));const userWon=Math.random()<0.25;updateAllTimeOnBattle(userWon);if(userWon){bots.forEach(b=>userInventory.push(makeDemoItem({...b},'-royale')));gameState.allTime.royaleWins=(gameState.allTime.royaleWins||0)+1;log.innerHTML+=`<div class="text-xs text-emerald-300">👑 ПЕРЕМОГА! +3 предмети (свій зберігся)</div>`;soundWin()}else{userInventory=userInventory.filter(i=>i.id!==userItem.id);log.innerHTML+=`<div class="text-xs text-red-300">💀 Поразка…</div>`;soundLose()}renderInventoryGrid();renderProfileInventory();updateAvatarBadge();saveState();renderGameHub();setTimeout(()=>{royaleInProgress=false;document.getElementById('royaleStartBtn').disabled=false},1500)}
-
-/* ===== CONTRACT ===== */
-function pickContractSlot(idx){if(!userInventory.length){showToast('Інвентар порожній','warn');return}contractActiveSlot=idx;const g=document.getElementById('contractPickGrid');const used=new Set(contractItems.filter(Boolean).map(i=>i.id));g.innerHTML=userInventory.filter(s=>!used.has(s.id)).map(s=>`<button type="button" data-contract-pick="${escapeHtml(String(s.id))}" class="bg-brand-card border border-brand-border rounded-xl p-3 flex flex-col items-center"><img src="${escapeHtml(s.img||'')}" data-skin-name="${escapeHtml(s.name)}" class="h-16 object-contain" onerror="handleSkinImageError(this)"><p class="mt-1 text-xs font-bold text-white truncate w-full text-center">${escapeHtml(s.name)}</p></button>`).join('');g.querySelectorAll('[data-contract-pick]').forEach(b=>b.addEventListener('click',()=>{const it=userInventory.find(x=>String(x.id)===b.dataset.contractPick);if(it){contractItems[contractActiveSlot]=it;renderContractSlots();closeModal('contractPickModal')}}));openModal('contractPickModal')}
-function renderContractSlots(){const slots=document.querySelectorAll('[data-contract-slot]');slots.forEach((el,i)=>{const it=contractItems[i];if(it){el.classList.add('filled');el.innerHTML=`<img src="${escapeHtml(it.img||'')}" data-skin-name="${escapeHtml(it.name)}" onerror="handleSkinImageError(this)">`}else{el.classList.remove('filled');el.innerHTML='<i class="fa-solid fa-plus text-2xl text-amber-500/60"></i>'}});const total=contractItems.filter(Boolean).reduce((s,i)=>s+(i.price||0),0);const tv=document.getElementById('contractTotalValue');if(tv)tv.textContent=formatCredits(total);const range=document.getElementById('contractRangeValue');if(range){if(total>0){const lo=Math.round(total*.75),hi=Math.round(total*1.35);range.textContent=`${formatCredits(lo).replace(' DC','')} — ${formatCredits(hi)}`}else range.textContent='—'}}
-function clearContract(){contractItems=[null,null,null,null,null];renderContractSlots()}
-function executeContract(){const items=contractItems.filter(Boolean);if(items.length!==5){showToast(`Потрібно 5 предметів`,'warn');return}const total=items.reduce((s,i)=>s+(i.price||0),0);const lo=total*.75,hi=total*1.35;const pool=CS2_SKINS.filter(s=>isUsableSkin(s)&&s.price>=lo&&s.price<=hi);if(!pool.length)return;const pick=pool[Math.floor(Math.random()*pool.length)];const item=makeDemoItem(pick,'-contract');const ids=new Set(items.map(i=>i.id));userInventory=userInventory.filter(i=>!ids.has(i.id));userInventory.push(item);updateAllTimeOnContract();addXp(120);checkAchievements();saveState();renderInventoryGrid();renderProfileInventory();updateAvatarBadge();renderGameHub();clearContract();showToast(`Контракт: «${item.name}»`,'success');soundWin();document.getElementById('caseResultName').textContent=item.name;document.getElementById('caseResultValue').textContent=formatCredits(item.price);document.getElementById('caseResultImg').src=item.img||createSkinPreview(item.name);document.getElementById('caseResultImg').classList.remove('hidden');document.getElementById('caseResultHeader').textContent='Контракт';document.getElementById('caseResultWear').textContent='';openModal('caseModal')}
-
-/* ===== LIVE FEED ===== */
-function addActivityEvent({player,skin,outcome}){const feed=document.getElementById('liveFeed');if(!feed||!skin)return;const el=document.createElement('div');el.className='live-feed-item flex items-center gap-2 bg-brand-card border border-gray-800 rounded-lg px-2.5 py-1.5 text-xs shrink-0';el.innerHTML=`<span class="activity-avatar flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-extrabold text-black">${escapeHtml(String(player||'?').charAt(0))}</span><span class="max-w-[74px] truncate text-gray-200 font-semibold">${escapeHtml(player||'Гість')}</span><img src="${escapeHtml(skin.img||'')}" class="w-6 h-6 object-contain" onerror="handleSkinImageError(this)"><span class="max-w-[105px] truncate font-bold text-amber-400">${escapeHtml(skin.name)}</span>`;feed.prepend(el);while(feed.children.length>12)feed.removeChild(feed.lastElementChild)}
-function startLiveFeedSimulation(){const players=['Bohdan_47','Voxxa','m0rsik','Fennec','Raven_ua'];const push=()=>{const cand=CS2_SKINS.filter(isUsableSkin);if(!cand.length)return;const s=cand[Math.floor(Math.random()*cand.length)];addActivityEvent({player:players[Math.floor(Math.random()*players.length)],skin:s,outcome:Math.random()>.5?'win':'attempt'})};(async()=>{for(let i=0;i<5;i++)push()})();setInterval(push,3200)}
-
-/* ===== CATALOG ===== */
-function estimateSkinPrice(skin){const r=skin?.rarity?.name||skin?.rarity||'Consumer Grade';const t={'Consumer Grade':18,'Industrial Grade':38,'Mil-Spec Grade':95,'Restricted':260,'Classified':780,'Covert':2400,'Contraband':85000,'Extraordinary':12500};return Math.round((t[r]||55)*(0.72+(Math.random()*0.57)))}
-async function fetchSkinCatalog(url){const c=new AbortController();const t=setTimeout(()=>c.abort(),18000);try{const r=await fetch(url,{signal:c.signal});if(!r.ok)throw new Error();const d=await r.json();if(!Array.isArray(d)||!d.length)throw new Error();return d}finally{clearTimeout(t)}}
-async function loadCompleteSkinCatalog(){try{document.getElementById('shopCount').textContent='Оновлюємо…';let cat=null;for(const ep of CS2_SKINS_APIS){try{cat=await fetchSkinCatalog(ep);break}catch{}}if(!cat)throw new Error();const ex=new Map(CS2_SKINS.map(s=>[s.name,s.price]));CS2_SKINS=cat.filter(s=>s.image&&s.weapon&&s.category?.name).map((s,i)=>({id:s.id||`cs2-${i}`,name:s.name,weapon:s.weapon.name,category:s.category?.name||'Інше',rarity:s.rarity?.name||'Consumer Grade',rarityColor:s.rarity?.color||'#b0c3d9',img:s.image,price:ex.get(s.name)||estimateSkinPrice(s)})).sort((a,b)=>a.weapon.localeCompare(b.weapon)||a.name.localeCompare(b.name));populateCategoryFilter();filterShop();renderGameHub();renderCaseTopDrops();renderCaseButtons()}catch{filteredSkins=CS2_SKINS;renderShopGrid(filteredSkins);document.getElementById('shopCount').textContent=`${CS2_SKINS.length} скінів`;renderGameHub()}}
-function populateCategoryFilter(){const sel=document.getElementById('shopCategory');if(!sel)return;const cats=[...new Set(CS2_SKINS.map(s=>s.category).filter(Boolean))].sort();sel.innerHTML='<option value="all">Уся зброя</option>'+cats.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(CATEGORY_LABELS[c]||c)}</option>`).join('')}
-function resetShopFilters(){document.getElementById('shopSearch').value='';document.getElementById('shopCategory').value='all';document.getElementById('shopSort').value='name-asc';document.getElementById('shopMinPrice').value='';document.getElementById('shopMaxPrice').value='';filterShop()}
-function filterShop(){const q=(document.getElementById('shopSearch').value||'').trim().toLowerCase();const cat=document.getElementById('shopCategory').value;const sort=document.getElementById('shopSort').value;const minP=parseFloat(document.getElementById('shopMinPrice').value)||0;const maxP=parseFloat(document.getElementById('shopMaxPrice').value)||Infinity;const iv=getInputVal();const minTarget=iv>0?iv:0;let list=CS2_SKINS.filter(s=>{if(!isUsableSkin(s))return false;if(cat!=='all'&&s.category!==cat)return false;if(s.price<minP||s.price>maxP)return false;if(s.price<=minTarget)return false;if(!q)return true;return`${s.name} ${s.weapon||''}`.toLowerCase().includes(q)});if(sort==='price-asc')list.sort((a,b)=>a.price-b.price);else if(sort==='price-desc')list.sort((a,b)=>b.price-a.price);else list.sort((a,b)=>a.name.localeCompare(b.name));filteredSkins=list;visibleSkinCount=80;renderShopGrid(filteredSkins)}
-function showMoreSkins(){visibleSkinCount+=80;renderShopGrid(filteredSkins)}
-function renderShopGrid(skins){const g=document.getElementById('shopGrid');if(!g)return;const av=skins.filter(isUsableSkin);const shown=av.slice(0,visibleSkinCount);document.getElementById('shopCount').textContent=`${av.length.toLocaleString('uk-UA')} скінів`;document.getElementById('shopMoreBtn').classList.toggle('hidden',shown.length>=av.length);g.innerHTML=shown.map(s=>`<article class="bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 transition group"><button type="button" data-select-skin-id="${escapeHtml(getSkinKey(s))}" class="w-full text-left flex flex-col items-center"><img src="${escapeHtml(s.img)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" class="h-20 w-full object-contain group-hover:scale-105 transition" loading="lazy" onerror="handleSkinImageError(this)"><p class="font-bold text-xs text-white truncate w-full text-center mt-2">${escapeHtml(s.name)}</p><p class="text-[10px] truncate mt-1" style="color:${escapeHtml(s.rarityColor||'#f59e0b')}">${escapeHtml(s.rarity)}</p><p class="text-amber-400 font-extrabold text-xs mt-0.5">${formatCredits(s.price)}</p></button></article>`).join('');g.querySelectorAll('[data-select-skin-id]').forEach(b=>b.addEventListener('click',()=>{const s=CS2_SKINS.find(x=>getSkinKey(x)===b.dataset.selectSkinId);if(s)selectTargetItem(s)}))}
-
-/* Export / Import */
-function exportSave(){try{const data={version:'3.6',exportedAt:Date.now(),balance:currentUser?.balance??0,inventory:userInventory,gameState,account};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`potuzhno-drop-${Date.now()}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);showToast('Експортовано','success')}catch{showToast('Помилка','error')}}
-function importSave(event){const file=event.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=(e)=>{try{const data=JSON.parse(e.target.result);if(!data.inventory||!data.gameState)throw new Error();userInventory=data.inventory.map(it=>{if(!it)return null;const wear=it.wear&&WEAR_TIERS.find(w=>w.code===it.wear.code)?it.wear:WEAR_TIERS[2];const bp=Number(it.basePrice??it.price??0);return{...it,wear,basePrice:bp,price:priceWithWear(bp,wear),addedAt:it.addedAt||Date.now()}}).filter(Boolean);const d=createDefaultGameState();gameState={...d,...data.gameState,stats:{...d.stats,...(data.gameState.stats||{})},collectionRewards:data.gameState.collectionRewards||{}};if(data.account)account={...account,...data.account};if(typeof data.balance==='number'&&currentUser)currentUser.balance=data.balance;saveState();updateBalanceUI();renderInventoryGrid();renderProfileInventory();updateAvatarBadge();renderGameHub();updateAccountUI();showToast('Імпортовано!','success');soundWin()}catch{showToast('Не вдалося','error')}};reader.readAsText(file);event.target.value=''}
-
-window.addEventListener('DOMContentLoaded',()=>{
-initCanvas();loadState();
-if(localStorage.getItem(STORAGE.consent)!=='accepted'){document.body.classList.add('consent-locked');const el=document.getElementById('riskNotice');el.classList.remove('hidden');el.classList.add('flex')}
-renderCanvas(0);renderInventoryGrid();renderShopGrid(CS2_SKINS);renderMultiSlots();renderContractSlots();renderProfileInventory();
-renderCaseButtons();
-loadCompleteSkinCatalog().finally(()=>{startLiveFeedSimulation();updateTopupUI();renderCaseTopDrops();updateFreeCaseBtn();renderCaseButtons()});
-updateGiftButtonUI();updateTopupUI();updateFreeCaseBtn();
-setInterval(updateGiftButtonUI,60000);
-const startPage=location.hash.replace('#','')||localStorage.getItem(STORAGE.page)||'upgrader';
-showPage(PAGES.includes(startPage)?startPage:'upgrader');
-document.querySelectorAll('.modal-backdrop').forEach(el=>{el.addEventListener('click',e=>{if(e.target===el){el.classList.add('hidden');el.classList.remove('flex')}})});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.querySelectorAll('.modal-backdrop.flex').forEach(m=>{m.classList.add('hidden');m.classList.remove('flex')})}});
-});
+function renderCaseTopDrops(){
+const g=document.getElementById('caseTopDrops');if(!g)return;
+const list=CS2_SKINS.filter(isUsableSkin);
+if(!list.length)return;
+const sorted=[...list].sort((a,b)=>b.price-a.price).slice(0,6);
+g.innerHTML=sorted.map(s=>`<div class="rounded-lg border border-amber-500/25 bg-black/30 p-2 text-center"><img src="${escapeHtml(s.img)}" alt="" data-skin-name="${escapeHtml(s.name)}" class="h-14 mx-auto object-contain" onerror="handleSkinImageError(this)"><p class="mt-1 text-[9px] font-extrabold text-gray-200 truncate">${escapeHtml(s.name.split('|').pop().trim())}</p><p class="text-[10px] font-bold text-amber-300">${formatCredits(s.price)}</p></div>`).join('')
+}
 </script>
 </body>
 </html>
