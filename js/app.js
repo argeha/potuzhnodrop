@@ -49,7 +49,7 @@ function showPage(id) {
     renderRecentAch();
   }
   if (id === 'battle') resetCoinVisual();
-  if (id === 'royale') resetRoyale();
+  if (id === 'royale') { resetRoyale(); setTimeout(initRoyalePage, 30); }
 }
 
 window.addEventListener('hashchange', () => {
@@ -3760,254 +3760,484 @@ function startBattle() {
   });
 }
 
-/* ===== BATTLE ROYALE ===== */
-let royalePlayerItem = null;
-let royaleBots = [];
-let royaleInProgress = false;
-let royalePhase = 'idle';
+/* ===== JACKPOT ROYALE ===== */
 
-function pickRoyalePlayerItem() {
+// ── State ──────────────────────────────────────────────────────────────────
+let royalePlayerSkins  = [];      // player's staked skins (up to 10)
+let royaleBotPools     = [[], [], []]; // each bot's staked skins
+let royaleInProgress   = false;
+let royaleWheelAngle   = 0;       // current rotation in radians
+let royaleWheelCtx     = null;
+const ROYALE_MAX_SKINS = 10;
+const ROYALE_COLORS    = [
+  '#f59e0b', // player  – amber
+  '#ef4444', // bot 0   – red
+  '#3b82f6', // bot 1   – blue
+  '#a855f7', // bot 2   – violet
+];
+const ROYALE_BOT_NAMES = ['Bot_Voxxa', 'Bot_Fennec', 'Bot_Raven'];
+
+// ── Canvas init ────────────────────────────────────────────────────────────
+function initRoyaleCanvas() {
+  const c = document.getElementById('royaleWheelCanvas');
+  if (!c) return;
+  royaleWheelCtx = c.getContext('2d');
+}
+
+// ── Compute values ─────────────────────────────────────────────────────────
+function royaleGetValues() {
+  const pv  = royalePlayerSkins.reduce((s, x) => s + (x.price || 0), 0);
+  const bv  = royaleBotPools.map(pool => pool.reduce((s, x) => s + (x.price || 0), 0));
+  const total = pv + bv.reduce((a, b) => a + b, 0);
+  return { pv, bv, total };
+}
+
+// ── Draw wheel ─────────────────────────────────────────────────────────────
+function drawRoyaleWheel(rotationRad = 0) {
+  const ctx = royaleWheelCtx;
+  if (!ctx) return;
+  const SIZE = 300, cx = SIZE / 2, cy = SIZE / 2, R = SIZE / 2 - 6;
+  ctx.clearRect(0, 0, SIZE, SIZE);
+
+  const { pv, bv, total } = royaleGetValues();
+
+  if (total === 0) {
+    // Empty wheel
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.fillStyle = '#1a2030';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    return;
+  }
+
+  const shares = [pv, ...bv].map(v => v / total);
+  const labels = ['ТИ', ...ROYALE_BOT_NAMES];
+  let startAngle = rotationRad - Math.PI / 2;
+
+  shares.forEach((share, i) => {
+    if (share <= 0) return;
+    const sweep = share * Math.PI * 2;
+    const endAngle = startAngle + sweep;
+
+    // Sector fill
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, R, startAngle, endAngle);
+    ctx.closePath();
+    ctx.fillStyle = ROYALE_COLORS[i];
+    ctx.fill();
+
+    // Sector border
+    ctx.strokeStyle = '#0b0e14';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Label inside sector
+    if (share > 0.04) {
+      const midAngle = startAngle + sweep / 2;
+      const lx = cx + Math.cos(midAngle) * (R * 0.64);
+      const ly = cy + Math.sin(midAngle) * (R * 0.64);
+      ctx.save();
+      ctx.translate(lx, ly);
+      ctx.rotate(midAngle + Math.PI / 2);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 10px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(0,0,0,0.8)';
+      ctx.shadowBlur = 4;
+      ctx.fillText(labels[i], 0, -8);
+      ctx.font = 'bold 9px Inter, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.fillText(Math.round(share * 100) + '%', 0, 4);
+      ctx.restore();
+    }
+
+    startAngle = endAngle;
+  });
+
+  // Outer ring
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // Inner circle (centre hole) – drawn by CSS pseudo
+  ctx.beginPath();
+  ctx.arc(cx, cy, 38, 0, Math.PI * 2);
+  ctx.fillStyle = '#0b0e14';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+// ── Update percent list UI ─────────────────────────────────────────────────
+function updateRoyaleUI() {
+  const { pv, bv, total } = royaleGetValues();
+
+  // Pot total
+  const potEl = document.getElementById('royalePotTotal');
+  if (potEl) potEl.textContent = formatCredits(total);
+
+  // Player total + count
+  const ptEl = document.getElementById('royalePlayerTotal');
+  if (ptEl) ptEl.textContent = formatCredits(pv);
+  const pcEl = document.getElementById('royalePlayerCount');
+  if (pcEl) pcEl.textContent = String(royalePlayerSkins.length);
+
+  // Add button disabled if full
+  const addBtn = document.getElementById('royaleAddBtn');
+  if (addBtn) addBtn.disabled = royalePlayerSkins.length >= ROYALE_MAX_SKINS;
+
+  // Your chance
+  const chEl = document.getElementById('royaleYourChance');
+  if (chEl) chEl.textContent = total > 0 ? Math.round((pv / total) * 100) + '%' : '0%';
+
+  // Start button
+  const sb = document.getElementById('royaleStartBtn');
+  if (sb) sb.disabled = royalePlayerSkins.length === 0 || royaleInProgress;
+
+  // Bot totals
+  bv.forEach((val, i) => {
+    const el = document.getElementById(`royaleBot${i}Total`);
+    if (el) el.textContent = formatCredits(val);
+  });
+
+  // Percent list
+  const listEl = document.getElementById('royalePercentList');
+  if (listEl) {
+    const all = [
+      { name: 'ТИ', val: pv, color: ROYALE_COLORS[0] },
+      ...bv.map((v, i) => ({ name: ROYALE_BOT_NAMES[i], val: v, color: ROYALE_COLORS[i + 1] })),
+    ];
+    listEl.innerHTML = all.map(p => {
+      const pct = total > 0 ? (p.val / total) * 100 : 0;
+      return `<div class="royale-pct-row">
+        <span style="width:8px;height:8px;border-radius:50%;background:${p.color};flex-shrink:0;display:inline-block"></span>
+        <span style="font-size:10px;font-weight:700;color:#e5e7eb;min-width:70px">${p.name}</span>
+        <div class="royale-pct-bar-wrap">
+          <div class="royale-pct-bar" style="width:${pct.toFixed(1)}%;background:${p.color}"></div>
+        </div>
+        <span style="font-size:10px;font-weight:800;color:${p.color};min-width:34px;text-align:right">${pct.toFixed(1)}%</span>
+        <span style="font-size:9px;color:#6b7280;min-width:50px;text-align:right">${formatCredits(p.val)}</span>
+      </div>`;
+    }).join('');
+  }
+
+  drawRoyaleWheel(royaleWheelAngle);
+}
+
+// ── Render player skins ────────────────────────────────────────────────────
+function renderRoyalePlayerSlots() {
+  const grid = document.getElementById('royalePlayerSlots');
+  if (!grid) return;
+  grid.innerHTML = royalePlayerSkins.map((s, idx) => {
+    const imgSrc = s.img || '';
+    return `<div class="jackpot-skin-slot">
+      <button class="slot-remove" onclick="royaleRemoveSkin(${idx})">✕</button>
+      <img src="${escapeHtml(imgSrc)}" alt="" onerror="this.style.display='none'" style="width:40px;height:40px;object-fit:contain">
+      <span class="slot-name">${escapeHtml(s.name)}</span>
+      <span class="slot-price">${formatCredits(s.price || 0)}</span>
+    </div>`;
+  }).join('') + (royalePlayerSkins.length < ROYALE_MAX_SKINS
+    ? `<div class="jackpot-skin-slot" style="border-style:dashed;border-color:rgba(245,158,11,0.2);cursor:pointer;justify-content:center" onclick="royaleAddSkin()">
+         <i class="fa-solid fa-plus" style="color:rgba(245,158,11,0.5);font-size:18px"></i>
+       </div>` : '');
+  updateRoyaleUI();
+}
+
+// ── Render bot skin thumbnails ─────────────────────────────────────────────
+function renderRoyaleBotPanels() {
+  royaleBotPools.forEach((pool, i) => {
+    const el = document.getElementById(`royaleBot${i}Skins`);
+    if (!el) return;
+    el.innerHTML = pool.map(s => {
+      const src = s.img || '';
+      return `<img class="jackpot-bot-thumb" src="${escapeHtml(src)}" alt="${escapeHtml(s.name)}" title="${escapeHtml(s.name)} · ${formatCredits(s.price || 0)}" onerror="this.style.display='none'">`;
+    }).join('');
+  });
+  updateRoyaleUI();
+}
+
+// ── Add a skin from inventory ──────────────────────────────────────────────
+function royaleAddSkin() {
   if (royaleInProgress) return;
+  if (royalePlayerSkins.length >= ROYALE_MAX_SKINS) {
+    showToast(`Максимум ${ROYALE_MAX_SKINS} скінів`, 'warn');
+    return;
+  }
   if (!userInventory.length) {
     showToast('Інвентар порожній', 'warn');
     return;
   }
   const g = document.getElementById('battlePickGrid');
   if (!g) return;
-  g.innerHTML = userInventory.map(s => {
+
+  const usedIds = new Set(royalePlayerSkins.map(s => s.id));
+  const available = userInventory.filter(s => !usedIds.has(s.id));
+  if (!available.length) {
+    showToast('Усі скіни вже додані', 'warn');
+    return;
+  }
+
+  g.innerHTML = available.map(s => {
     const wear = getWear(s);
-    return `<button type="button" data-royale-pick="${escapeHtml(String(s.id))}" class="bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 flex flex-col items-center transition">
+    return `<button type="button" data-royale-pick="${escapeHtml(String(s.id))}"
+      class="bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 flex flex-col items-center transition">
       <span class="wear-badge wear-${wear.code} self-start">${wear.code}</span>
-      <img src="${escapeHtml(s.img || '')}" alt="" data-skin-name="${escapeHtml(s.name)}" class="h-16 object-contain mt-1" onerror="handleSkinImageError(this)">
+      <img src="${escapeHtml(s.img || '')}" alt="" class="h-16 object-contain mt-1" onerror="handleSkinImageError(this)">
       <p class="mt-1 text-xs font-bold text-white truncate w-full text-center">${escapeHtml(s.name)}</p>
       <p class="text-amber-400 text-xs font-extrabold">${formatCredits(s.price)}</p>
     </button>`;
   }).join('');
 
-  g.querySelectorAll('[data-royale-pick]').forEach(b => b.addEventListener('click', () => {
-    const it = userInventory.find(x => String(x.id) === b.dataset.royalePick);
-    if (it) {
-      setRoyalePlayer(it);
+  g.querySelectorAll('[data-royale-pick]').forEach(b => {
+    b.addEventListener('click', () => {
+      const it = userInventory.find(x => String(x.id) === b.dataset.royalePick);
+      if (it && !royalePlayerSkins.find(x => x.id === it.id)) {
+        royalePlayerSkins.push(it);
+        renderRoyalePlayerSlots();
+      }
       closeModal('battlePickModal');
-    }
-  }));
+    });
+  });
   openModal('battlePickModal');
 }
 
-function setRoyalePlayer(item) {
-  royalePlayerItem = item;
-  const img = document.getElementById('royalePlayerImg');
-  const name = document.getElementById('royalePlayerName');
-  const price = document.getElementById('royalePlayerPrice');
-  if (img) {
-    img.src = item.img || createSkinPreview(item.name);
-    img.classList.remove('hidden');
-  }
-  document.getElementById('royalePlayerEmpty')?.classList.add('hidden');
-  if (name) name.textContent = item.name;
-  if (price) price.textContent = formatCredits(item.price);
-
-  const lo = item.price * 0.5, hi = item.price * 1.5;
-  const pool = CS2_SKINS.filter(s => isUsableSkin(s) && s.price >= lo && s.price <= hi);
-  royaleBots = [];
-  for (let i = 0; i < 3; i++) {
-    const p = pool.length ? pool[Math.floor(Math.random() * pool.length)] : CS2_SKINS[Math.floor(Math.random() * CS2_SKINS.length)];
-    const wear = rollWear();
-    royaleBots.push({
-      ...p,
-      wear,
-      basePrice: p.price,
-      price: priceWithWear(p.price, wear),
-      botName: ['Bot_Voxxa', 'Bot_Fennec', 'Bot_Raven', 'Bot_M0rsik', 'Bot_Bohdan'][i % 5]
-    });
-  }
-  renderRoyaleArena();
-  const startBtn = document.getElementById('royaleStartBtn');
-  if (startBtn) startBtn.disabled = false;
-  royalePhase = 'ready';
+// ── Remove a skin from player's stake ─────────────────────────────────────
+function royaleRemoveSkin(idx) {
+  if (royaleInProgress) return;
+  royalePlayerSkins.splice(idx, 1);
+  renderRoyalePlayerSlots();
 }
 
-function renderRoyaleArena() {
-  const all = [royalePlayerItem, ...royaleBots];
-  document.querySelectorAll('[data-royale-slot]').forEach((el, i) => {
-    const it = all[i];
-    const img = el.querySelector('.royale-img');
-    const name = el.querySelector('.royale-name');
-    const status = el.querySelector('.royale-status');
-    if (!it) {
-      if (img) img.src = '';
-      if (name) name.textContent = '';
-      if (status) status.textContent = '—';
-      return;
+// ── Generate bot pools ─────────────────────────────────────────────────────
+function royaleGenerateBots() {
+  if (!CS2_SKINS || !CS2_SKINS.length) return;
+  royaleBotPools = ROYALE_BOT_NAMES.map(() => {
+    const count = 3 + Math.floor(Math.random() * 6); // 3–8 skins
+    const pool = [];
+    for (let j = 0; j < count; j++) {
+      const s = CS2_SKINS[Math.floor(Math.random() * CS2_SKINS.length)];
+      const wear = rollWear ? rollWear() : { code: 'FT', mult: 1 };
+      pool.push({
+        ...s,
+        id: 'bot_' + Math.random().toString(36).slice(2),
+        wear,
+        price: priceWithWear ? priceWithWear(s.price, wear) : (s.price || 100),
+      });
     }
-    if (img) img.src = it.img || createSkinPreview(it.name);
-    if (name) name.textContent = it.name;
-    if (status) status.textContent = formatCredits(it.price);
-    el.classList.remove('is-winner', 'is-loser');
+    return pool;
   });
+
+  ROYALE_BOT_NAMES.forEach((name, i) => {
+    const el = document.getElementById(`royaleBot${i}Name`);
+    if (el) el.textContent = name;
+  });
+  renderRoyaleBotPanels();
 }
 
-function royaleLog(msg, accent = 'text-gray-400') {
-  const h = document.getElementById('royaleLog');
-  if (!h) return;
-  const el = document.createElement('div');
-  el.className = `rounded-lg border border-gray-800 bg-black/20 px-3 py-2 text-xs ${accent}`;
-  el.textContent = msg;
-  h.prepend(el);
-}
-
+// ── Reset ──────────────────────────────────────────────────────────────────
 function resetRoyale() {
-  royalePlayerItem = null;
-  royaleBots = [];
-  royaleInProgress = false;
-  royalePhase = 'idle';
-  const log = document.getElementById('royaleLog');
-  if (log) log.innerHTML = '';
-  const img = document.getElementById('royalePlayerImg');
-  if (img) {
-    img.src = '';
-    img.classList.add('hidden');
+  royalePlayerSkins  = [];
+  royaleBotPools     = [[], [], []];
+  royaleInProgress   = false;
+  royaleWheelAngle   = 0;
+
+  // Hide win banner
+  const banner = document.getElementById('royaleWinBanner');
+  if (banner) banner.classList.add('hidden');
+
+  // Clear bot highlights
+  for (let i = 0; i < 3; i++) {
+    const card = document.getElementById(`royaleBot${i}Card`);
+    if (card) card.classList.remove('is-winner', 'is-loser');
   }
-  document.getElementById('royalePlayerEmpty')?.classList.remove('hidden');
-  const nEl = document.getElementById('royalePlayerName');
-  if (nEl) nEl.textContent = '';
-  const pEl = document.getElementById('royalePlayerPrice');
-  if (pEl) pEl.textContent = '';
-  const sBtn = document.getElementById('royaleStartBtn');
-  if (sBtn) sBtn.disabled = true;
-  document.querySelectorAll('[data-royale-slot]').forEach(el => {
-    const rImg = el.querySelector('.royale-img');
-    if (rImg) rImg.src = '';
-    const rName = el.querySelector('.royale-name');
-    if (rName) rName.textContent = '';
-    const rStatus = el.querySelector('.royale-status');
-    if (rStatus) rStatus.textContent = '—';
-    el.classList.remove('is-winner', 'is-loser');
-  });
+
+  renderRoyalePlayerSlots();
+  royaleGenerateBots();
 }
 
-function royaleFlipTwo(p1, p2) {
-  return new Promise(resolve => {
-    royaleLog(`🪙 ${p1.displayName} vs ${p2.displayName} — монетка крутиться...`, 'text-amber-300');
-    let flips = 0;
-    const int = setInterval(() => {
-      beep(500 + Math.random() * 400, 0.03, 'square');
-      flips++;
-      if (flips > 12) {
-        clearInterval(int);
-        const aRoll = Math.floor(Math.random() * 100) + 1;
-        const bRoll = Math.floor(Math.random() * 100) + 1;
-        const winner = aRoll >= bRoll ? p1 : p2;
-        const loser = aRoll >= bRoll ? p2 : p1;
-        royaleLog(`  ${p1.displayName} (${aRoll}) vs ${p2.displayName} (${bRoll}) → переміг: ${winner.displayName}`, 'text-green-300');
-        soundCoin();
-        resolve({ winner, loser });
-      }
-    }, 130);
-  });
-}
+// ── Spin animation ─────────────────────────────────────────────────────────
+function startRoyale() {
+  if (royaleInProgress) return;
+  if (royalePlayerSkins.length === 0) {
+    showToast('Додай хоча б 1 скін', 'warn');
+    return;
+  }
 
-function royaleHighlightSlot(slotIdx, isWinner) {
-  const el = document.querySelector(`[data-royale-slot="${slotIdx}"]`);
-  if (!el) return;
-  if (isWinner) el.classList.add('is-winner');
-  else el.classList.add('is-loser');
-}
-
-async function startRoyale() {
-  if (royaleInProgress || !royalePlayerItem || royaleBots.length !== 3) return;
   royaleInProgress = true;
   const startBtn = document.getElementById('royaleStartBtn');
+  const addBtn   = document.getElementById('royaleAddBtn');
   if (startBtn) startBtn.disabled = true;
-  const log = document.getElementById('royaleLog');
-  if (log) log.innerHTML = '';
-  royaleLog('⚔️ ROYALE ПОЧАВСЯ! 4 гравці на арені.', 'text-amber-300');
+  if (addBtn)   addBtn.disabled   = true;
 
-  const participants = [
-    { slot: 0, isUser: true, item: royalePlayerItem, displayName: `ТИ (${royalePlayerItem.name})` },
-    { slot: 1, isUser: false, item: royaleBots[0], displayName: `${royaleBots[0].botName} (${royaleBots[0].name})` },
-    { slot: 2, isUser: false, item: royaleBots[1], displayName: `${royaleBots[1].botName} (${royaleBots[1].name})` },
-    { slot: 3, isUser: false, item: royaleBots[2], displayName: `${royaleBots[2].botName} (${royaleBots[2].name})` }
-  ];
+  // Hide old banner
+  const banner = document.getElementById('royaleWinBanner');
+  if (banner) banner.classList.add('hidden');
 
-  const sf1 = await royaleFlipTwo(participants[0], participants[1]);
-  royaleHighlightSlot(sf1.loser.slot, false);
+  // Determine winner based on weighted random
+  const { pv, bv, total } = royaleGetValues();
+  const shares = [pv, ...bv];
+  const rand = Math.random() * total;
+  let cumulative = 0;
+  let winnerIdx = 0;
+  for (let i = 0; i < shares.length; i++) {
+    cumulative += shares[i];
+    if (rand < cumulative) { winnerIdx = i; break; }
+  }
 
-  const sf2 = await royaleFlipTwo(participants[2], participants[3]);
-  royaleHighlightSlot(sf2.loser.slot, false);
+  // Compute the final angle so the pointer lands on winner's sector
+  // Sectors are ordered 0(player), 1(bot0), 2(bot1), 3(bot2)
+  const fracs = shares.map(v => v / total);
+  let sectorStart = 0;
+  for (let i = 0; i < winnerIdx; i++) sectorStart += fracs[i];
+  const sectorMid  = sectorStart + fracs[winnerIdx] / 2;
+  // Pointer is at top (–π/2). Wheel starts drawing from –π/2. 
+  // We want sectorMid fraction to land at the top after spinning.
+  // Pointer at top = angle 0 in our drawing system (we offset by -π/2 when drawing).
+  // So we need: rotationRad + sectorMid*2π = 0 (mod 2π), i.e. rotationRad = -sectorMid*2π
+  const targetAngle = -(sectorMid * Math.PI * 2);
+  const extraSpins  = (5 + Math.floor(Math.random() * 3)) * Math.PI * 2; // 5–7 full spins
+  const finalAngle  = targetAngle - extraSpins;
 
-  await new Promise(r => setTimeout(r, 500));
-  royaleLog(`🏁 Фінал: ${sf1.winner.displayName} vs ${sf2.winner.displayName}`, 'text-violet-300');
-  await new Promise(r => setTimeout(r, 400));
+  // Wheel pulse
+  document.getElementById('royaleWheelWrap')?.classList.add('is-spinning');
 
-  const final = await royaleFlipTwo(sf1.winner, sf2.winner);
-  royaleHighlightSlot(final.winner.slot, true);
-  royaleHighlightSlot(final.loser.slot, false);
+  const DURATION = 5000;
+  const startAngle = royaleWheelAngle;
+  const startTime  = performance.now();
 
-  const userWon = Boolean(final.winner.isUser);
-  const userAtStart = royalePlayerItem;
-  const botsAtStart = [...royaleBots];
+  // Ease out cubic
+  function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+  function animateSpin(now) {
+    const elapsed = now - startTime;
+    const t = Math.min(elapsed / DURATION, 1);
+    const eased = easeOutCubic(t);
+    royaleWheelAngle = startAngle + (finalAngle - startAngle) * eased;
+    drawRoyaleWheel(royaleWheelAngle);
+
+    if (t < 1) {
+      // Tick sound during spin
+      if (Math.floor(elapsed / 80) !== Math.floor((elapsed - 16) / 80)) {
+        if (typeof beep === 'function') beep(400 + Math.random() * 300, 0.02, 'square');
+      }
+      requestAnimationFrame(animateSpin);
+    } else {
+      // Done spinning
+      document.getElementById('royaleWheelWrap')?.classList.remove('is-spinning');
+      royaleSettle(winnerIdx);
+    }
+  }
+  requestAnimationFrame(animateSpin);
+}
+
+// ── Settle result ──────────────────────────────────────────────────────────
+function royaleSettle(winnerIdx) {
+  const userWon = winnerIdx === 0;
+
+  // Collect all skins in the pot
+  const allPotSkins = [...royalePlayerSkins, ...royaleBotPools[0], ...royaleBotPools[1], ...royaleBotPools[2]];
 
   ensureDailyState();
   ensureWeeklyState();
-  gameState.daily.battles = (gameState.daily.battles || 0) + 1;
-  gameState.weekly.battles = (gameState.weekly.battles || 0) + 1;
-  gameState.stats.battles = (gameState.stats.battles || 0) + 1;
-  updateAllTimeOnBattle(userWon);
+  gameState.daily.battles   = (gameState.daily.battles   || 0) + 1;
+  gameState.weekly.battles  = (gameState.weekly.battles  || 0) + 1;
+  gameState.stats.battles   = (gameState.stats.battles   || 0) + 1;
+  if (typeof updateAllTimeOnBattle === 'function') updateAllTimeOnBattle(userWon);
+
+  const banner   = document.getElementById('royaleWinBanner');
+  const winIcon  = document.getElementById('royaleWinIcon');
+  const winTitle = document.getElementById('royaleWinTitle');
+  const winSub   = document.getElementById('royaleWinSub');
+
+  // Bot card highlights
+  for (let i = 0; i < 3; i++) {
+    const card = document.getElementById(`royaleBot${i}Card`);
+    if (!card) continue;
+    if (winnerIdx === i + 1) card.classList.add('is-winner');
+    else card.classList.add('is-loser');
+  }
+
+  const { total, pv } = royaleGetValues();
+  const chance = total > 0 ? Math.round((pv / total) * 100) : 0;
 
   if (userWon) {
-    botsAtStart.forEach(b => {
-      const item = makeDemoItem({ ...b }, '-royale');
-      userInventory.push(item);
+    // Remove player's own skins from inventory (they're in the pot now)
+    const playerIds = new Set(royalePlayerSkins.map(s => s.id));
+    userInventory = userInventory.filter(s => !playerIds.has(s.id));
+
+    // Add ALL pot skins to inventory
+    allPotSkins.forEach(s => {
+      const ni = makeDemoItem(s, '-royale');
+      userInventory.push(ni);
     });
-    gameState.stats.battleWins = (gameState.stats.battleWins || 0) + 1;
-    gameState.daily.battleWins = (gameState.daily.battleWins || 0) + 1;
-    gameState.allTime.royaleWins = (gameState.allTime.royaleWins || 0) + 1;
-    addXp(300);
+
+    addXp(500);
     soundWin();
     setTimeout(() => soundWin(), 200);
-    setTimeout(() => soundWin(), 400);
-    royaleLog(`👑 ПЕРЕМОГА! Ти забираєш 3 предмети ботів, свій зберігаєш!`, 'text-emerald-300');
-    showToast('👑 ROYALE ПЕРЕМОГА! +3 предмети (свій зберігся)', 'success');
+    setTimeout(() => soundWin(), 420);
+
+    if (banner)   banner.classList.remove('hidden');
+    if (winIcon)  winIcon.textContent = '👑';
+    if (winTitle) { winTitle.textContent = 'ПЕРЕМОГА!'; winTitle.className = 'font-heading text-3xl font-extrabold uppercase text-emerald-400'; }
+    if (winSub)   winSub.textContent = `Ти забираєш весь банк: ${formatCredits(total)} DC (${allPotSkins.length} скінів)`;
+    showToast(`👑 ROYALE! Ти виграв ${formatCredits(total)} DC банк!`, 'success');
+
+    gameState.stats.battleWins   = (gameState.stats.battleWins   || 0) + 1;
+    gameState.daily.battleWins   = (gameState.daily.battleWins   || 0) + 1;
+    gameState.allTime.royaleWins = (gameState.allTime.royaleWins || 0) + 1;
   } else {
-    userInventory = userInventory.filter(i => i.id !== userAtStart.id);
-    if (selectedInputSkin?.id === userAtStart.id) {
-      selectedInputSkin = null;
-      document.getElementById('inputSkinState')?.classList.add('hidden');
-      document.getElementById('inputEmptyState')?.classList.remove('hidden');
-      recalculateUpgrade();
-    }
-    multiInputSkins = multiInputSkins.filter(x => x.id !== userAtStart.id);
-    renderMultiSlots();
+    // User lost — remove their skins from inventory
+    const playerIds = new Set(royalePlayerSkins.map(s => s.id));
+    userInventory = userInventory.filter(s => !playerIds.has(s.id));
+
     addXp(60);
     soundLose();
-    royaleLog(`💀 Ти вибув. «${userAtStart.name}» перейшов чемпіону.`, 'text-red-300');
-    showToast(`Поразка. Втрачено «${userAtStart.name}»`, 'warn');
+
+    const botName = ROYALE_BOT_NAMES[winnerIdx - 1] || 'Бот';
+    if (banner)   banner.classList.remove('hidden');
+    if (winIcon)  winIcon.textContent = '💀';
+    if (winTitle) { winTitle.textContent = 'ПОРАЗКА'; winTitle.className = 'font-heading text-3xl font-extrabold uppercase text-red-400'; }
+    if (winSub)   winSub.textContent = `${botName} виграв банк ${formatCredits(total)} DC. Ти втратив ${royalePlayerSkins.length} скінів.`;
+    showToast(`Поразка. ${botName} забрав банк.`, 'warn');
   }
 
   gameState.rounds.unshift({
-    at: Date.now(),
-    win: userWon,
-    targetName: `👑 Royale: ${userAtStart.name} vs 3 боти`,
-    targetValue: userAtStart.price,
-    chance: 25,
-    mode: 'battle',
-    inputValue: userAtStart.price,
-    bonus: 0
+    at: Date.now(), win: userWon,
+    targetName: `🎰 Jackpot Royale (${allPotSkins.length} скінів)`,
+    targetValue: total, chance, mode: 'royale', inputValue: pv, bonus: 0,
   });
   gameState.rounds = gameState.rounds.slice(0, ROUND_HISTORY_LIMIT);
-  checkAchievements();
+  if (typeof checkAchievements === 'function') checkAchievements();
   saveState();
   renderInventoryGrid();
   renderProfileInventory();
   updateAvatarBadge();
-  renderGameHub();
+  if (typeof renderGameHub === 'function') renderGameHub();
 
-  setTimeout(() => {
-    royaleInProgress = false;
-    if (startBtn) startBtn.disabled = false;
-    royaleLog('Готовий до наступного Royale.', 'text-gray-400');
-  }, 1500);
+  royaleInProgress = false;
+  const startBtn = document.getElementById('royaleStartBtn');
+  if (startBtn) startBtn.disabled = false;
+}
+
+// ── Init on page show ──────────────────────────────────────────────────────
+function initRoyalePage() {
+  initRoyaleCanvas();
+  if (royalePlayerSkins.length === 0 && royaleBotPools[0].length === 0) {
+    royaleGenerateBots();
+    renderRoyalePlayerSlots();
+  } else {
+    renderRoyalePlayerSlots();
+    renderRoyaleBotPanels();
+  }
+  drawRoyaleWheel(royaleWheelAngle);
 }
 
 /* ===== TRADE-UP CONTRACT ===== */
@@ -4587,8 +4817,6 @@ window.repeatCaseOpen = repeatCaseOpen;
 window.pickBattlePlayerItem = pickBattlePlayerItem;
 window.rerollBattleBot = rerollBattleBot;
 window.startBattle = startBattle;
-window.pickRoyalePlayerItem = pickRoyalePlayerItem;
-window.startRoyale = startRoyale;
 window.pickContractSlot = pickContractSlot;
 window.clearContract = clearContract;
 window.executeContract = executeContract;
@@ -4627,6 +4855,11 @@ window.updateConsentButton = updateConsentButton;
 window.acceptRiskNotice = acceptRiskNotice;
 window.useImageFallback = useImageFallback;
 window.handleSkinImageError = handleSkinImageError;
+window.royaleAddSkin = royaleAddSkin;
+window.royaleRemoveSkin = royaleRemoveSkin;
+window.startRoyale = startRoyale;
+window.resetRoyale = resetRoyale;
+window.initRoyalePage = initRoyalePage;
 window.applyMultiplierPreset = applyMultiplierPreset;
 window.applySuggestion = applySuggestion;
 window.chainUpgradeWonSkin = chainUpgradeWonSkin;

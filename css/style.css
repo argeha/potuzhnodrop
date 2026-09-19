@@ -459,3 +459,159 @@ body[data-theme="violet"] #xpBar{background:linear-gradient(90deg,#8b5cf6,#ddd6f
 
 
 
+
+/* ===== JACKPOT ROYALE ===== */
+.jackpot-wheel-wrap {
+  position: relative;
+  width: 300px;
+  height: 300px;
+  flex-shrink: 0;
+}
+.jackpot-wheel-wrap canvas {
+  display: block;
+  border-radius: 50%;
+  box-shadow: 0 0 40px rgba(245,158,11,0.2), 0 0 0 3px rgba(255,255,255,0.06);
+}
+.jackpot-wheel-pointer {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+  border-top: 18px solid #f59e0b;
+  filter: drop-shadow(0 0 6px rgba(245,158,11,0.8));
+  z-index: 10;
+}
+.jackpot-wheel-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  text-align: center;
+}
+.jackpot-wheel-center::before {
+  content: '';
+  position: absolute;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: #0b0e14;
+  border: 3px solid rgba(255,255,255,0.08);
+}
+.jackpot-wheel-center > * { position: relative; z-index: 1; }
+
+/* Player skin slots */
+.jackpot-skin-slot {
+  position: relative;
+  background: rgba(18,23,34,0.8);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 10px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 72px;
+}
+.jackpot-skin-slot img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+.jackpot-skin-slot .slot-name {
+  font-size: 8px;
+  color: #9ca3af;
+  text-align: center;
+  line-height: 1.2;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jackpot-skin-slot .slot-price {
+  font-size: 9px;
+  font-weight: 800;
+  color: #fbbf24;
+}
+.jackpot-skin-slot .slot-remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(239,68,68,0.8);
+  border: none;
+  color: #fff;
+  font-size: 9px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition: background 0.15s;
+}
+.jackpot-skin-slot .slot-remove:hover { background: #ef4444; }
+
+/* Bot panels */
+.jackpot-bot-card { flex: 1; min-height: 80px; }
+.jackpot-bot-skins {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.jackpot-bot-thumb {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  padding: 2px;
+}
+
+/* Percent list */
+.royale-pct-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+}
+.royale-pct-bar-wrap {
+  flex: 1;
+  height: 6px;
+  background: rgba(255,255,255,0.07);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.royale-pct-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+/* Win / lose highlights on bots */
+.jackpot-bot-card.is-winner {
+  border-color: rgba(34,197,94,0.6) !important;
+  background: rgba(34,197,94,0.08);
+  box-shadow: 0 0 20px rgba(34,197,94,0.2);
+}
+.jackpot-bot-card.is-loser { opacity: 0.4; }
+
+/* Spinning animation */
+@keyframes royaleSpinPulse {
+  0%   { box-shadow: 0 0 30px rgba(245,158,11,0.3), 0 0 0 3px rgba(255,255,255,0.06); }
+  50%  { box-shadow: 0 0 55px rgba(245,158,11,0.65), 0 0 0 3px rgba(245,158,11,0.3); }
+  100% { box-shadow: 0 0 30px rgba(245,158,11,0.3), 0 0 0 3px rgba(255,255,255,0.06); }
+}
+.jackpot-wheel-wrap.is-spinning canvas {
+  animation: royaleSpinPulse 0.8s ease-in-out infinite;
+}

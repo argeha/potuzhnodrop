@@ -215,14 +215,11 @@
 </div>
 </section>
 
-<!-- CASE (KEY-DROP EDITION) -->
+<!-- CASE -->
 <section data-page="case" class="hidden space-y-6">
 <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
   <div>
-    <div class="flex items-center gap-2">
-      <span class="text-xs font-extrabold uppercase tracking-[.2em] text-amber-400">Key-Drop Edition</span>
-      <span class="bg-red-500/20 text-red-400 border border-red-500/40 text-[10px] font-black uppercase px-2 py-0.5 rounded-full animate-pulse">Live</span>
-    </div>
+    <span class="text-xs font-extrabold uppercase tracking-[.2em] text-amber-400">Відкрий кейс</span>
     <h1 class="font-heading mt-1 text-4xl sm:text-5xl font-extrabold uppercase tracking-wider text-white">Кейси CS2</h1>
     <p class="text-sm text-gray-400 mt-1">Відкривай авторські та тематичні кейси, вибивай ножі, рукавиці та рідкісні AWP.</p>
   </div>
@@ -291,57 +288,105 @@
 
 <!-- ROYALE -->
 <section data-page="royale" class="hidden space-y-5">
-<div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-2">
-<div><span class="text-xs font-extrabold uppercase tracking-[.2em] text-amber-400">4 гравці · 1 переможець</span><h1 class="font-heading mt-1 text-4xl sm:text-5xl font-extrabold uppercase tracking-wider text-white">Battle Royale</h1></div>
-<p class="max-w-lg text-sm leading-6 text-gray-400">Постав скін. Чотири гравці. Плей-оф на монетках. Один чемпіон забирає все.</p>
-</div>
 
-<article class="glass-panel rounded-2xl border border-amber-500/25 p-5 sm:p-7 max-w-5xl mx-auto">
-<div class="text-center mb-4">
-<p class="text-xs font-bold uppercase tracking-widest text-gray-500">Твій предмет на кону</p>
-<div id="royalePlayerSlot" class="mt-3 inline-flex flex-col items-center cursor-pointer hover:opacity-90 transition" onclick="pickRoyalePlayerItem()">
-<img id="royalePlayerImg" src="" alt="" class="h-24 object-contain hidden">
-<div id="royalePlayerEmpty" class="flex flex-col items-center">
-<div class="w-16 h-16 rounded-2xl bg-brand-card border border-dashed border-gray-700 flex items-center justify-center"><i class="fa-solid fa-plus text-2xl text-amber-500/60"></i></div>
-<p class="mt-2 text-xs text-gray-500">Натисни, щоб обрати</p>
-</div>
-<p id="royalePlayerName" class="mt-2 text-xs font-extrabold text-gray-100"></p>
-<p id="royalePlayerPrice" class="text-amber-300 text-sm font-extrabold"></p>
-</div>
-</div>
+  <!-- Header -->
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-2">
+    <div>
+      <span class="text-xs font-extrabold uppercase tracking-[.2em] text-amber-400">Джекпот · Рулетка</span>
+      <h1 class="font-heading mt-1 text-4xl sm:text-5xl font-extrabold uppercase tracking-wider text-white">Battle Royale</h1>
+    </div>
+    <p class="max-w-lg text-sm leading-6 text-gray-400">Постав до 10 скінів у загальний банк. Твій відсоток від банку — твій шанс виграшу. Один переможець забирає всe.</p>
+  </div>
 
-<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5" id="royaleArena">
-<div class="royale-slot rounded-2xl border border-amber-500/40 bg-amber-500/5 p-3 text-center" data-royale-slot="0">
-<p class="text-[10px] font-bold uppercase tracking-wider text-amber-300">ТИ</p>
-<img class="royale-img h-16 mx-auto mt-2 object-contain" src="" alt="">
-<p class="royale-name text-[10px] font-extrabold text-white truncate mt-1"></p>
-<p class="royale-status text-[10px] font-bold text-gray-500 mt-1">—</p>
-</div>
-<div class="royale-slot rounded-2xl border border-red-500/30 bg-red-500/5 p-3 text-center" data-royale-slot="1">
-<p class="text-[10px] font-bold uppercase tracking-wider text-red-300">БОТ 1</p>
-<img class="royale-img h-16 mx-auto mt-2 object-contain" src="" alt="">
-<p class="royale-name text-[10px] font-extrabold text-white truncate mt-1"></p>
-<p class="royale-status text-[10px] font-bold text-gray-500 mt-1">—</p>
-</div>
-<div class="royale-slot rounded-2xl border border-red-500/30 bg-red-500/5 p-3 text-center" data-royale-slot="2">
-<p class="text-[10px] font-bold uppercase tracking-wider text-red-300">БОТ 2</p>
-<img class="royale-img h-16 mx-auto mt-2 object-contain" src="" alt="">
-<p class="royale-name text-[10px] font-extrabold text-white truncate mt-1"></p>
-<p class="royale-status text-[10px] font-bold text-gray-500 mt-1">—</p>
-</div>
-<div class="royale-slot rounded-2xl border border-red-500/30 bg-red-500/5 p-3 text-center" data-royale-slot="3">
-<p class="text-[10px] font-bold uppercase tracking-wider text-red-300">БОТ 3</p>
-<img class="royale-img h-16 mx-auto mt-2 object-contain" src="" alt="">
-<p class="royale-name text-[10px] font-extrabold text-white truncate mt-1"></p>
-<p class="royale-status text-[10px] font-bold text-gray-500 mt-1">—</p>
-</div>
-</div>
+  <!-- Main layout: player | wheel | bots -->
+  <div class="grid grid-cols-1 lg:grid-cols-[280px_1fr_280px] gap-4">
 
-<div id="royaleLog" class="mt-5 space-y-2 max-h-48 overflow-y-auto pr-1"></div>
+    <!-- LEFT: Player panel -->
+    <div class="glass-panel rounded-2xl border border-amber-500/30 p-4 flex flex-col gap-3">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-extrabold uppercase tracking-wider text-amber-400 flex items-center gap-1.5"><i class="fa-solid fa-user text-xs"></i> Ти</span>
+        <span id="royalePlayerTotal" class="text-amber-400 font-extrabold text-sm">0 DC</span>
+      </div>
+      <!-- Skin slots grid -->
+      <div id="royalePlayerSlots" class="grid grid-cols-2 gap-1.5 flex-1"></div>
+      <!-- Add button -->
+      <button onclick="royaleAddSkin()" id="royaleAddBtn" class="w-full py-2 rounded-xl border border-dashed border-amber-500/40 hover:border-amber-500 text-amber-400 hover:text-amber-300 text-xs font-bold transition flex items-center justify-center gap-1">
+        <i class="fa-solid fa-plus"></i> Додати скін
+      </button>
+      <div class="text-center text-[10px] text-gray-500">До 10 скінів · <span id="royalePlayerCount">0</span>/10</div>
+    </div>
 
-<button id="royaleStartBtn" disabled onclick="startRoyale()" class="mt-5 w-full py-4 rounded-xl bg-gradient-to-r from-amber-500 to-red-500 hover:from-amber-400 text-black font-extrabold uppercase text-base tracking-wider disabled:opacity-40 disabled:cursor-not-allowed transition shadow-lg shadow-amber-500/20"><i class="fa-solid fa-crown mr-2"></i>ПОЧАТИ ROYALE</button>
-<p class="mt-3 text-xs text-center text-gray-500">Переміг — забираєш 3 предмети ботів, <span class="text-emerald-300 font-bold">свій залишається</span>. Програв — <span class="text-red-300 font-bold">втрачаєш свій</span>.</p>
-</article>
+    <!-- CENTER: Wheel + controls -->
+    <div class="glass-panel rounded-2xl border border-brand-border p-5 flex flex-col items-center gap-4">
+      <!-- Pot total -->
+      <div class="w-full flex items-center justify-between">
+        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Загальний банк</span>
+        <span id="royalePotTotal" class="font-heading text-2xl font-extrabold text-amber-400">0 DC</span>
+      </div>
+
+      <!-- Wheel canvas -->
+      <div class="jackpot-wheel-wrap relative" id="royaleWheelWrap">
+        <canvas id="royaleWheelCanvas" width="300" height="300"></canvas>
+        <!-- Pointer arrow at top -->
+        <div class="jackpot-wheel-pointer"></div>
+        <!-- Center label -->
+        <div class="jackpot-wheel-center" id="royaleWheelLabel">
+          <span class="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Шанс</span>
+          <span id="royaleYourChance" class="font-heading text-2xl font-extrabold text-white">0%</span>
+        </div>
+      </div>
+
+      <!-- Players list with % -->
+      <div id="royalePercentList" class="w-full space-y-1.5"></div>
+
+      <!-- Start button -->
+      <button id="royaleStartBtn" disabled onclick="startRoyale()"
+        class="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-500 via-yellow-400 to-red-500 hover:from-amber-400 text-black font-extrabold text-base uppercase tracking-wider disabled:opacity-40 disabled:cursor-not-allowed transition shadow-lg shadow-amber-500/30 flex items-center justify-center gap-2">
+        <i class="fa-solid fa-crown"></i> КРУТИТИ РУЛЕТКУ
+      </button>
+      <p class="text-[10px] text-center text-gray-500">Переможець забирає <strong class="text-amber-400">весь банк</strong> (скіни всіх гравців)</p>
+    </div>
+
+    <!-- RIGHT: Bots panel -->
+    <div class="flex flex-col gap-3">
+      <!-- Bot cards: 3 -->
+      <div id="royaleBot0Card" class="jackpot-bot-card glass-panel rounded-2xl border border-red-500/25 p-3">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-[10px] font-extrabold uppercase tracking-wider text-red-300 flex items-center gap-1"><i class="fa-solid fa-robot text-[9px]"></i> <span id="royaleBot0Name">Бот 1</span></span>
+          <span id="royaleBot0Total" class="text-red-300 font-extrabold text-xs">— DC</span>
+        </div>
+        <div id="royaleBot0Skins" class="jackpot-bot-skins"></div>
+      </div>
+      <div id="royaleBot1Card" class="jackpot-bot-card glass-panel rounded-2xl border border-red-500/25 p-3">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-[10px] font-extrabold uppercase tracking-wider text-red-300 flex items-center gap-1"><i class="fa-solid fa-robot text-[9px]"></i> <span id="royaleBot1Name">Бот 2</span></span>
+          <span id="royaleBot1Total" class="text-red-300 font-extrabold text-xs">— DC</span>
+        </div>
+        <div id="royaleBot1Skins" class="jackpot-bot-skins"></div>
+      </div>
+      <div id="royaleBot2Card" class="jackpot-bot-card glass-panel rounded-2xl border border-red-500/25 p-3">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-[10px] font-extrabold uppercase tracking-wider text-red-300 flex items-center gap-1"><i class="fa-solid fa-robot text-[9px]"></i> <span id="royaleBot2Name">Бот 3</span></span>
+          <span id="royaleBot2Total" class="text-red-300 font-extrabold text-xs">— DC</span>
+        </div>
+        <div id="royaleBot2Skins" class="jackpot-bot-skins"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Win announcement banner (hidden by default) -->
+  <div id="royaleWinBanner" class="hidden glass-panel rounded-2xl border border-amber-500/50 bg-amber-500/10 p-5 text-center">
+    <div id="royaleWinIcon" class="text-5xl mb-2">🏆</div>
+    <h3 id="royaleWinTitle" class="font-heading text-3xl font-extrabold uppercase text-white"></h3>
+    <p id="royaleWinSub" class="text-sm text-gray-300 mt-1"></p>
+    <div class="flex gap-2 justify-center mt-4">
+      <button onclick="resetRoyale()" class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-sm uppercase tracking-wider transition">
+        <i class="fa-solid fa-rotate-right mr-1"></i> Нова гра
+      </button>
+    </div>
+  </div>
+
 </section>
 
 <!-- CONTRACT -->
