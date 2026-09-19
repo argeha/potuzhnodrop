@@ -364,10 +364,10 @@ body[data-theme="violet"] #xpBar{background:linear-gradient(90deg,#8b5cf6,#ddd6f
 <div class="glass-panel rounded-2xl border border-brand-border p-6">
 <h3 class="font-heading text-2xl font-extrabold uppercase text-white mb-4"><i class="fa-solid fa-percent mr-2 text-amber-400"></i>Шанси за типом</h3>
 <div class="space-y-2 text-xs">
-<div class="odds-row"><span class="font-bold text-gray-200">Бюджетний · 100 DC</span><span class="font-heading text-lg font-extrabold text-gray-300">95 / 4 / 0.9 / 0.1</span></div>
-<div class="odds-row border-amber-500/40 bg-amber-500/10"><span class="font-bold text-amber-200">Стандартний · 300 DC</span><span class="font-heading text-lg font-extrabold text-amber-300">90 / 7.5 / 2 / 0.5</span></div>
-<div class="odds-row"><span class="font-bold text-violet-200">Преміум · 1000 DC</span><span class="font-heading text-lg font-extrabold text-violet-300">60 / 30 / 8 / 2</span></div>
-<div class="odds-row border-red-500/40 bg-red-500/10"><span class="font-bold text-red-200">Легендарний · 5000 DC</span><span class="font-heading text-lg font-extrabold text-red-300">20 / 50 / 25 / 5</span></div>
+<div class="odds-row"><span class="font-bold text-gray-200">Бюджетний · 100 DC</span><span class="font-heading text-lg font-extrabold text-gray-300">70 / 22 / 6.5 / 1.5</span></div>
+<div class="odds-row border-amber-500/40 bg-amber-500/10"><span class="font-bold text-amber-200">Стандартний · 300 DC</span><span class="font-heading text-lg font-extrabold text-amber-300">65 / 25 / 8 / 2</span></div>
+<div class="odds-row"><span class="font-bold text-violet-200">Преміум · 1000 DC</span><span class="font-heading text-lg font-extrabold text-violet-300">62 / 26 / 9 / 3</span></div>
+<div class="odds-row border-red-500/40 bg-red-500/10"><span class="font-bold text-red-200">Легендарний · 5000 DC</span><span class="font-heading text-lg font-extrabold text-red-300">60 / 27 / 10 / 3</span></div>
 </div>
 <p class="mt-3 text-[10px] text-gray-500 text-center">Формат: звичайний / незвичайний / рідкісний / легендарний</p>
 <h3 class="font-heading text-2xl font-extrabold uppercase text-white mt-6 mb-3"><i class="fa-solid fa-fire mr-2 text-amber-400"></i>Топ дропи</h3>
@@ -824,12 +824,72 @@ const FREE_CASE_COOLDOWN=24*60*60*1000;
 const XP_PER_ROUND=80,XP_WIN_BONUS=70,XP_PER_CASE=45,ROUND_HISTORY_LIMIT=20,SELL_RATE=.9;
 const CHANCE_K=0.45,CHANCE_POWER=1.05,CHANCE_MAX=60,CHANCE_MIN=0.25;
 
-/* v3.6: типи кейсів */
+/* v3.6: типи кейсів з УНІКАЛЬНИМИ пулами предметів
+   - кожен кейс має свій діапазон цін (priceRange)
+   - всередині — 4 піддіапазони (tierRanges: common/uncommon/rare/legendary)
+   - odds — шанси тіру (сума = 1.0)
+   - EV ≈ 75-85% від ціни кейса */
 const CASE_TYPES={
-  budget:{id:'budget',name:'Бюджетний кейс',cost:100,icon:'fa-coins',odds:[0.95,0.04,0.009,0.001],tiers:[0.85,0.97,0.998,1.0],desc:'Дешево й сердито'},
-  standard:{id:'standard',name:'Стандартний кейс',cost:300,icon:'fa-box-open',odds:[0.90,0.075,0.02,0.005],tiers:[0.72,0.94,0.99,1.0],desc:'Баланс ціни й шансів'},
-  premium:{id:'premium',name:'Преміум кейс',cost:1000,icon:'fa-gem',odds:[0.60,0.30,0.08,0.02],tiers:[0.55,0.85,0.97,1.0],desc:'Більше шансів на рідкісне'},
-  legendary:{id:'legendary',name:'Легендарний кейс',cost:5000,icon:'fa-crown',odds:[0.20,0.50,0.25,0.05],tiers:[0.35,0.70,0.92,1.0],desc:'Тільки для віруючих у фортуну'}
+  budget:{
+    id:'budget',
+    name:'Бюджетний кейс',
+    cost:100,
+    theme:'gray',
+    desc:'Дешево й сердито · малі ставки',
+    priceRange:[10, 700],
+    tierRanges:{
+      common:    [10, 70],
+      uncommon:  [70, 200],
+      rare:      [200, 450],
+      legendary: [450, 700]
+    },
+    odds:[0.70, 0.22, 0.065, 0.015]
+  },
+  standard:{
+    id:'standard',
+    name:'Стандартний кейс',
+    cost:300,
+    theme:'blue',
+    desc:'Баланс ціни й шансів',
+    priceRange:[60, 3000],
+    tierRanges:{
+      common:    [60, 250],
+      uncommon:  [250, 700],
+      rare:      [700, 1800],
+      legendary: [1800, 3000]
+    },
+    odds:[0.65, 0.25, 0.08, 0.02]
+  },
+  premium:{
+    id:'premium',
+    name:'Преміум кейс',
+    cost:1000,
+    theme:'violet',
+    desc:'Більше шансів на рідкісне',
+    priceRange:[300, 12000],
+    tierRanges:{
+      common:    [300, 900],
+      uncommon:  [900, 2200],
+      rare:      [2200, 5500],
+      legendary: [5500, 12000]
+    },
+    odds:[0.62, 0.26, 0.09, 0.03]
+  },
+  legendary:{
+    id:'legendary',
+    name:'Легендарний кейс',
+    cost:5000,
+    theme:'gold',
+    desc:'Тільки ножі та топ-скіни',
+    priceRange:[1200, 250000],
+    tierRanges:{
+      common:    [1200, 4500],
+      uncommon:  [4500, 12000],
+      rare:      [12000, 35000],
+      legendary: [35000, 250000]
+    },
+    odds:[0.60, 0.27, 0.10, 0.03]
+  }
 };
 
 /* ===== ВБУДОВАНІ SVG-КЕЙСИ ===== */
@@ -1841,40 +1901,69 @@ recalculateUpgrade()
 requestAnimationFrame(anim)
 }
 
-/* ===== ШАНСИ ===== */
-/* Кожен предмет має власний шанс, що залежить від його ціни (рангу).
-   Найдорожчі — ~0.005%, найдешевші — до 15-22% залежно від типу кейса.
-   Сума всіх шансів = 100% (нормалізується автоматично). */
+/* ====== ПУЛ, ТІР, ШАНС ====== */
+
+/* Всі предмети, що входять у пул конкретного кейса */
+function getCaseItems(caseType){
+  const cfg = CASE_TYPES[caseType];
+  if(!cfg) return [];
+  const [minP, maxP] = cfg.priceRange;
+  return CS2_SKINS
+    .filter(s => isUsableSkin(s) && (s.price||0) >= minP && (s.price||0) <= maxP)
+    .sort((a,b) => (b.price||0) - (a.price||0));
+}
+
+/* До якого тіру належить предмет у цьому кейсі */
+function getItemTier(item, caseType){
+  const cfg = CASE_TYPES[caseType];
+  if(!cfg) return null;
+  const p = item.price || 0;
+  for(const key of ['legendary','rare','uncommon','common']){
+    const [min, max] = cfg.tierRanges[key];
+    if(p >= min && p <= max) return key;
+  }
+  return null;
+}
+
+/* Шанс випадіння конкретного предмета (у %)
+   Логіка: odds тіру × вага_в_тіру (дешевші важать більше) */
 function getItemDropChance(item, caseType){
-  const allItems = CS2_SKINS.filter(isUsableSkin).sort((a,b) => (b.price||0) - (a.price||0));
-  const n = allItems.length;
-  if(!n) return 0;
+  const cfg = CASE_TYPES[caseType];
+  if(!cfg) return 0;
   
-  const curves = {
-    budget:    {min: 0.008, max: 12.5, pow: 3.2},
-    standard:  {min: 0.005, max: 15.6, pow: 2.8},
-    premium:   {min: 0.010, max: 18.0, pow: 2.5},
-    legendary: {min: 0.020, max: 22.0, pow: 2.0}
-  };
-  const c = curves[caseType] || curves.standard;
+  const tier = getItemTier(item, caseType);
+  if(!tier) return 0;
   
-  const raw = allItems.map((s, i) => {
-    const norm = n > 1 ? i / (n - 1) : 0;
-    return c.min + (c.max - c.min) * Math.pow(norm, c.pow);
-  });
-  const sum = raw.reduce((a,b) => a + b, 0);
-  if(sum <= 0) return 0;
+  const [tMin, tMax] = cfg.tierRanges[tier];
+  const tierItems = CS2_SKINS
+    .filter(s => {
+      if(!isUsableSkin(s)) return false;
+      const p = s.price || 0;
+      return p >= tMin && p <= tMax;
+    })
+    .sort((a,b) => (a.price||0) - (b.price||0));
   
-  const idx = allItems.findIndex(s => getSkinKey(s) === getSkinKey(item));
+  const N = tierItems.length;
+  if(!N) return 0;
+  
+  const idx = tierItems.findIndex(s => getSkinKey(s) === getSkinKey(item));
   if(idx === -1) return 0;
   
-  return (raw[idx] / sum) * 100;
+  // rank 0 = найдешевший = вага N, rank N-1 = найдорожчий = вага 1
+  const weight = N - idx;
+  const totalWeight = N * (N + 1) / 2;
+  
+  const tierIdx = ['common','uncommon','rare','legendary'].indexOf(tier);
+  const tierChance = cfg.odds[tierIdx];
+  
+  return tierChance * (weight / totalWeight) * 100;
 }
 
 async function pickVerifiedCaseSkin(poolType='regular', caseType='standard'){
   const av = CS2_SKINS.filter(isUsableSkin);
   if(!av.length) return null;
   
+  /* Безкоштовний кейс — тільки дешеві предмети (≤300 DC) */
   if(poolType === 'free'){
     const cheapOnly = av.filter(s => (s.price||0) <= 300);
     if(!cheapOnly.length){showToast('Немає дешевих предметів у каталозі','warn'); return null}
@@ -1888,17 +1977,28 @@ async function pickVerifiedCaseSkin(poolType='regular', caseType='standard'){
     return cheapOnly[0] || null;
   }
   
-  // Зважена вибірка за справжніми шансами
-  const chances = av.map(s => getItemDropChance(s, caseType));
-  const total = chances.reduce((a,b) => a+b, 0);
-  let roll = Math.random() * total;
-  let pick = av[0];
-  for(let i = 0; i < av.length; i++){
-    if(roll <= chances[i]){ pick = av[i]; break; }
-    roll -= chances[i];
+  /* Платний кейс — тільки предмети з пула цього кейса */
+  const caseItems = getCaseItems(caseType);
+  if(!caseItems.length){
+    return av[Math.floor(Math.random() * av.length)];
   }
   
-  const cand = [pick, ...av.filter(s => s !== pick)];
+  const chances = caseItems.map(s => getItemDropChance(s, caseType));
+  const total = chances.reduce((a,b) => a+b, 0);
+  
+  let pick;
+  if(total <= 0){
+    pick = caseItems[Math.floor(Math.random() * caseItems.length)];
+  }else{
+    let roll = Math.random() * total;
+    pick = caseItems[0];
+    for(let i = 0; i < caseItems.length; i++){
+      if(roll <= chances[i]){ pick = caseItems[i]; break; }
+      roll -= chances[i];
+    }
+  }
+  
+  const cand = [pick, ...caseItems.filter(s => s !== pick)];
   for(const s of cand){
     if(await verifySkinImage(s)) return s;
     markSkinUnavailable(getSkinKey(s));
@@ -1959,12 +2059,15 @@ updateFreeCaseBtn()
 function buildCaseReel(winner,isFree){
 const track=document.getElementById('caseReelTrack');
 const items=[];const winnerIndex=45;
-const sorted=[...CS2_SKINS.filter(isUsableSkin)].sort((a,b)=>(a.price||0)-(b.price||0));
-const poolTop=isFree?0.90:0.72;
-const pool=sorted.slice(0,Math.max(1,Math.floor(sorted.length*poolTop)));
+// Для reel-стрічки — беремо пул того ж кейса, що й переможець (щоб картки були релевантні)
+const pool = isFree
+  ? [...CS2_SKINS.filter(s => isUsableSkin(s) && (s.price||0) <= 300)]
+  : getCaseItems(window.__caseName ? Object.keys(CASE_TYPES).find(k => CASE_TYPES[k].name === window.__caseName) || 'standard' : 'standard');
+const fallback = [...CS2_SKINS.filter(isUsableSkin)].sort((a,b)=>(a.price||0)-(b.price||0));
+const reelPool = pool.length ? pool : fallback.slice(0, Math.max(1, Math.floor(fallback.length*0.72)));
 for(let i=0;i<50;i++){
 if(i===winnerIndex){items.push({...winner,isWinner:true,wear:rollWear()});continue}
-const s=pool.length?pool[Math.floor(Math.random()*pool.length)]:sorted[0];
+const s=reelPool.length?reelPool[Math.floor(Math.random()*reelPool.length)]:fallback[0];
 items.push({...s,isWinner:false,wear:rollWear()})
 }
 track.innerHTML=items.map(it=>`<div class="case-reel-card ${it.isWinner?'is-winner':''}"><img src="${escapeHtml(it.img||'')}" alt="" data-skin-name="${escapeHtml(it.name)}" onerror="handleSkinImageError(this)"><p>${escapeHtml(it.name.split('|').pop().trim().slice(0,18))}</p><p class="text-[10px] font-extrabold text-amber-300">${formatCredits(it.price||0)}</p></div>`).join('');
@@ -2019,19 +2122,14 @@ openModal('caseModal')
 },4500)
 }
 
-/* Прев'ю предметів для картки кейса */
+/* Прев'ю 6 предметів для картки кейса — по кілька з кожного тіру з пула цього кейса */
 function getCasePreviewItems(caseType, count = 6){
-  const av = CS2_SKINS.filter(isUsableSkin);
-  if(!av.length) return [];
-  const sorted = [...av].sort((a,b) => (a.price||0) - (b.price||0));
-  const n = sorted.length;
-  const cfg = CASE_TYPES[caseType] || CASE_TYPES.standard;
-  const [t0,t1,t2] = cfg.tiers;
-  const common = sorted.slice(0, Math.max(1, Math.floor(n*t0)));
-  const uncommon = sorted.slice(Math.floor(n*t0), Math.max(1, Math.floor(n*t1)));
-  const rare = sorted.slice(Math.floor(n*t1), Math.max(1, Math.floor(n*t2)));
-  const legendary = sorted.slice(Math.floor(n*t2));
-  const pick = [];
+  const cfg = CASE_TYPES[caseType];
+  if(!cfg) return [];
+  
+  const caseItems = getCaseItems(caseType);
+  if(!caseItems.length) return [];
+  
   const take = (arr, k) => {
     const copy = [...arr];
     for(let i = copy.length - 1; i > 0; i--){
@@ -2040,10 +2138,23 @@ function getCasePreviewItems(caseType, count = 6){
     }
     return copy.slice(0, k);
   };
-  pick.push(...take(legendary, 1));
-  pick.push(...take(rare, 1));
-  pick.push(...take(uncommon, 2));
-  pick.push(...take(common, count - pick.length));
+  
+  const byTier = (key) => {
+    const [min, max] = cfg.tierRanges[key];
+    return caseItems.filter(s => (s.price||0) >= min && (s.price||0) <= max);
+  };
+  
+  const pick = [];
+  pick.push(...take(byTier('legendary'), 1));
+  pick.push(...take(byTier('rare'), 1));
+  pick.push(...take(byTier('uncommon'), 2));
+  pick.push(...take(byTier('common'), count - pick.length));
+  
+  if(pick.length < count){
+    const missing = count - pick.length;
+    pick.push(...take(caseItems.filter(s => !pick.includes(s)), missing));
+  }
+  
   return pick.slice(0, count);
 }
 
@@ -2094,7 +2205,7 @@ function showCaseDetails(caseType){
   const cfg = CASE_TYPES[caseType];
   if(!cfg) return;
   
-  const items = CS2_SKINS.filter(isUsableSkin).sort((a,b) => (b.price||0) - (a.price||0));
+  const items = getCaseItems(caseType).sort((a,b) => (b.price||0) - (a.price||0));
   
   const header = document.getElementById('caseDetailsHeader');
   const title = document.getElementById('caseDetailsTitle');
@@ -2103,7 +2214,13 @@ function showCaseDetails(caseType){
   if(title) title.textContent = 'Всі предмети та шанси';
   if(!grid) return;
   
-  grid.innerHTML = items.slice(0, 60).map(s => {
+  if(!items.length){
+    grid.innerHTML = '<div class="col-span-full py-16 text-center text-gray-500"><i class="fa-solid fa-inbox text-3xl mb-3"></i><p>Каталог ще завантажується…</p></div>';
+    openModal('caseDetailsModal');
+    return;
+  }
+  
+  grid.innerHTML = items.slice(0, 80).map(s => {
     const chance = getItemDropChance(s, caseType);
     let chanceStr;
     if(chance < 0.1)      chanceStr = chance.toFixed(3) + '%';
@@ -2406,7 +2523,6 @@ gameState.stats.battles=(gameState.stats.battles||0)+1;
 updateAllTimeOnBattle(userWon);
 
 if(userWon){
-// ✅ ФІКС: при перемозі свій предмет ЗАЛИШАЄТЬСЯ, забираємо лише предмети ботів
 botsAtStart.forEach(b=>{
 const item=makeDemoItem({...b},'-royale');
 userInventory.push(item);
@@ -2419,7 +2535,6 @@ soundWin();setTimeout(()=>soundWin(),200);setTimeout(()=>soundWin(),400);
 royaleLog(`👑 ПЕРЕМОГА! Ти забираєш 3 предмети, свій зберігаєш!`,'text-emerald-300');
 showToast('👑 ROYALE ПЕРЕМОГА! +3 предмети (свій зберігся)','success');
 }else{
-// ❌ Програш — тільки тоді видаляємо свій предмет
 userInventory=userInventory.filter(i=>i.id!==userAtStart.id);
 addXp(60);
 soundLose();
