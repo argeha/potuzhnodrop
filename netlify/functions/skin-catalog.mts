@@ -1,8 +1,8 @@
 import type { Config } from '@netlify/functions'
 
 const SOURCES = [
+  'https://cdn.jsdelivr.net/gh/ByMykel/CSGO-API@main/public/api/en/skins.json',
   'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/skins.json',
-  'https://bymykel.github.io/CSGO-API/api/en/skins.json',
 ]
 
 export default async () => {
