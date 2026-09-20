@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 3.7 ============ */
+/* ============ ПОТУЖНО DROP 3.8 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -1946,7 +1946,7 @@ function copyLatestResult() {
     showToast('Спочатку зроби ролл', 'warn');
     return;
   }
-  const msg = `ПОТУЖНО DROP 3.7 · ${r.win ? 'Виграш' : 'Невдача'}: ${r.targetName} · ${r.chance ? `шанс ${Number(r.chance).toFixed(2)}% · ` : ''}лише віртуальна гра.`;
+  const msg = `ПОТУЖНО DROP 3.8 · ${r.win ? 'Виграш' : 'Невдача'}: ${r.targetName} · ${r.chance ? `шанс ${Number(r.chance).toFixed(2)}% · ` : ''}лише віртуальна гра.`;
   const done = () => showToast('Результат скопійовано', 'success');
   if (navigator.clipboard?.writeText) {
     navigator.clipboard.writeText(msg).then(done).catch(() => showToast('Не вдалося', 'warn'));
@@ -2502,6 +2502,8 @@ function showItemDetail(itemId) {
   if (!it) return;
   const wear = getWear(it);
   const sellPrice = Math.round((it.price || 0) * SELL_RATE);
+  const market = getMarketSnapshot(it);
+  const marketSign = market.change >= 0 ? '+' : '−';
   const cat = categorizeWeapon(it.name);
   const catLabel = { rifle: 'Гвинтівка', pistol: 'Пістолет', sniper: 'Снайперська', smg: 'ПП', heavy: 'Важка', knife: 'Ніж', gloves: 'Рукавиці', other: 'Зброя' }[cat] || 'Зброя';
   const html = `
@@ -2518,6 +2520,15 @@ function showItemDetail(itemId) {
       <div class="rounded-xl border border-gray-800 bg-black/20 p-3"><p class="text-[10px] font-bold uppercase tracking-wider text-gray-500">Вартість</p><p class="font-heading text-2xl font-extrabold text-amber-300">${formatCredits(it.price)}</p></div>
       <div class="rounded-xl border border-gray-800 bg-black/20 p-3"><p class="text-[10px] font-bold uppercase tracking-wider text-gray-500">Продаж (90%)</p><p class="font-heading text-2xl font-extrabold text-emerald-300">${formatCredits(sellPrice)}</p></div>
     </div>
+    <section class="market-chart-card mt-3 text-left">
+      <div class="flex items-start justify-between gap-3">
+        <div><p class="text-[10px] font-extrabold uppercase tracking-[.16em] text-cyan-300"><i class="fa-solid fa-chart-line mr-1"></i>Демо-ринок</p><p class="mt-1 text-xs font-bold text-gray-300">Динаміка за 24 години</p></div>
+        <div class="text-right"><p class="font-heading text-2xl font-extrabold text-${market.color}-300">${formatCredits(market.current)}</p><p class="text-[10px] font-extrabold text-${market.color}-300">${marketSign}${Math.abs(market.change).toFixed(1)}%</p></div>
+      </div>
+      <div class="market-sparkline mt-2">${buildMarketSparkline(market.history)}</div>
+      <div class="mt-1 flex items-center justify-between text-[10px] font-semibold text-gray-500"><span>Мін. ${formatCredits(market.low)}</span><span>Макс. ${formatCredits(market.high)}</span></div>
+      <p class="mt-2 text-[10px] leading-4 text-gray-500">Це віртуальна динаміка для гри, не ціни Steam і не впливає на продаж предмета.</p>
+    </section>
     ${it.exclusive ? `<p class="mt-3 text-[10px] text-violet-300 italic">Ексклюзивний предмет — його можна продати, але більше не отримати.</p>` : ''}
     <button type="button" data-detail-sell-id="${escapeHtml(String(it.id))}" class="mt-4 w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-400 text-black font-extrabold uppercase text-sm tracking-wider transition"><i class="fa-solid fa-sack-dollar mr-2"></i>Продати за ${formatCredits(sellPrice)}</button>
     <button onclick="closeModal('itemDetailModal')" class="mt-3 w-full py-2.5 rounded-xl border border-gray-700 bg-black/20 hover:bg-gray-800 text-xs font-bold text-gray-300 transition">Закрити</button>
@@ -3299,6 +3310,7 @@ function getCaseSkinPool(caseType) {
 }
 
 const _dropChanceCache = new Map();
+const _caseMetricsCache = new Map();
 function _buildDropChanceMap(caseType) {
   const cacheKey = `${caseType}:${CS2_SKINS.length}`;
   if (_dropChanceCache.has(cacheKey)) return _dropChanceCache.get(cacheKey);
@@ -3369,6 +3381,44 @@ function getItemDropChance(item, caseType) {
   return map.get(getSkinKey(item)) || 0;
 }
 
+function formatCaseChance(value) {
+  const chance = Math.max(0, Number(value) || 0);
+  return chance < 0.1 ? `${chance.toFixed(3)}%` : `${chance.toFixed(2)}%`;
+}
+
+function getCaseMetrics(caseType) {
+  let cfg = CASE_TYPES[caseType] || CASE_TYPES.budget_covert;
+  if (cfg.aliasTo) cfg = CASE_TYPES[cfg.aliasTo] || cfg;
+
+  const cacheKey = `${cfg.id}:${CS2_SKINS.length}`;
+  const cached = _caseMetricsCache.get(cacheKey);
+  if (cached) return cached;
+
+  const pool = getCaseSkinPool(cfg.id);
+  const cost = Math.max(1, Number(cfg.cost) || 1);
+  let breakEvenChance = 0;
+  let rareChance = 0;
+  let expectedValue = 0;
+
+  pool.forEach(item => {
+    const chance = getItemDropChance(item, cfg.id);
+    const price = Math.max(0, Number(item.price) || 0);
+    expectedValue += price * chance / 100;
+    if (price >= cost) breakEvenChance += chance;
+    if (price >= cost * 3) rareChance += chance;
+  });
+
+  const result = {
+    count: pool.length,
+    breakEvenChance,
+    rareChance,
+    expectedValue,
+    maxValue: pool.reduce((max, item) => Math.max(max, Number(item.price) || 0), 0)
+  };
+  _caseMetricsCache.set(cacheKey, result);
+  return result;
+}
+
 function pickCaseSkin(poolType = 'regular', caseType = 'budget_covert') {
   const usable = CS2_SKINS.filter(isUsableSkin);
   if (!usable.length) return null;
@@ -3431,6 +3481,8 @@ function renderCaseCatalog() {
 
   grid.innerHTML = filtered.map(([id, c]) => {
     const previews = getCasePreviewItems(id, 4);
+    const metrics = getCaseMetrics(id);
+    const riskClass = metrics.breakEvenChance >= 15 ? 'is-balanced' : metrics.breakEvenChance >= 5 ? 'is-risky' : 'is-high-risk';
     return `
       <div class="kd-case-card tier-${c.category || 'hot'} group">
         <span class="kd-case-badge ${c.badgeClass || 'badge-hot'}">${c.badge || 'HOT'}</span>
@@ -3454,6 +3506,10 @@ function renderCaseCatalog() {
           <div class="mt-3 px-3 py-1 rounded-lg bg-black/40 border border-amber-500/30 flex items-center gap-1.5 shadow-inner">
             <i class="fa-solid fa-coins text-amber-400 text-xs"></i>
             <span class="font-extrabold text-sm text-amber-300">${formatCredits(c.cost)}</span>
+          </div>
+          <div class="kd-case-metrics" aria-label="Показники кейсу">
+            <span title="Кількість предметів у кейсі"><i class="fa-solid fa-layer-group"></i>${metrics.count} скінів</span>
+            <span class="${riskClass}" title="Шанс отримати предмет не дешевше ціни кейсу"><i class="fa-solid fa-chart-line"></i>Окуп ${formatCaseChance(metrics.breakEvenChance)}</span>
           </div>
         </div>
 
@@ -3881,15 +3937,24 @@ function showCaseDetails(caseType) {
 
   const header = document.getElementById('caseDetailsHeader');
   const title = document.getElementById('caseDetailsTitle');
+  const metricsEl = document.getElementById('caseDetailsMetrics');
   const grid = document.getElementById('caseDetailsGrid');
+  const metrics = getCaseMetrics(cfg.id);
 
   if (header) header.textContent = `${cfg.name} · ${formatCredits(cfg.cost)}`;
   if (title) title.textContent = `Вміст кейсу (${pool.length} скінів)`;
+  if (metricsEl) {
+    metricsEl.innerHTML = `
+      <div class="case-metric"><span>Окупність</span><strong>${formatCaseChance(metrics.breakEvenChance)}</strong><small>предмет не дешевший за кейс</small></div>
+      <div class="case-metric"><span>Рідкісний дроп</span><strong>${formatCaseChance(metrics.rareChance)}</strong><small>вартість від 3× ціни кейсу</small></div>
+      <div class="case-metric"><span>Найвища оцінка</span><strong>${formatCredits(metrics.maxValue)}</strong><small>серед доступних предметів</small></div>
+    `;
+  }
   if (!grid) return;
 
   grid.innerHTML = pool.map(s => {
     const chance = getItemDropChance(s, cfg.id);
-    let chanceStr = chance < 0.1 ? chance.toFixed(3) + '%' : chance.toFixed(2) + '%';
+    const chanceStr = formatCaseChance(chance);
     let badgeColor = '#6ee7b7';
     if (chance < 0.2) badgeColor = '#f87171';
     else if (chance < 1.5) badgeColor = '#fbbf24';
@@ -4891,6 +4956,7 @@ async function loadCompleteSkinCatalog() {
     if (normalizedCatalog.length < 50) throw new Error('Catalog validation failed');
     CS2_SKINS = normalizedCatalog.sort((a, b) => a.weapon.localeCompare(b.weapon) || a.name.localeCompare(b.name));
     _dropChanceCache.clear();
+    _caseMetricsCache.clear();
 
     try {
       sessionStorage.setItem(STORAGE.catalogCache, JSON.stringify(CS2_SKINS));
@@ -4960,6 +5026,74 @@ function getMarketMultiplier(skin, tick = getMarketTick()) {
 function getFloatedPrice(skin) {
   const base = Number(skin.basePrice ?? skin.price) || 0;
   return Math.max(1, Math.round(base * getMarketMultiplier(skin)));
+}
+
+function getMarketDayKey(timestamp) {
+  const date = new Date(timestamp);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function getMarketMultiplierAt(skin, timestamp) {
+  const skinKey = String(skin?.sourceSkinId || skin?.id || skin?.name || 'cs2');
+  const dayKey = getMarketDayKey(timestamp);
+  const tick = Math.floor(timestamp / MARKET_TICK_MS);
+  const dailyHash = hashMarketSeed(`${dayKey}|${skinKey}|daily`);
+  const tickHash = hashMarketSeed(`${dayKey}|${skinKey}|${tick}`);
+  return (0.92 + (dailyHash % 1601) / 10_000) * (0.985 + (tickHash % 301) / 10_000);
+}
+
+function getMarketReference(item) {
+  const basePrice = Math.max(1, Number(item?.price) || Number(item?.basePrice) || 1);
+  return { ...item, basePrice };
+}
+
+function getMarketHistory(item, hours = 24) {
+  const ref = getMarketReference(item);
+  const now = Date.now();
+  const pointCount = Math.max(2, Math.min(48, Math.round(hours) + 1));
+  return Array.from({ length: pointCount }, (_, index) => {
+    const timestamp = now - (pointCount - 1 - index) * 60 * 60 * 1000;
+    return Math.max(1, Math.round(ref.basePrice * getMarketMultiplierAt(ref, timestamp)));
+  });
+}
+
+function buildMarketSparkline(values) {
+  const data = values.map(value => Math.max(1, Number(value) || 1));
+  const width = 260;
+  const height = 72;
+  const padding = 6;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const span = Math.max(1, max - min);
+  const points = data.map((value, index) => {
+    const x = padding + index * (width - padding * 2) / Math.max(1, data.length - 1);
+    const y = height - padding - ((value - min) / span) * (height - padding * 2);
+    return `${x.toFixed(2)},${y.toFixed(2)}`;
+  });
+  const rising = data[data.length - 1] >= data[0];
+  const color = rising ? '#34d399' : '#f87171';
+  const fill = rising ? 'rgba(52,211,153,.18)' : 'rgba(248,113,113,.18)';
+  const area = `M ${padding},${height - padding} L ${points.join(' L ')} L ${width - padding},${height - padding} Z`;
+  const [lastX, lastY] = points[points.length - 1].split(',');
+  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Динаміка ціни за 24 години" preserveAspectRatio="none"><path d="${area}" fill="${fill}"></path><polyline points="${points.join(' ')}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></polyline><circle cx="${lastX}" cy="${lastY}" r="3.5" fill="${color}"></circle></svg>`;
+}
+
+function getMarketSnapshot(item) {
+  const ref = getMarketReference(item);
+  const history = getMarketHistory(ref, 24);
+  const current = getFloatedPrice(ref);
+  history[history.length - 1] = current;
+  const start = history[0] || current;
+  const change = start > 0 ? ((current / start) - 1) * 100 : 0;
+  return {
+    current,
+    history,
+    change,
+    low: Math.min(...history),
+    high: Math.max(...history),
+    color: change >= 0 ? 'emerald' : 'red'
+  };
 }
 
 function getTrend(skin) {
@@ -5084,7 +5218,7 @@ function renderShopGrid(skins) {
 function exportSave() {
   try {
     const data = {
-      version: '3.7',
+      version: '3.8',
       exportedAt: Date.now(),
       balance: currentUser?.balance ?? 0,
       inventory: userInventory,

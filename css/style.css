@@ -616,3 +616,21 @@ body[data-theme="violet"] #xpBar{background:linear-gradient(90deg,#8b5cf6,#ddd6f
 .jackpot-wheel-wrap.is-spinning canvas {
   animation: royaleSpinPulse 0.8s ease-in-out infinite;
 }
+
+/* Case transparency and virtual market history */
+.kd-case-metrics{display:flex;justify-content:center;gap:6px;flex-wrap:wrap;margin-top:10px}
+.kd-case-metrics span{display:inline-flex;align-items:center;gap:4px;padding:4px 7px;border:1px solid rgba(148,163,184,.16);border-radius:7px;background:rgba(0,0,0,.24);font-size:9px;font-weight:800;color:#94a3b8;white-space:nowrap}
+.kd-case-metrics i{font-size:8px;color:#fbbf24}
+.kd-case-metrics .is-balanced{border-color:rgba(52,211,153,.28);color:#a7f3d0}
+.kd-case-metrics .is-risky{border-color:rgba(251,191,36,.28);color:#fde68a}
+.kd-case-metrics .is-high-risk{border-color:rgba(248,113,113,.3);color:#fecaca}
+.case-details-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:-2px 0 14px}
+.case-metric{min-width:0;border:1px solid rgba(148,163,184,.16);border-radius:11px;background:rgba(0,0,0,.2);padding:9px 10px}
+.case-metric span,.case-metric small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.case-metric span{font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#94a3b8}
+.case-metric strong{display:block;margin-top:3px;font-family:'Teko',sans-serif;font-size:23px;line-height:1;color:#fbbf24}
+.case-metric small{margin-top:3px;font-size:9px;color:#6b7280}
+.market-chart-card{border:1px solid rgba(34,211,238,.24);border-radius:12px;background:linear-gradient(135deg,rgba(8,47,73,.22),rgba(0,0,0,.2));padding:11px}
+.market-sparkline{height:72px;overflow:hidden;border-radius:9px;background:rgba(0,0,0,.18)}
+.market-sparkline svg{display:block;width:100%;height:100%}
+@media(max-width:520px){.case-details-metrics{grid-template-columns:1fr}.case-metric{display:grid;grid-template-columns:1fr auto;column-gap:8px;align-items:center}.case-metric strong{margin:0;text-align:right}.case-metric small{grid-column:1/-1;margin-top:4px}}
