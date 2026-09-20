@@ -1,7 +1,7 @@
 import type { Config } from '@netlify/functions'
 import { getStore } from '@netlify/blobs'
 
-const seeds = getStore('potuzhno-fair-seeds')
+const seeds = getStore('potuzhno-fair-seeds', { consistency: 'strong' })
 const headers = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers })
 

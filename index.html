@@ -3,9 +3,23 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ПОТУЖНО DROP 3.9 — гра-пародія про CS2</title>
+<title>ПОТУЖНО DROP 4.0 — гра-пародія про CS2</title>
 <meta name="description" content="Прозора гра-пародія про апгрейд CS2: віртуальні предмети, нуль депозитів і нуль реальних призів.">
 <meta name="theme-color" content="#080A0F">
+<script>
+// Inline image handlers can run before the deferred application script is ready.
+// Keep this tiny, safe fallback available from the first parsed image onward.
+(() => {
+  const preview = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160"%3E%3Crect width="240" height="160" rx="18" fill="%23121722"/%3E%3Cpath d="M0 122 94 24l146 54v82H0z" fill="%23f59e0b" opacity=".38"/%3E%3Ctext x="120" y="88" fill="white" font-family="Arial,sans-serif" font-size="18" font-weight="700" text-anchor="middle"%3ECS2 SKIN%3C/text%3E%3C/svg%3E';
+  const fallback = image => {
+    if (!image || image.dataset.earlyFallback) return;
+    image.dataset.earlyFallback = '1';
+    image.src = preview;
+  };
+  window.useImageFallback = fallback;
+  window.handleSkinImageError = fallback;
+})();
+</script>
 <!-- Preconnect для швидшого завантаження зовнішніх ресурсів -->
 <link rel="preconnect" href="https://cdn.jsdelivr.net">
 <link rel="preconnect" href="https://cdn.tailwindcss.com">
@@ -22,7 +36,7 @@
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-<link rel="stylesheet" href="css/style.css?v=3.9.0">
+<link rel="stylesheet" href="css/style.css?v=4.0.0">
 </head>
 <body class="min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -31,7 +45,7 @@
 <div class="w-full max-w-xl overflow-hidden rounded-3xl border border-amber-500/40 bg-[#111722] shadow-2xl">
 <div class="demo-ribbon h-2"></div>
 <div class="p-6 sm:p-9">
-<span class="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-extrabold uppercase tracking-[.18em] text-amber-300">Важливе попередження · v3.9</span>
+<span class="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-extrabold uppercase tracking-[.18em] text-amber-300">Важливе попередження · v4.0</span>
 <h2 class="font-heading mt-5 text-4xl font-bold uppercase leading-none text-white">Це лише симулятор</h2>
 <p class="mt-4 text-sm leading-6 text-gray-300">ПОТУЖНО DROP — це гра-пародія. Тут немає реальних виграшів, депозитів, трейдів або виведення скінів. Усі предмети та кредити існують лише в браузері й не мають грошової цінності.</p>
 <div class="mt-5 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-4 text-sm text-amber-100"><strong>Не надсилайте цьому сайту гроші, скіни, пароль Steam, код Steam Guard або API-ключ.</strong></div>
@@ -49,7 +63,7 @@
 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-3">
 <a href="#upgrader" onclick="showPage('upgrader');return false" class="flex items-center gap-3 shrink-0">
 <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-black font-extrabold text-2xl shadow-lg shadow-amber-500/20"><i class="fa-solid font-heading">P</i></div>
-<span class="font-heading text-2xl sm:text-3xl font-extrabold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-amber-200 to-yellow-500 uppercase leading-none">ПОТУЖНО DROP <small class="hidden sm:inline ml-1 align-middle text-[11px] tracking-widest text-amber-300">3.9</small></span>
+<span class="font-heading text-2xl sm:text-3xl font-extrabold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-amber-200 to-yellow-500 uppercase leading-none">ПОТУЖНО DROP <small class="hidden sm:inline ml-1 align-middle text-[11px] tracking-widest text-amber-300">4.0</small></span>
 </a>
 <nav class="desktop-nav hidden lg:flex items-center gap-0.5 flex-1 justify-center">
 <a href="#upgrader" data-nav="upgrader" class="nav-link" onclick="showPage('upgrader');return false"><i class="fa-solid fa-bolt text-xs"></i> Апгрейд</a>
@@ -258,7 +272,7 @@
 <section data-page="battle" class="hidden">
 <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-4">
 <div><span class="text-xs font-extrabold uppercase tracking-[.2em] text-amber-400">1 VS 1 · COIN FLIP</span><h1 class="font-heading mt-1 text-4xl sm:text-5xl font-extrabold uppercase tracking-wider text-white">Потужний бій</h1></div>
-<p class="max-w-lg text-sm leading-6 text-gray-400">Обери предмет — бот виставить свій. Монетка CS вирішить, кому дістануться обидва предмети.</p>
+<p class="max-w-lg text-sm leading-6 text-gray-400">Пошук триває до 8 секунд. Якщо реального суперника немає, до бою приєднається позначений бот.</p>
 </div>
 <article class="glass-panel rounded-2xl border border-brand-border p-5 sm:p-7 max-w-5xl mx-auto">
 <div class="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-5 items-center">
@@ -270,19 +284,19 @@
 <div class="coin-stage" id="battleCoinStage">
 <div class="coin" id="battleCoin">
 <div class="coin-face coin-front"><i class="fa-solid fa-user-astronaut"></i><span>ТИ</span></div>
-<div class="coin-face coin-back"><i class="fa-solid fa-robot"></i><span>БОТ</span></div>
+<div class="coin-face coin-back"><i id="battleOpponentIcon" class="fa-solid fa-robot"></i><span id="battleCoinOpponentLabel">БОТ</span></div>
 </div>
 <div class="coin-result-burst"></div>
 </div>
-<button onclick="startBattle()" id="battleStartBtn" disabled class="px-6 py-3 bg-gradient-to-r from-amber-500 to-red-500 hover:from-amber-400 text-black font-extrabold uppercase rounded-xl text-sm disabled:opacity-40 disabled:cursor-not-allowed transition shadow-lg shadow-amber-500/20 whitespace-nowrap"><i class="fa-solid fa-coins mr-2"></i>КИНУТИ МОНЕТКУ</button>
+<button onclick="findBattleOpponent()" id="battleStartBtn" disabled class="px-6 py-3 bg-gradient-to-r from-amber-500 to-red-500 hover:from-amber-400 text-black font-extrabold uppercase rounded-xl text-sm disabled:opacity-40 disabled:cursor-not-allowed transition shadow-lg shadow-amber-500/20 whitespace-nowrap"><i class="fa-solid fa-magnifying-glass mr-2"></i>ШУКАТИ СУПЕРНИКА</button>
 </div>
 <div id="battleBotSlot" class="battle-slot" onclick="rerollBattleBot()">
-<div id="battleBotEmpty" class="text-center"><i class="fa-solid fa-robot text-4xl text-red-500/60 mb-3"></i><p class="text-sm font-bold text-gray-300">Суперник</p><p class="text-[11px] text-gray-500 mt-1">Авто-підбір</p></div>
-<div id="battleBotFilled" class="hidden flex w-full flex-col items-center"><div class="skin-display h-32"><img id="battleBotImg" src="" alt="" class="object-contain" onerror="handleSkinImageError(this)"></div><p id="battleBotName" class="mt-2 text-xs font-extrabold text-gray-100 truncate text-center w-full"></p><p id="battleBotPrice" class="text-red-300 text-sm font-extrabold mt-0.5 text-center"></p><p class="text-[10px] text-gray-500 mt-1 text-center">Бот: <span id="battleBotName2">---</span></p></div>
+<div id="battleBotEmpty" class="text-center"><i id="battleOpponentEmptyIcon" class="fa-solid fa-magnifying-glass text-4xl text-red-500/60 mb-3"></i><p class="text-sm font-bold text-gray-300">Суперник</p><p class="text-[11px] text-gray-500 mt-1">Почни пошук після вибору предмета</p></div>
+<div id="battleBotFilled" class="hidden flex w-full flex-col items-center"><div class="skin-display h-32"><img id="battleBotImg" src="" alt="" class="object-contain" onerror="handleSkinImageError(this)"></div><p id="battleBotName" class="mt-2 text-xs font-extrabold text-gray-100 truncate text-center w-full"></p><p id="battleBotPrice" class="text-red-300 text-sm font-extrabold mt-0.5 text-center"></p><p class="text-[10px] text-gray-500 mt-1 text-center"><span id="battleOpponentType">Суперник</span>: <span id="battleBotName2">---</span></p></div>
 </div>
 </div>
-<div id="battleOutcome" class="mt-6 text-center text-base font-bold text-gray-400 min-h-[28px]">Готуємось до бою…</div>
-<p class="mt-4 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-[11px] leading-5 text-amber-100/80"><i class="fa-solid fa-circle-info mr-1"></i> Бій — це симуляція. Монетка кидається один раз.</p>
+<div id="battleOutcome" class="mt-6 text-center text-base font-bold text-gray-400 min-h-[28px]">Обери предмет і знайди суперника…</div>
+<p class="mt-4 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-[11px] leading-5 text-amber-100/80"><i class="fa-solid fa-circle-info mr-1"></i> Бій — це віртуальна симуляція. Реальні речі та Steam-предмети не передаються.</p>
 </article>
 </section>
 
@@ -654,7 +668,7 @@
 </main>
 
 <footer class="border-t border-brand-border py-5 px-4 text-center">
-<p class="text-xs text-gray-500">ПОТУЖНО DROP 3.9 — гра-пародія. <a href="#about" onclick="showPage('about');return false" class="text-amber-400 hover:text-amber-300">Детальніше</a></p>
+<p class="text-xs text-gray-500">ПОТУЖНО DROP 4.0 — гра-пародія. <a href="#about" onclick="showPage('about');return false" class="text-amber-400 hover:text-amber-300">Детальніше</a></p>
 </footer>
 
 <!-- MODALS -->
@@ -796,6 +810,6 @@
 
 <div id="toastContainer" class="fixed bottom-6 right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm"></div>
 
-<script src="js/app.js?v=3.9.0" defer></script>
+<script src="js/app.js?v=4.0.0" defer></script>
 </body>
 </html>

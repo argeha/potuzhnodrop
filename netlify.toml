@@ -1,6 +1,10 @@
 [build]
+  command = "npm run build"
   publish = "."
-  functions = "netlify/functions"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
 
 [[headers]]
   for = "/*"
@@ -11,6 +15,11 @@
     X-XSS-Protection = "1; mode=block"
     Permissions-Policy = "camera=(), microphone=(), geolocation=()"
     Content-Security-Policy = "default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com; img-src 'self' data: blob: https://community.cloudflare.steamstatic.com https://community.akamai.steamstatic.com https://steamcdn-a.akamaihd.net https://avatars.steamstatic.com https://avatars.akamai.steamstatic.com https://raw.githubusercontent.com https://cdn.jsdelivr.net; connect-src 'self' https://raw.githubusercontent.com https://cdn.jsdelivr.net; frame-ancestors 'none'"
+
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
 
 # Cache static assets aggressively
 [[headers]]

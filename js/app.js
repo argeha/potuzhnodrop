@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 3.9 ============ */
+/* ============ ПОТУЖНО DROP 4.0 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -986,7 +986,7 @@ async function requestJson(url, options = {}, timeout = 7000) {
 
 function buildPortableSave() {
   return {
-    version: '3.9',
+    version: '4.0',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -1300,8 +1300,8 @@ function handleSkinImageError(image, location = 'card') {
     const el = document.getElementById('resultImg');
     if (el && selectedTargetSkin) el.src = createSkinPreview(selectedTargetSkin.name);
   }
-  if (location === 'case' && img) {
-    img.src = createSkinPreview(img.dataset.skinName || 'CS2');
+  if (location === 'case' && image) {
+    image.src = createSkinPreview(image.dataset.skinName || 'CS2');
   }
 }
 
@@ -2279,7 +2279,7 @@ function copyLatestResult() {
     showToast('Спочатку зроби ролл', 'warn');
     return;
   }
-  const msg = `ПОТУЖНО DROP 3.9 · ${r.win ? 'Виграш' : 'Невдача'}: ${r.targetName} · ${r.chance ? `шанс ${Number(r.chance).toFixed(2)}% · ` : ''}лише віртуальна гра.`;
+  const msg = `ПОТУЖНО DROP 4.0 · ${r.win ? 'Виграш' : 'Невдача'}: ${r.targetName} · ${r.chance ? `шанс ${Number(r.chance).toFixed(2)}% · ` : ''}лише віртуальна гра.`;
   const done = () => showToast('Результат скопійовано', 'success');
   if (navigator.clipboard?.writeText) {
     navigator.clipboard.writeText(msg).then(done).catch(() => showToast('Не вдалося', 'warn'));
@@ -4339,6 +4339,146 @@ function renderCaseTopDrops() {
 }
 
 /* ===== 1v1 BATTLE ===== */
+const MATCHMAKING_WAIT_MS = 8_000;
+const MATCHMAKING_POLL_MS = 900;
+let battleMatch = null;
+let battleSearchSerial = 0;
+let battleSearchTicket = null;
+
+function setBattleAction(mode, disabled = false) {
+  const button = document.getElementById('battleStartBtn');
+  if (!button) return;
+  button.disabled = disabled;
+  if (mode === 'search') {
+    button.onclick = findBattleOpponent;
+    button.innerHTML = '<i class="fa-solid fa-magnifying-glass mr-2"></i>ШУКАТИ СУПЕРНИКА';
+  } else if (mode === 'waiting') {
+    button.onclick = null;
+    button.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>ПОШУК…';
+  } else if (mode === 'start') {
+    button.onclick = startBattle;
+    button.innerHTML = '<i class="fa-solid fa-coins mr-2"></i>КИНУТИ МОНЕТКУ';
+  }
+}
+
+function clearBattleOpponent() {
+  battleBotItem = null;
+  battleMatch = null;
+  document.getElementById('battleBotEmpty')?.classList.remove('hidden');
+  document.getElementById('battleBotFilled')?.classList.add('hidden');
+  document.getElementById('battleBotSlot')?.classList.remove('filled');
+  const label = document.getElementById('battleCoinOpponentLabel');
+  const icon = document.getElementById('battleOpponentIcon');
+  const emptyIcon = document.getElementById('battleOpponentEmptyIcon');
+  if (label) label.textContent = 'БОТ';
+  if (icon) icon.className = 'fa-solid fa-robot';
+  if (emptyIcon) emptyIcon.className = 'fa-solid fa-magnifying-glass text-4xl text-red-500/60 mb-3';
+}
+
+function toPublicBattleStake(item) {
+  return {
+    name: cleanText(item?.name, 160),
+    img: cleanImageUrl(item?.img),
+    price: Math.round(clampNumber(item?.price, 1, MAX_STORED_ITEM_VALUE, 1)),
+    rarity: cleanText(item?.rarity || 'CS2', 48),
+    rarityColor: cleanColor(item?.rarityColor),
+  };
+}
+
+function setBattleOpponent(item, opponentName, isBot, match = null) {
+  const safe = toPublicBattleStake(item);
+  battleBotItem = {
+    ...safe,
+    id: `match-${match?.id || 'bot'}-${Date.now()}`,
+    basePrice: safe.price,
+    wear: { code: 'FT' },
+    botName: cleanText(opponentName, 24) || (isBot ? 'Бот' : 'Гравець'),
+    isBot,
+  };
+  battleMatch = match;
+  document.getElementById('battleBotEmpty')?.classList.add('hidden');
+  document.getElementById('battleBotFilled')?.classList.remove('hidden');
+  setImageSource(document.getElementById('battleBotImg'), battleBotItem.img, battleBotItem.name, getSkinKey(battleBotItem));
+  const nameEl = document.getElementById('battleBotName');
+  if (nameEl) nameEl.textContent = battleBotItem.name;
+  const priceEl = document.getElementById('battleBotPrice');
+  if (priceEl) priceEl.textContent = formatCredits(battleBotItem.price);
+  const botNameEl = document.getElementById('battleBotName2');
+  if (botNameEl) botNameEl.textContent = battleBotItem.botName;
+  const typeEl = document.getElementById('battleOpponentType');
+  if (typeEl) typeEl.textContent = isBot ? 'Бот' : 'Гравець';
+  const label = document.getElementById('battleCoinOpponentLabel');
+  const icon = document.getElementById('battleOpponentIcon');
+  if (label) label.textContent = isBot ? 'БОТ' : 'ГРАВЕЦЬ';
+  if (icon) icon.className = isBot ? 'fa-solid fa-robot' : 'fa-solid fa-user';
+  document.getElementById('battleBotSlot')?.classList.add('filled');
+}
+
+async function matchmakingRequest(action, ticketId, stake = null) {
+  return requestJson('/api/matchmaking', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action,
+      deviceId: fairState?.deviceId,
+      ticketId,
+      name: account?.nick || 'Гравець',
+      ...(stake ? { stake } : {}),
+    }),
+  }, 5_000);
+}
+
+function cancelBattleSearch() {
+  battleSearchSerial++;
+  const ticketId = battleSearchTicket;
+  battleSearchTicket = null;
+  if (ticketId) matchmakingRequest('cancel', ticketId).catch(() => {});
+}
+
+function useHumanBattleMatch(match, ticketId) {
+  const opponent = match?.players?.find(player => player.ticketId !== ticketId);
+  if (!opponent?.stake) return false;
+  setBattleOpponent(opponent.stake, opponent.name, false, { id: match.id, winnerTicketId: match.winnerTicketId, ticketId });
+  const outcome = document.getElementById('battleOutcome');
+  if (outcome) outcome.innerHTML = `<span class="text-cyan-200">Знайдено реального суперника: ${escapeHtml(opponent.name)}.</span>`;
+  setBattleAction('start');
+  return true;
+}
+
+async function findBattleOpponent() {
+  if (battleInProgress || !battlePlayerItem || pendingWager) return;
+  const serial = ++battleSearchSerial;
+  const ticketId = makeUuid();
+  battleSearchTicket = ticketId;
+  const stake = toPublicBattleStake(battlePlayerItem);
+  const outcome = document.getElementById('battleOutcome');
+  setBattleAction('waiting', true);
+  if (outcome) outcome.innerHTML = '<span class="text-amber-300 pulse-soft">Шукаємо реального суперника до 8 секунд…</span>';
+
+  let response = null;
+  const startedAt = Date.now();
+  try { response = await matchmakingRequest('join', ticketId, stake); } catch {}
+  while (serial === battleSearchSerial && Date.now() - startedAt < MATCHMAKING_WAIT_MS) {
+    if (response?.status === 'matched' && useHumanBattleMatch(response.match, ticketId)) {
+      battleSearchTicket = null;
+      return;
+    }
+    await new Promise(resolve => setTimeout(resolve, MATCHMAKING_POLL_MS));
+    try { response = await matchmakingRequest('status', ticketId); } catch { response = null; }
+  }
+  if (serial !== battleSearchSerial || battleInProgress || !battlePlayerItem) return;
+  let cancelled = null;
+  try { cancelled = await matchmakingRequest('cancel', ticketId); } catch {}
+  if (cancelled?.status === 'matched' && useHumanBattleMatch(cancelled.match, ticketId)) {
+    battleSearchTicket = null;
+    return;
+  }
+  battleSearchTicket = null;
+  pickBotOpponent(battlePlayerItem.price);
+  if (outcome) outcome.innerHTML = '<span class="text-amber-200">Реального суперника не знайдено — до бою приєднався бот.</span>';
+  setBattleAction('start');
+}
+
 function pickBattlePlayerItem() {
   if (battleInProgress) return;
   if (!userInventory.length) {
@@ -4367,6 +4507,7 @@ function pickBattlePlayerItem() {
 }
 
 function setBattlePlayer(item) {
+  cancelBattleSearch();
   battlePlayerItem = item;
   document.getElementById('battlePlayerEmpty')?.classList.add('hidden');
   document.getElementById('battlePlayerFilled')?.classList.remove('hidden');
@@ -4376,9 +4517,10 @@ function setBattlePlayer(item) {
   const priceEl = document.getElementById('battlePlayerPrice');
   if (priceEl) priceEl.textContent = formatCredits(item.price);
   document.getElementById('battlePlayerSlot')?.classList.add('filled');
-  pickBotOpponent(item.price);
-  const startBtn = document.getElementById('battleStartBtn');
-  if (startBtn) startBtn.disabled = false;
+  clearBattleOpponent();
+  const outcome = document.getElementById('battleOutcome');
+  if (outcome) outcome.innerHTML = '<span class="text-gray-300">Предмет готовий. Запусти пошук суперника.</span>';
+  setBattleAction('search');
 }
 
 function pickBotOpponent(basePrice) {
@@ -4386,29 +4528,17 @@ function pickBotOpponent(basePrice) {
   const pool = CS2_SKINS.filter(s => isUsableSkin(s) && s.price >= lo && s.price <= hi);
   const pick = pool.length ? pool[Math.floor(Math.random() * pool.length)] : CS2_SKINS[Math.floor(Math.random() * CS2_SKINS.length)];
   const wear = rollWear();
-  battleBotItem = {
-    ...pick,
-    wear,
-    basePrice: pick.price,
-    price: priceWithWear(pick.price, wear),
-    botName: ['Bot_Bohdan', 'Bot_Voxxa', 'Bot_Fennec', 'Bot_Raven', 'Bot_M0rsik'][Math.floor(Math.random() * 5)]
-  };
-  document.getElementById('battleBotEmpty')?.classList.add('hidden');
-  document.getElementById('battleBotFilled')?.classList.remove('hidden');
-  setImageSource(document.getElementById('battleBotImg'), battleBotItem.img, battleBotItem.name, getSkinKey(battleBotItem));
-  const nameEl = document.getElementById('battleBotName');
-  if (nameEl) nameEl.textContent = battleBotItem.name;
-  const priceEl = document.getElementById('battleBotPrice');
-  if (priceEl) priceEl.textContent = formatCredits(battleBotItem.price);
-  const botNameEl = document.getElementById('battleBotName2');
-  if (botNameEl) botNameEl.textContent = battleBotItem.botName;
-  document.getElementById('battleBotSlot')?.classList.add('filled');
+  setBattleOpponent({ ...pick, wear, price: priceWithWear(pick.price, wear) }, ['Bot_Bohdan', 'Bot_Voxxa', 'Bot_Fennec', 'Bot_Raven', 'Bot_M0rsik'][Math.floor(Math.random() * 5)], true);
 }
 
 function rerollBattleBot() {
   if (battleInProgress) return;
   if (!battlePlayerItem) {
     showToast('Спочатку обери свій предмет', 'warn');
+    return;
+  }
+  if (!battleBotItem?.isBot) {
+    showToast('Реального суперника вже знайдено.', 'info');
     return;
   }
   pickBotOpponent(battlePlayerItem.price);
@@ -4501,7 +4631,11 @@ function startBattle() {
   const outcome = document.getElementById('battleOutcome');
   if (outcome) outcome.innerHTML = '<span class="text-amber-300 pulse-soft">Монетка в повітрі…</span>';
 
-  const isPlayerWin = Math.random() < 0.5;
+  const isPlayerWin = battleMatch?.winnerTicketId
+    ? battleMatch.winnerTicketId === battleMatch.ticketId
+    : Math.random() < 0.5;
+  const opponentLabel = battleBotItem.isBot ? 'БОТА' : 'СУПЕРНИКА';
+  const opponentName = battleBotItem.botName || (battleBotItem.isBot ? 'Бот' : 'Гравець');
   spinCoin(isPlayerWin).then(() => {
     if (!isPendingWager(wagerId)) return;
     const pSlot = document.getElementById('battlePlayerSlot');
@@ -4514,7 +4648,7 @@ function startBattle() {
     updateAllTimeOnBattle(isPlayerWin);
 
     if (isPlayerWin) {
-      if (outcome) outcome.innerHTML = `<span class="text-emerald-300 text-lg">🪙 Монетка впала на ТВОЮ сторону! Ти забираєш «${escapeHtml(battleBotItem.name)}».</span>`;
+      if (outcome) outcome.innerHTML = `<span class="text-emerald-300 text-lg">🪙 Монетка впала на ТВОЮ сторону! Ти забираєш віртуальний предмет ${opponentLabel}: «${escapeHtml(battleBotItem.name)}».</span>`;
       pSlot?.classList.add('is-winner');
       bSlot?.classList.add('is-loser');
       // A win returns the reserved stake and awards the opponent's item.
@@ -4525,7 +4659,7 @@ function startBattle() {
       gameState.daily.battleWins = (gameState.daily.battleWins || 0) + 1;
       addXp(150);
     } else {
-      if (outcome) outcome.innerHTML = `<span class="text-red-300 text-lg">🪙 Монетка впала на сторону БОТА. «${escapeHtml(battlePlayerItem.name)}» переходить йому.</span>`;
+      if (outcome) outcome.innerHTML = `<span class="text-red-300 text-lg">🪙 Монетка впала на сторону ${escapeHtml(opponentName)}. Твій віртуальний предмет вибуває з раунду.</span>`;
       bSlot?.classList.add('is-winner');
       pSlot?.classList.add('is-loser');
       addXp(40);
@@ -4534,7 +4668,7 @@ function startBattle() {
     gameState.rounds.unshift({
       at: Date.now(),
       win: isPlayerWin,
-      targetName: `🪙 ${battlePlayerItem.name} vs ${battleBotItem.name}`,
+      targetName: `🪙 ${battlePlayerItem.name} vs ${opponentName}`,
       targetValue: battleBotItem.price,
       chance: 50,
       mode: 'battle',
@@ -4555,13 +4689,15 @@ function startBattle() {
       battleInProgress = false;
       battlePlayerItem = null;
       battleBotItem = null;
+      battleMatch = null;
+      battleSearchTicket = null;
       pSlot?.classList.remove('filled', 'is-winner', 'is-loser');
       bSlot?.classList.remove('filled', 'is-winner', 'is-loser');
       document.getElementById('battlePlayerEmpty')?.classList.remove('hidden');
       document.getElementById('battleBotEmpty')?.classList.remove('hidden');
       document.getElementById('battlePlayerFilled')?.classList.add('hidden');
       document.getElementById('battleBotFilled')?.classList.add('hidden');
-      if (startBtn) startBtn.disabled = true;
+      setBattleAction('search', true);
       if (outcome) outcome.innerHTML = '<span class="text-gray-400">Готуємось до наступного бою…</span>';
     }, 4200);
   });
@@ -5721,6 +5857,7 @@ window.sendCaseDropToUpgrader = sendCaseDropToUpgrader;
 window.repeatCaseOpen = repeatCaseOpen;
 window.pickBattlePlayerItem = pickBattlePlayerItem;
 window.rerollBattleBot = rerollBattleBot;
+window.findBattleOpponent = findBattleOpponent;
 window.startBattle = startBattle;
 window.pickContractSlot = pickContractSlot;
 window.clearContract = clearContract;

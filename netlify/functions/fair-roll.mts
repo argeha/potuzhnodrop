@@ -2,8 +2,8 @@ import type { Config } from '@netlify/functions'
 import { getStore } from '@netlify/blobs'
 import { createHash, createHmac, randomBytes } from 'node:crypto'
 
-const seeds = getStore('potuzhno-fair-seeds')
-const nonces = getStore('potuzhno-fair-nonces')
+const seeds = getStore('potuzhno-fair-seeds', { consistency: 'strong' })
+const nonces = getStore('potuzhno-fair-nonces', { consistency: 'strong' })
 const ID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i
 const SEED = /^[A-Za-z0-9_-]{24,128}$/
 const CASE = /^[a-z_]{2,40}$/

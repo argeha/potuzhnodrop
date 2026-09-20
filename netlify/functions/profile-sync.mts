@@ -2,7 +2,7 @@ import type { Config } from '@netlify/functions'
 import { getStore } from '@netlify/blobs'
 import { createHash, timingSafeEqual } from 'node:crypto'
 
-const profiles = getStore('potuzhno-profiles')
+const profiles = getStore('potuzhno-profiles', { consistency: 'strong' })
 const MAX_PAYLOAD_BYTES = 750_000
 const ACCOUNT_ID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i
 const RECOVERY_CODE = /^[A-Za-z0-9_-]{40,160}$/
