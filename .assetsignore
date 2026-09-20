@@ -1,0 +1,16 @@
+.git
+.github
+.netlify
+.wrangler
+node_modules
+netlify
+src
+scripts
+README.md
+package.json
+package-lock.json
+netlify.toml
+wrangler.jsonc
+.nvmrc
+.gitignore
+.netlifyignore

@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 4.0 ============ */
+/* ============ ПОТУЖНО DROP 4.1 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -952,7 +952,7 @@ function renderCloudSyncUI() {
   if (status) status.textContent = connected ? 'Серверний профіль підключено' : 'Лише локальне збереження';
   if (details) details.textContent = connected
     ? `Остання синхронізація: ${formatSyncTime(account.cloud.updatedAt)}. Код відновлення зберігається лише у твоєму браузері.`
-    : 'Створи профіль, щоб зберігати прогрес на Netlify та відновити його кодом на іншому пристрої.';
+    : 'Створи профіль, щоб зберігати прогрес у Cloudflare та відновити його кодом на іншому пристрої.';
   if (create) create.classList.toggle('hidden', connected);
   if (save) save.classList.toggle('hidden', !connected);
   if (load) load.classList.toggle('hidden', !connected);
@@ -967,7 +967,7 @@ function renderFairUI() {
   if (state) state.textContent = audit ? 'Є серверний запис останнього дропа' : 'Серверна перевірка з’явиться після відкриття кейсу';
   if (details) details.textContent = audit
     ? `${audit.caseId || 'Кейс'} · ${audit.day} · nonce #${audit.nonce} · hash ${String(audit.serverSeedHash).slice(0, 12)}…`
-    : 'Для локальної розробки без Netlify сайт чесно використовує локальну випадковість.';
+    : 'Для локальної розробки без Cloudflare сайт чесно використовує локальну випадковість.';
   if (verify) verify.disabled = !audit || audit.day >= getTodayUtc();
 }
 
@@ -986,7 +986,7 @@ async function requestJson(url, options = {}, timeout = 7000) {
 
 function buildPortableSave() {
   return {
-    version: '4.0',
+    version: '4.1',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -2279,7 +2279,7 @@ function copyLatestResult() {
     showToast('Спочатку зроби ролл', 'warn');
     return;
   }
-  const msg = `ПОТУЖНО DROP 4.0 · ${r.win ? 'Виграш' : 'Невдача'}: ${r.targetName} · ${r.chance ? `шанс ${Number(r.chance).toFixed(2)}% · ` : ''}лише віртуальна гра.`;
+  const msg = `ПОТУЖНО DROP 4.1 · ${r.win ? 'Виграш' : 'Невдача'}: ${r.targetName} · ${r.chance ? `шанс ${Number(r.chance).toFixed(2)}% · ` : ''}лише віртуальна гра.`;
   const done = () => showToast('Результат скопійовано', 'success');
   if (navigator.clipboard?.writeText) {
     navigator.clipboard.writeText(msg).then(done).catch(() => showToast('Не вдалося', 'warn'));
@@ -4053,7 +4053,7 @@ async function startCaseReel() {
   const fairRolls = await getCaseRolls(currentActiveCaseId, mult);
 
   // Pick winners. Each skin and its wear now come from one server HMAC result
-  // when the Netlify endpoint is available; local development uses the explicit fallback above.
+  // when the Cloudflare endpoint is available; local development uses the explicit fallback above.
   const winners = [];
   for (let i = 0; i < mult; i++) {
     const w = pickCaseSkin(isFree ? 'free' : 'regular', currentActiveCaseId, fairRolls.rolls[i]?.roll);

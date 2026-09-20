@@ -1,0 +1,422 @@
+const JSON_HEADERS = {
+  'Content-Type': 'application/json; charset=utf-8',
+  'Cache-Control': 'no-store',
+  'X-Content-Type-Options': 'nosniff',
+}
+
+const IMAGE_HOSTS = new Set([
+  'community.cloudflare.steamstatic.com',
+  'community.akamai.steamstatic.com',
+  'steamcdn-a.akamaihd.net',
+  'raw.githubusercontent.com',
+  'cdn.jsdelivr.net',
+])
+const CATALOG_SOURCES = [
+  'https://cdn.jsdelivr.net/gh/ByMykel/CSGO-API@main/public/api/en/skins.json',
+  'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/skins.json',
+]
+const STEAM_OPENID = 'https://steamcommunity.com/openid/login'
+const ID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i
+const RECOVERY_CODE = /^[A-Za-z0-9_-]{40,160}$/
+const SEED = /^[A-Za-z0-9_-]{24,128}$/
+const CASE = /^[a-z0-9_]{2,40}$/
+const MAX_PAYLOAD_BYTES = 750_000
+const MAX_PRICE = 1_000_000
+const WAIT_TTL = 10_000
+const MATCH_TTL = 10 * 60_000
+const encoder = new TextEncoder()
+
+const json = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), {
+  status,
+  headers: { ...JSON_HEADERS, ...headers },
+})
+
+const cleanText = (value, limit) => String(value ?? '').replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, limit)
+const dayKey = () => new Date().toISOString().slice(0, 10)
+
+function hex(bytes) {
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+function randomHex(byteLength = 16) {
+  const bytes = new Uint8Array(byteLength)
+  crypto.getRandomValues(bytes)
+  return hex(bytes)
+}
+
+async function sha256(value) {
+  return hex(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(value))))
+}
+
+async function hmacSha256(key, value) {
+  const cryptoKey = await crypto.subtle.importKey('raw', encoder.encode(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  return new Uint8Array(await crypto.subtle.sign('HMAC', cryptoKey, encoder.encode(value)))
+}
+
+function equalHash(left, right) {
+  if (typeof left !== 'string' || typeof right !== 'string' || left.length !== right.length) return false
+  let difference = 0
+  for (let index = 0; index < left.length; index += 1) difference |= left.charCodeAt(index) ^ right.charCodeAt(index)
+  return difference === 0
+}
+
+function isPayload(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  try {
+    return encoder.encode(JSON.stringify(value)).byteLength <= MAX_PAYLOAD_BYTES
+  } catch {
+    return false
+  }
+}
+
+function cleanImage(value) {
+  try {
+    const url = new URL(cleanText(value, 2048))
+    return url.protocol === 'https:' && IMAGE_HOSTS.has(url.hostname) ? url.href : ''
+  } catch {
+    return ''
+  }
+}
+
+function cleanColor(value) {
+  const color = cleanText(value, 32)
+  return /^#[0-9a-f]{3,8}$/i.test(color) ? color : '#b0c3d9'
+}
+
+function parseStake(value) {
+  const name = cleanText(value?.name, 160)
+  const img = cleanImage(value?.img)
+  const price = Math.round(Number(value?.price))
+  if (!name || !img || !Number.isFinite(price) || price < 1 || price > MAX_PRICE) return null
+  const rarityColor = cleanText(value?.rarityColor, 16)
+  return {
+    name,
+    img,
+    price,
+    rarity: cleanText(value?.rarity, 48) || 'CS2',
+    rarityColor: /^#[0-9a-f]{3,8}$/i.test(rarityColor) ? rarityColor : '#b0c3d9',
+  }
+}
+
+function normalizeMatchState(value) {
+  return {
+    queue: Array.isArray(value?.queue) ? value.queue : [],
+    matches: Array.isArray(value?.matches) ? value.matches : [],
+  }
+}
+
+function cleanMatchState(state, now) {
+  state.queue = state.queue.filter(entry => entry && ID.test(String(entry.deviceId || '')) && ID.test(String(entry.ticketId || '')) && now - Number(entry.joinedAt || 0) < WAIT_TTL)
+  state.matches = state.matches.filter(match => match && now - Number(match.createdAt || 0) < MATCH_TTL).slice(0, 40)
+}
+
+function publicMatch(match) {
+  return {
+    id: match.id,
+    createdAt: match.createdAt,
+    winnerTicketId: match.winnerTicketId,
+    players: match.players.map(player => ({ ticketId: player.ticketId, name: player.name, stake: player.stake })),
+  }
+}
+
+function matchmakingResult(state, deviceId, ticketId, now) {
+  const match = state.matches.find(candidate => candidate.players.some(player => player.deviceId === deviceId && player.ticketId === ticketId))
+  if (match) return { status: 'matched', match: publicMatch(match) }
+  const position = state.queue.findIndex(entry => entry.deviceId === deviceId && entry.ticketId === ticketId)
+  if (position >= 0) return { status: 'waiting', position: position + 1, waitedMs: Math.max(0, now - state.queue[position].joinedAt) }
+  return { status: 'idle' }
+}
+
+async function timedFetch(url, options = {}) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 10_000)
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+export class PotuzhnoState {
+  constructor(state) {
+    this.storage = state.storage
+  }
+
+  async fetch(request) {
+    const path = new URL(request.url).pathname
+    try {
+      if (path === '/api/profile/sync') return await this.profile(request)
+      if (path === '/api/fair/roll') return await this.fairRoll(request)
+      if (path === '/api/fair/verify') return await this.fairVerify(request)
+      if (path === '/api/matchmaking') return await this.matchmaking(request)
+      if (path === '/api/steam/auth') return await this.steamAuth(request)
+      if (path === '/api/steam/inventory') return await this.steamInventory(request)
+      if (path === '/api/catalog/skins') return await this.skinCatalog(request)
+      return json({ error: 'Маршрут API не знайдено.' }, 404)
+    } catch (error) {
+      console.error('API error', path, error)
+      return json({ error: 'Сервіс тимчасово недоступний. Повтори спробу.' }, 503)
+    }
+  }
+
+  async readBody(request, limit = MAX_PAYLOAD_BYTES + 4_096) {
+    const raw = await request.text()
+    if (encoder.encode(raw).byteLength > limit) throw new RangeError('Збереження завелике.')
+    return JSON.parse(raw)
+  }
+
+  async profile(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request)
+    } catch (error) {
+      return json({ error: error instanceof RangeError ? error.message : 'Некоректний запит.' }, error instanceof RangeError ? 413 : 400)
+    }
+
+    const action = String(body?.action || '')
+    const accountId = String(body?.accountId || '')
+    const recoveryCode = String(body?.recoveryCode || '')
+    if (!ID.test(accountId) || !RECOVERY_CODE.test(recoveryCode)) return json({ error: 'Некоректні дані профілю.' }, 400)
+
+    const key = `profile:${accountId}`
+    const recoveryHash = await sha256(recoveryCode)
+    if (action === 'create') {
+      if (!isPayload(body.payload)) return json({ error: 'Некоректне збереження.' }, 400)
+      const result = await this.storage.transaction(async transaction => {
+        if (await transaction.get(key)) return null
+        const data = { version: 1, recoveryHash, payload: body.payload, updatedAt: Date.now() }
+        await transaction.put(key, data)
+        return data
+      })
+      return result ? json({ updatedAt: result.updatedAt }) : json({ error: 'Профіль уже існує.' }, 409)
+    }
+
+    const entry = await this.storage.get(key)
+    if (!entry || !equalHash(entry.recoveryHash, recoveryHash)) return json({ error: 'Профіль не знайдено або код відновлення неправильний.' }, 403)
+    if (action === 'load') return json({ payload: entry.payload, updatedAt: entry.updatedAt })
+    if (action !== 'save' || !isPayload(body.payload)) return json({ error: 'Некоректне збереження.' }, 400)
+
+    const updatedAt = Date.now()
+    await this.storage.put(key, { ...entry, payload: body.payload, updatedAt })
+    return json({ updatedAt })
+  }
+
+  async dailySeed(day) {
+    const key = `seed:${day}`
+    return await this.storage.transaction(async transaction => {
+      const existing = await transaction.get(key)
+      if (existing?.seed && existing.hash) return existing
+      const seed = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '')
+      const created = { seed, hash: await sha256(seed) }
+      await transaction.put(key, created)
+      return created
+    })
+  }
+
+  async fairRoll(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request, 16_384)
+    } catch {
+      return json({ error: 'Некоректний запит.' }, 400)
+    }
+    const deviceId = String(body?.deviceId || '')
+    const clientSeed = String(body?.clientSeed || '')
+    const caseId = String(body?.caseId || '')
+    const nonce = Number(body?.nonce)
+    if (!ID.test(deviceId) || !SEED.test(clientSeed) || !CASE.test(caseId) || !Number.isSafeInteger(nonce) || nonce < 0 || nonce > 1_000_000_000) {
+      return json({ error: 'Некоректні дані перевірки.' }, 400)
+    }
+
+    const day = dayKey()
+    const nonceKey = `nonce:${day}:${deviceId}:${nonce}`
+    const previous = await this.storage.get(nonceKey)
+    if (previous) return json(previous)
+
+    const seed = await this.dailySeed(day)
+    const proof = `${clientSeed}:${deviceId}:${nonce}:${caseId}`
+    const bytes = await hmacSha256(seed.seed, proof)
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    const result = {
+      day,
+      nonce,
+      roll: view.getUint32(0) / 0x1_0000_0000,
+      wearRoll: view.getUint32(4) / 0x1_0000_0000,
+      serverSeedHash: seed.hash,
+      proof,
+    }
+    const stored = await this.storage.transaction(async transaction => {
+      const replay = await transaction.get(nonceKey)
+      if (replay) return replay
+      await transaction.put(nonceKey, result)
+      return result
+    })
+    return json(stored)
+  }
+
+  async fairVerify(request) {
+    if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
+    const day = new URL(request.url).searchParams.get('day') || ''
+    const today = dayKey()
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return json({ error: 'Вкажи дату у форматі YYYY-MM-DD.' }, 400)
+    if (day >= today) return json({ error: 'Поточний seed буде розкрито наступного дня.' }, 423)
+    const entry = await this.storage.get(`seed:${day}`)
+    if (!entry?.seed || !entry.hash) return json({ error: 'Для цієї дати ще немає раундів.' }, 404)
+    return json({ day, serverSeed: entry.seed, serverSeedHash: entry.hash })
+  }
+
+  async updateMatchState(callback) {
+    return await this.storage.transaction(async transaction => {
+      const state = normalizeMatchState(await transaction.get('battle-state'))
+      const now = Date.now()
+      cleanMatchState(state, now)
+      const result = callback(state, now)
+      await transaction.put('battle-state', state)
+      return result
+    })
+  }
+
+  async matchmaking(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request, 16_384)
+    } catch {
+      return json({ error: 'Некоректний запит.' }, 400)
+    }
+    const action = cleanText(body?.action, 16)
+    const deviceId = cleanText(body?.deviceId, 64)
+    const ticketId = cleanText(body?.ticketId, 64)
+    if (!ID.test(deviceId) || !ID.test(ticketId)) return json({ error: 'Некоректний matchmaking-квиток.' }, 400)
+
+    if (action === 'status') return json(await this.updateMatchState((state, now) => matchmakingResult(state, deviceId, ticketId, now)))
+    if (action === 'cancel') {
+      return json(await this.updateMatchState((state, now) => {
+        const existing = matchmakingResult(state, deviceId, ticketId, now)
+        if (existing.status === 'matched') return existing
+        state.queue = state.queue.filter(entry => !(entry.deviceId === deviceId && entry.ticketId === ticketId))
+        return { status: 'cancelled' }
+      }))
+    }
+    if (action !== 'join') return json({ error: 'Невідома дія matchmaking.' }, 400)
+
+    const stake = parseStake(body?.stake)
+    if (!stake) return json({ error: 'Некоректна ставка для віртуального бою.' }, 400)
+    const name = cleanText(body?.name, 24) || 'Гравець'
+    return json(await this.updateMatchState((state, now) => {
+      const existing = matchmakingResult(state, deviceId, ticketId, now)
+      if (existing.status === 'matched') return existing
+      state.queue = state.queue.filter(entry => entry.deviceId !== deviceId)
+      state.queue.push({ deviceId, ticketId, name, stake, joinedAt: now })
+      if (state.queue.length >= 2) {
+        const players = state.queue.splice(0, 2)
+        const roll = crypto.getRandomValues(new Uint32Array(1))[0] / 0x1_0000_0000
+        state.matches.unshift({ id: randomHex(), createdAt: now, winnerTicketId: players[roll < 0.5 ? 0 : 1].ticketId, players })
+      }
+      return matchmakingResult(state, deviceId, ticketId, now)
+    }))
+  }
+
+  async steamAuth(request) {
+    if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
+    const url = new URL(request.url)
+    const origin = url.origin
+    const claimedId = url.searchParams.get('openid.claimed_id')
+    if (!claimedId) {
+      const callback = `${origin}/api/steam/auth`
+      const params = new URLSearchParams({
+        'openid.ns': 'http://specs.openid.net/auth/2.0',
+        'openid.mode': 'checkid_setup',
+        'openid.return_to': callback,
+        'openid.realm': origin,
+        'openid.identity': 'http://specs.openid.net/auth/2.0/identifier_select',
+        'openid.claimed_id': 'http://specs.openid.net/auth/2.0/identifier_select',
+      })
+      return Response.redirect(`${STEAM_OPENID}?${params}`, 302)
+    }
+    const verify = new URLSearchParams(url.searchParams)
+    verify.set('openid.mode', 'check_authentication')
+    let valid = false
+    try {
+      const response = await timedFetch(STEAM_OPENID, { method: 'POST', body: verify })
+      valid = response.ok && (await response.text()).includes('is_valid:true')
+    } catch {
+      valid = false
+    }
+    const steamId = claimedId.match(/^https:\/\/steamcommunity\.com\/openid\/id\/(\d{17})$/)?.[1]
+    if (!valid || !steamId) return Response.redirect(`${origin}/?steam_error=1`, 302)
+    return Response.redirect(`${origin}/?steamid=${encodeURIComponent(steamId)}`, 302)
+  }
+
+  async steamInventory(request) {
+    if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
+    const steamId = new URL(request.url).searchParams.get('steamid') || ''
+    if (!/^\d{17}$/.test(steamId)) return json({ error: 'Некоректний Steam ID' }, 400)
+    let response
+    try {
+      response = await timedFetch(`https://steamcommunity.com/inventory/${steamId}/730/2?l=ukrainian&count=500`)
+    } catch {
+      return json({ error: 'Steam тимчасово не віддає інвентар.' }, 502)
+    }
+    if (!response.ok) {
+      const message = response.status === 403 ? 'Інвентар Steam закритий. Зроби його публічним у налаштуваннях приватності.' : 'Steam тимчасово не віддає інвентар.'
+      return json({ error: message }, response.status === 403 ? 403 : 502)
+    }
+    let data
+    try {
+      data = await response.json()
+    } catch {
+      return json({ error: 'Steam повернув некоректну відповідь.' }, 502)
+    }
+    const descriptions = new Map((data.descriptions || []).map(item => [`${item.classid}_${item.instanceid}`, item]))
+    const items = (data.assets || []).slice(0, 500).map(asset => {
+      const item = descriptions.get(`${asset.classid}_${asset.instanceid}`)
+      const icon = typeof item?.icon_url === 'string' && /^[A-Za-z0-9_\-/]+$/.test(item.icon_url) ? item.icon_url : ''
+      if (!item || !item.tradable || !icon) return null
+      return {
+        id: asset.assetid,
+        name: String(item.market_hash_name || item.name || 'CS2 Skin').slice(0, 160),
+        rarity: String(item.tags?.find(tag => tag.category === 'Rarity')?.localized_tag_name || 'CS2').slice(0, 48),
+        img: `https://community.cloudflare.steamstatic.com/economy/image/${icon}/360fx360f`,
+      }
+    }).filter(Boolean)
+    return json({ items }, 200, { 'Cache-Control': 'private, no-store' })
+  }
+
+  async skinCatalog(request) {
+    if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
+    for (const source of CATALOG_SOURCES) {
+      try {
+        const response = await timedFetch(source, { headers: { Accept: 'application/json' } })
+        if (!response.ok) continue
+        const catalog = await response.json()
+        if (!Array.isArray(catalog) || catalog.length === 0) continue
+        const safeCatalog = catalog.slice(0, 5_000).map((skin, index) => ({
+          id: cleanText(skin?.id || `cs2-${index}`, 128),
+          name: cleanText(skin?.name, 160),
+          weapon: { name: cleanText(skin?.weapon?.name, 64) },
+          category: { name: cleanText(skin?.category?.name, 64) },
+          rarity: { name: cleanText(skin?.rarity?.name || 'Consumer Grade', 48), color: cleanColor(skin?.rarity?.color) },
+          image: cleanImage(skin?.image),
+        })).filter(skin => skin.name && skin.weapon.name && skin.category.name && skin.image)
+        if (safeCatalog.length >= 50) return json(safeCatalog, 200, { 'Cache-Control': 'public, max-age=86400, s-maxage=86400' })
+      } catch {
+        // Try the next public mirror.
+      }
+    }
+    return json({ error: 'Каталог скінів тимчасово недоступний.' }, 502)
+  }
+}
+
+export default {
+  async fetch(request, env) {
+    const path = new URL(request.url).pathname
+    if (path.startsWith('/api/')) {
+      const id = env.POTUZHNO_STATE.idFromName('global')
+      return env.POTUZHNO_STATE.get(id).fetch(request)
+    }
+    return env.ASSETS.fetch(request)
+  },
+}

@@ -1,20 +1,18 @@
 {
   "name": "potuzhno-drop-demo",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "private": true,
-  "description": "Potuzhno Drop — transparent parody game with virtual CS2 inventory.",
+  "description": "Potuzhno Drop — transparent virtual CS2 collection game on Cloudflare Workers.",
   "type": "module",
   "engines": {
     "node": ">=22.12 <25"
   },
   "scripts": {
-    "check": "node --check js/app.js && node --check netlify/functions/steam-auth.mts && node --check netlify/functions/steam-inventory.mts && node --check netlify/functions/skin-catalog.mts && node --check netlify/functions/profile-sync.mts && node --check netlify/functions/fair-roll.mts && node --check netlify/functions/fair-verify.mts && node --check netlify/functions/matchmaking.mts",
-    "build": "npm run check"
+    "check": "node --check js/app.js && node --check src/worker.mjs && npx wrangler deploy --dry-run",
+    "build": "npm run check",
+    "dev": "wrangler dev"
   },
   "devDependencies": {
-    "@netlify/functions": "^6.0.0"
-  },
-  "dependencies": {
-    "@netlify/blobs": "^11.1.0"
+    "wrangler": "^4.135.0"
   }
 }
