@@ -188,6 +188,7 @@ const TRUSTED_IMAGE_HOSTS = new Set([
   'community.akamai.steamstatic.com',
   'avatars.steamstatic.com',
   'avatars.akamai.steamstatic.com',
+  'avatars.fastly.steamstatic.com',
   'steamcdn-a.akamaihd.net',
   'raw.githubusercontent.com',
   'cdn.jsdelivr.net'
@@ -1628,6 +1629,7 @@ function applyLoggedInUI() {
   const ab = document.getElementById('userAvatarBox');
   if (currentUser.steamId) {
     sb?.classList.add('hidden');
+    if (sb) sb.style.display = 'none';
     ab?.classList.remove('hidden');
     ab.title = `${currentUser.name || 'Steam'} · Steam підключено`;
     const avatar = document.getElementById('userAvatarImg');
@@ -1637,6 +1639,7 @@ function applyLoggedInUI() {
     }
   } else {
     sb?.classList.remove('hidden');
+    if (sb) sb.style.removeProperty('display');
     ab?.classList.add('hidden');
   }
   updateBalanceUI();

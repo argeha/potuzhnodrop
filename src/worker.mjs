@@ -14,6 +14,7 @@ const IMAGE_HOSTS = new Set([
 const AVATAR_HOSTS = new Set([
   'avatars.steamstatic.com',
   'avatars.akamai.steamstatic.com',
+  'avatars.fastly.steamstatic.com',
   'steamcdn-a.akamaihd.net',
 ])
 const CATALOG_SOURCES = [
@@ -109,6 +110,21 @@ function decodeXmlText(value) {
 function xmlTag(xml, tag) {
   const match = String(xml || '').match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i'))
   return decodeXmlText(match?.[1] || '')
+}
+
+function htmlAttribute(tag, name) {
+  const match = String(tag || '').match(new RegExp(`\\b${name}\\s*=\\s*(?:(["'])(.*?)\\1|([^\\s>]+))`, 'i'))
+  return decodeXmlText(match?.[2] || match?.[3] || '')
+}
+
+function htmlMeta(html, property) {
+  const target = String(property || '').toLowerCase()
+  const tags = String(html || '').match(/<meta\b[^>]*>/gi) || []
+  for (const tag of tags) {
+    const key = (htmlAttribute(tag, 'property') || htmlAttribute(tag, 'name')).toLowerCase()
+    if (key === target) return htmlAttribute(tag, 'content')
+  }
+  return ''
 }
 
 function cleanColor(value) {
@@ -420,21 +436,44 @@ export class PotuzhnoState {
       visibility: 'unknown',
       updatedAt: Date.now(),
     }
+    let profile = { ...fallback }
     try {
       const response = await timedFetch(`https://steamcommunity.com/profiles/${steamId}/?xml=1`, {
         headers: { Accept: 'application/xml,text/xml;q=0.9,*/*;q=0.8' },
       })
-      if (!response.ok) return cached?.steamId === steamId ? cached : fallback
-      const xml = await response.text()
-      const name = xmlTag(xml, 'steamID') || fallback.name
-      const avatar = cleanAvatar(xmlTag(xml, 'avatarFull') || xmlTag(xml, 'avatarMedium') || xmlTag(xml, 'avatarIcon'))
-      const visibility = cleanText(xmlTag(xml, 'privacyState'), 24).toLowerCase() || 'unknown'
-      const profile = { ...fallback, name, avatar, visibility, updatedAt: Date.now() }
-      await this.storage.put(key, profile)
-      return profile
+      if (response.ok) {
+        const xml = await response.text()
+        profile = {
+          ...profile,
+          name: xmlTag(xml, 'steamID') || profile.name,
+          avatar: cleanAvatar(xmlTag(xml, 'avatarFull') || xmlTag(xml, 'avatarMedium') || xmlTag(xml, 'avatarIcon')) || profile.avatar,
+          visibility: cleanText(xmlTag(xml, 'privacyState'), 24).toLowerCase() || profile.visibility,
+        }
+      }
     } catch {
-      return cached?.steamId === steamId ? cached : fallback
+      // The public XML feed is not consistently available; use the HTML metadata below.
     }
+    if (!profile.avatar || profile.name === fallback.name) {
+      try {
+        const response = await timedFetch(`https://steamcommunity.com/profiles/${steamId}/`, {
+          headers: { Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8' },
+        })
+        if (response.ok) {
+          const html = await response.text()
+          const title = htmlMeta(html, 'og:title').replace(/^Steam Community\s*::\s*/i, '')
+          profile = {
+            ...profile,
+            name: cleanText(title, 48) || profile.name,
+            avatar: cleanAvatar(htmlMeta(html, 'og:image')) || profile.avatar,
+          }
+        }
+      } catch {
+        // A visual fallback is returned to the client if Steam is temporarily unavailable.
+      }
+    }
+    profile.updatedAt = Date.now()
+    await this.storage.put(key, profile)
+    return profile
   }
 
   async steamProfile(request) {
