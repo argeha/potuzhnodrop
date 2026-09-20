@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 3.6 ============ */
+/* ============ ПОТУЖНО DROP 3.7 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -12,7 +12,8 @@ const STORAGE = {
   account: 'potuzhno_v6_account',
   topup: 'potuzhno_v5_topup',
   freeCase: 'potuzhno_v5_freecase',
-  catalogCache: 'potuzhno_catalog_cache_v36'
+  catalogCache: 'potuzhno_catalog_cache_v38',
+  pendingWager: 'potuzhno_v6_pending_wager'
 };
 
 const PAGES = ['upgrader', 'case', 'battle', 'royale', 'contract', 'tasks', 'profile', 'about'];
@@ -49,7 +50,11 @@ function showPage(id) {
     renderRecentAch();
   }
   if (id === 'battle') resetCoinVisual();
-  if (id === 'royale') { resetRoyale(); setTimeout(initRoyalePage, 30); }
+  if (id === 'royale') {
+    // Do not replace the participants while an existing spin still owns them.
+    if (!royaleInProgress) resetRoyale();
+    setTimeout(initRoyalePage, 30);
+  }
 }
 
 window.addEventListener('hashchange', () => {
@@ -96,7 +101,7 @@ function rollWear() {
 }
 
 function getWear(i) {
-  return i?.wear || WEAR_TIERS[2];
+  return normalizeWear(i?.wear);
 }
 
 function priceWithWear(b, w) {
@@ -136,10 +141,125 @@ const CATEGORY_LABELS = {
 };
 
 const CS2_SKINS_APIS = [
+  // The function is the primary source. The mirrors keep the full catalogue
+  // available when a serverless function is cold-starting or temporarily down.
   '/api/catalog/skins',
   'https://cdn.jsdelivr.net/gh/ByMykel/CSGO-API@main/public/api/en/skins.json',
   'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/skins.json'
 ];
+
+// These are the prominent demonstration skins. Their DC values are tuned for
+// the game's case and upgrade economy instead of mirroring expensive real-world sales.
+const FEATURED_SKIN_PRICES = Object.freeze({
+  '★ Butterfly Knife | Doppler': 8600,
+  '★ Karambit | Fade': 9800,
+  '★ M9 Bayonet | Marble Fade': 7200,
+  '★ Karambit | Doppler': 8400,
+  'AWP | Dragon Lore': 14000,
+  'AWP | Asiimov': 1550,
+  'AWP | Atheris': 140,
+  'AK-47 | Case Hardened': 3900,
+  'AK-47 | Redline': 500,
+  'M4A1-S | Printstream': 1800,
+  'M4A4 | Howl': 12000,
+  'Desert Eagle | Printstream': 1000,
+  'USP-S | Kill Confirmed': 1300,
+  'Glock-18 | Water Elemental': 240,
+  'AWP | Neo-Noir': 600,
+  'AWP | Wildfire': 1900,
+  'AK-47 | Asiimov': 850,
+  'Glock-18 | Fade': 2600,
+  'P250 | See Ya Later': 260
+});
+
+CS2_SKINS = CS2_SKINS.map(skin => ({
+  ...skin,
+  price: FEATURED_SKIN_PRICES[skin.name] ?? skin.price
+}));
+
+const MAX_STORED_ITEM_VALUE = 1_000_000;
+const MAX_STORED_BALANCE = 10_000_000;
+const TRUSTED_IMAGE_HOSTS = new Set([
+  'community.cloudflare.steamstatic.com',
+  'community.akamai.steamstatic.com',
+  'avatars.steamstatic.com',
+  'avatars.akamai.steamstatic.com',
+  'steamcdn-a.akamaihd.net',
+  'raw.githubusercontent.com',
+  'cdn.jsdelivr.net'
+]);
+
+function clampNumber(value, min, max, fallback = min) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
+}
+
+function cleanText(value, maxLength = 160) {
+  return String(value ?? '').replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, maxLength);
+}
+
+function cleanImageUrl(value) {
+  const source = cleanText(value, 2048);
+  if (!source) return '';
+  try {
+    const url = new URL(source);
+    return url.protocol === 'https:' && TRUSTED_IMAGE_HOSTS.has(url.hostname) ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
+function cleanColor(value) {
+  const color = cleanText(value, 32);
+  return /^#[0-9a-f]{3,8}$/i.test(color) || /^rgb\(\d{1,3},\s*\d{1,3},\s*\d{1,3}\)$/i.test(color)
+    ? color
+    : '#b0c3d9';
+}
+
+function normalizeWear(wear) {
+  return WEAR_TIERS.find(tier => tier.code === wear?.code) || WEAR_TIERS[2];
+}
+
+function normalizeStoredItem(item, index = 0) {
+  if (!item || typeof item !== 'object') return null;
+  const id = cleanText(item.id || `import-${Date.now()}-${index}`, 128);
+  const name = cleanText(item.name || 'CS2 Skin', 160);
+  const basePrice = clampNumber(item.basePrice ?? item.price, 1, MAX_STORED_ITEM_VALUE, 1);
+  const wear = normalizeWear(item.wear);
+  return {
+    id,
+    sourceSkinId: cleanText(item.sourceSkinId || item.id || '', 128),
+    name,
+    rarity: cleanText(item.rarity || 'CS2', 48),
+    rarityColor: cleanColor(item.rarityColor),
+    img: cleanImageUrl(item.img),
+    basePrice,
+    wear,
+    price: priceWithWear(basePrice, wear),
+    virtual: item.virtual !== false,
+    exclusive: item.exclusive === true,
+    addedAt: clampNumber(item.addedAt, 0, Number.MAX_SAFE_INTEGER, Date.now())
+  };
+}
+
+function normalizeCatalogSkin(skin, index = 0) {
+  if (!skin || typeof skin !== 'object') return null;
+  const name = cleanText(skin.name, 160);
+  const weapon = cleanText(skin.weapon, 64);
+  const category = cleanText(skin.category, 64);
+  const img = cleanImageUrl(skin.img);
+  if (!name || !weapon || !category || !img) return null;
+  return {
+    id: cleanText(skin.id || `cs2-${index}`, 128),
+    name,
+    weapon,
+    category,
+    rarity: cleanText(skin.rarity || 'Consumer Grade', 48),
+    rarityColor: cleanColor(skin.rarityColor),
+    img,
+    price: clampNumber(skin.price, 1, MAX_STORED_ITEM_VALUE, 1)
+  };
+}
 
 let currentUser = null;
 let userInventory = [];
@@ -160,6 +280,7 @@ let gameState = null;
 let isCaseOpening = false;
 let isFreeCaseOpening = false;
 let account = null;
+let pendingWager = null;
 
 let battlePlayerItem = null;
 let battleBotItem = null;
@@ -232,7 +353,7 @@ const CASE_TYPES = {
     badge: 'HOT',
     badgeClass: 'badge-hot',
     theme: 'gold',
-    desc: 'Метелики всіх варіацій: Doppler, Fade, Marble',
+    desc: 'Шанс на Butterfly Knife: Doppler, Fade, Marble',
     filter: s => s.name.includes('Butterfly Knife') || (s.name.includes('★') && s.price >= 30000)
   },
   karambit_rush: {
@@ -254,7 +375,7 @@ const CASE_TYPES = {
     badge: 'POPULAR',
     badgeClass: 'badge-popular',
     theme: 'gold',
-    desc: 'Гарантований ніж: M9, Talon, Skeleton, Flip',
+    desc: 'Ножі різної цінності та рідкісний шанс на топ-дроп',
     filter: s => s.name.includes('★') && !s.name.includes('Gloves') && !s.name.includes('Wraps')
   },
 
@@ -549,21 +670,21 @@ const COLLECTION_DEFINITIONS = [
     title: 'Точний постріл',
     description: 'Збери 5 різних AWP',
     items: ['AWP | Atheris', 'AWP | Asiimov', 'AWP | Neo-Noir', 'AWP | Wildfire', 'AWP | Dragon Lore'],
-    reward: { dc: 15000, skin: { id: 'excl-awp', name: '★ AWP | Paragon (Exclusive)', price: 35000, img: '', rarity: 'Extraordinary', rarityColor: '#eb4b4b' } }
+    reward: { dc: 6500, skin: { id: 'excl-awp', name: '★ AWP | Paragon (Exclusive)', price: 9500, img: '', rarity: 'Extraordinary', rarityColor: '#eb4b4b' } }
   },
   {
     id: 'rifles',
     title: 'Основний склад',
     description: 'Збери 5 гвинтівок',
     items: ['AK-47 | Redline', 'AK-47 | Case Hardened', 'M4A1-S | Printstream', 'M4A4 | Howl', 'AK-47 | Asiimov'],
-    reward: { dc: 12000, skin: { id: 'excl-ak', name: '★ AK-47 | Prime (Exclusive)', price: 28000, img: '', rarity: 'Extraordinary', rarityColor: '#eb4b4b' } }
+    reward: { dc: 5000, skin: { id: 'excl-ak', name: '★ AK-47 | Prime (Exclusive)', price: 7200, img: '', rarity: 'Extraordinary', rarityColor: '#eb4b4b' } }
   },
   {
     id: 'pistols',
     title: 'Другий шанс',
     description: 'Збери 5 пістолетів',
     items: ['Glock-18 | Water Elemental', 'USP-S | Kill Confirmed', 'Desert Eagle | Printstream', 'Glock-18 | Fade', 'P250 | See Ya Later'],
-    reward: { dc: 8000, skin: { id: 'excl-deagle', name: '★ Desert Eagle | Crown (Exclusive)', price: 15000, img: '', rarity: 'Extraordinary', rarityColor: '#eb4b4b' } }
+    reward: { dc: 2800, skin: { id: 'excl-deagle', name: '★ Desert Eagle | Crown (Exclusive)', price: 3900, img: '', rarity: 'Extraordinary', rarityColor: '#eb4b4b' } }
   }
 ];
 
@@ -830,16 +951,30 @@ function handleSkinImageError(image, location = 'card') {
 }
 
 function makeDemoItem(skin, suffix = '') {
-  const wear = skin.wear && WEAR_TIERS.find(w => w.code === skin.wear.code) ? skin.wear : rollWear();
-  const basePrice = Number(skin.basePrice ?? skin.price) || 0;
-  return {
+  const safeSkin = normalizeCatalogSkin({
     ...skin,
-    sourceSkinId: skin.sourceSkinId || skin.id,
+    weapon: skin.weapon || categorizeWeapon(skin.name) || 'CS2',
+    category: skin.category || 'Інше',
+    img: skin.img || ''
+  }) || {
+    id: cleanText(skin?.id || 'demo', 128),
+    name: cleanText(skin?.name || 'CS2 Skin', 160),
+    rarity: cleanText(skin?.rarity || 'CS2', 48),
+    rarityColor: cleanColor(skin?.rarityColor),
+    img: cleanImageUrl(skin?.img),
+    price: clampNumber(skin?.basePrice ?? skin?.price, 1, MAX_STORED_ITEM_VALUE, 1)
+  };
+  const wear = skin.wear ? normalizeWear(skin.wear) : rollWear();
+  const basePrice = clampNumber(skin.basePrice ?? safeSkin.price, 1, MAX_STORED_ITEM_VALUE, 1);
+  return {
+    ...safeSkin,
+    sourceSkinId: cleanText(skin.sourceSkinId || safeSkin.id, 128),
     id: `demo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${suffix}`,
     basePrice,
     wear,
     price: priceWithWear(basePrice, wear),
     virtual: true,
+    exclusive: skin.exclusive === true,
     addedAt: Date.now()
   };
 }
@@ -983,12 +1118,60 @@ function saveState() {
   if (account) localStorage.setItem(STORAGE.account, JSON.stringify(account));
 }
 
+function beginPendingWager({ inventory = [], balance = 0 }) {
+  const wager = {
+    id: `wager-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    createdAt: Date.now(),
+    inventory: inventory.map((item, index) => normalizeStoredItem(item, index)).filter(Boolean),
+    balance: clampNumber(balance, 0, MAX_STORED_BALANCE, 0)
+  };
+  pendingWager = wager;
+  localStorage.setItem(STORAGE.pendingWager, JSON.stringify(wager));
+  return wager.id;
+}
+
+function isPendingWager(id) {
+  return Boolean(pendingWager && pendingWager.id === id);
+}
+
+function completePendingWager(id) {
+  if (!isPendingWager(id)) return false;
+  pendingWager = null;
+  localStorage.removeItem(STORAGE.pendingWager);
+  return true;
+}
+
+function cancelPendingWager() {
+  pendingWager = null;
+  localStorage.removeItem(STORAGE.pendingWager);
+}
+
+function recoverInterruptedWager() {
+  let wager = null;
+  try {
+    wager = JSON.parse(localStorage.getItem(STORAGE.pendingWager) || 'null');
+  } catch {}
+  if (!wager || !currentUser) return;
+
+  const restored = Array.isArray(wager.inventory)
+    ? wager.inventory.map((item, index) => normalizeStoredItem(item, index)).filter(Boolean)
+    : [];
+  const owned = new Set(userInventory.map(item => String(item.id)));
+  restored.forEach(item => {
+    if (!owned.has(String(item.id))) userInventory.push(item);
+  });
+  currentUser.balance = clampNumber(currentUser.balance + clampNumber(wager.balance, 0, MAX_STORED_BALANCE, 0), 0, MAX_STORED_BALANCE, DEMO_STARTING_BALANCE);
+  cancelPendingWager();
+  saveState();
+  showToast('Незавершений раунд скасовано: ставку повернено.', 'info');
+}
+
 function loadState() {
   loadGameState();
   loadAccount();
   const sid = localStorage.getItem(STORAGE.steamId);
   const started = localStorage.getItem(STORAGE.started) === '1';
-  const bal = parseFloat(localStorage.getItem(STORAGE.balance) || String(DEMO_STARTING_BALANCE)) || DEMO_STARTING_BALANCE;
+  const bal = clampNumber(localStorage.getItem(STORAGE.balance), 0, MAX_STORED_BALANCE, DEMO_STARTING_BALANCE);
   soundEnabled = localStorage.getItem(STORAGE.sound) !== 'off';
   updateSoundUI();
 
@@ -998,18 +1181,9 @@ function loadState() {
     userInventory = [];
   }
 
-  userInventory = userInventory.map(it => {
-    if (!it) return null;
-    const wear = it.wear && WEAR_TIERS.find(w => w.code === it.wear.code) ? it.wear : WEAR_TIERS[2];
-    const bp = Number(it.basePrice ?? it.price ?? 0);
-    return {
-      ...it,
-      wear,
-      basePrice: bp,
-      price: priceWithWear(bp, wear),
-      addedAt: it.addedAt || Date.now()
-    };
-  }).filter(Boolean);
+  userInventory = Array.isArray(userInventory)
+    ? userInventory.map((item, index) => normalizeStoredItem(item, index)).filter(Boolean)
+    : [];
 
   currentUser = {
     steamId: sid || null,
@@ -1023,6 +1197,8 @@ function loadState() {
     userInventory = createStarterInventory();
     saveState();
   }
+
+  recoverInterruptedWager();
 
   applyLoggedInUI();
   updateAccountUI();
@@ -1747,7 +1923,7 @@ function copyLatestResult() {
     showToast('Спочатку зроби ролл', 'warn');
     return;
   }
-  const msg = `ПОТУЖНО DROP 3.6 · ${r.win ? 'Виграш' : 'Невдача'}: ${r.targetName} · ${r.chance ? `шанс ${Number(r.chance).toFixed(2)}% · ` : ''}лише віртуальна гра.`;
+  const msg = `ПОТУЖНО DROP 3.7 · ${r.win ? 'Виграш' : 'Невдача'}: ${r.targetName} · ${r.chance ? `шанс ${Number(r.chance).toFixed(2)}% · ` : ''}лише віртуальна гра.`;
   const done = () => showToast('Результат скопійовано', 'success');
   if (navigator.clipboard?.writeText) {
     navigator.clipboard.writeText(msg).then(done).catch(() => showToast('Не вдалося', 'warn'));
@@ -1922,18 +2098,6 @@ async function loginWithManualSteamId() {
 }
 
 async function fetchAndApplySteamInventory(sid) {
-  account.steamId = sid;
-  account.nick = account.nick && !account.nick.startsWith('Гравець_') ? account.nick : `Steam_${sid.slice(-4)}`;
-  localStorage.setItem(STORAGE.account, JSON.stringify(account));
-  currentUser = {
-    steamId: sid,
-    name: account.nick,
-    balance: currentUser?.balance || parseFloat(localStorage.getItem(STORAGE.balance) || String(DEMO_STARTING_BALANCE)) || DEMO_STARTING_BALANCE,
-    avatar: AVATAR_URL
-  };
-  applyLoggedInUI();
-  updateAccountUI();
-
   try {
     const r = await fetch(`/api/steam/inventory?steamid=${encodeURIComponent(sid)}`);
     const d = await r.json();
@@ -1952,9 +2116,25 @@ async function fetchAndApplySteamInventory(sid) {
         addedAt: Date.now()
       };
     });
+
+    // Commit the Steam identity only after its public inventory was fetched.
+    // A private inventory or network failure must not look like a successful login.
+    account = {
+      ...(account || {}),
+      steamId: sid,
+      nick: account?.nick && !account.nick.startsWith('Гравець_') ? account.nick : `Steam_${sid.slice(-4)}`
+    };
+    currentUser = {
+      steamId: sid,
+      name: account.nick,
+      balance: clampNumber(currentUser?.balance ?? localStorage.getItem(STORAGE.balance), 0, MAX_STORED_BALANCE, DEMO_STARTING_BALANCE),
+      avatar: AVATAR_URL
+    };
     userInventory = imported.length ? imported : createStarterInventory();
     const st = document.getElementById('inventoryStatus');
     if (st) st.textContent = imported.length ? `Створено ${imported.length} віртуальних копій.` : 'У публічному інвентарі немає CS2 — стартовий набір.';
+    applyLoggedInUI();
+    updateAccountUI();
     renderInventoryGrid();
     renderProfileInventory();
     updateAvatarBadge();
@@ -2090,6 +2270,13 @@ function doPrestige() {
 
 function resetDemoGame() {
   if (!window.confirm('Почати спочатку? Прогрес, історія, ачівки та престиж скидаються.')) return;
+  cancelPendingWager();
+  isRolling = false;
+  isCaseOpening = false;
+  isFreeCaseOpening = false;
+  battleInProgress = false;
+  battlePlayerItem = null;
+  battleBotItem = null;
   currentUser.balance = DEMO_STARTING_BALANCE;
   userInventory = createStarterInventory();
   const theme = gameState?.theme || 'amber';
@@ -2116,7 +2303,7 @@ function resetDemoGame() {
 
   clearContract();
   resetCoinVisual();
-  resetRoyale();
+  resetRoyale(true);
 
   updateBalanceUI();
   renderInventoryGrid();
@@ -2309,11 +2496,17 @@ function showItemDetail(itemId) {
       <div class="rounded-xl border border-gray-800 bg-black/20 p-3"><p class="text-[10px] font-bold uppercase tracking-wider text-gray-500">Продаж (90%)</p><p class="font-heading text-2xl font-extrabold text-emerald-300">${formatCredits(sellPrice)}</p></div>
     </div>
     ${it.exclusive ? `<p class="mt-3 text-[10px] text-violet-300 italic">Ексклюзивний предмет — його можна продати, але більше не отримати.</p>` : ''}
-    <button onclick="sellInventoryItem('${escapeHtml(String(it.id))}',true); closeModal('itemDetailModal');" class="mt-4 w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-400 text-black font-extrabold uppercase text-sm tracking-wider transition"><i class="fa-solid fa-sack-dollar mr-2"></i>Продати за ${formatCredits(sellPrice)}</button>
+    <button type="button" data-detail-sell-id="${escapeHtml(String(it.id))}" class="mt-4 w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-400 text-black font-extrabold uppercase text-sm tracking-wider transition"><i class="fa-solid fa-sack-dollar mr-2"></i>Продати за ${formatCredits(sellPrice)}</button>
     <button onclick="closeModal('itemDetailModal')" class="mt-3 w-full py-2.5 rounded-xl border border-gray-700 bg-black/20 hover:bg-gray-800 text-xs font-bold text-gray-300 transition">Закрити</button>
   </div>`;
   const container = document.getElementById('itemDetailContent');
-  if (container) container.innerHTML = html;
+  if (container) {
+    container.innerHTML = html;
+    container.querySelector('[data-detail-sell-id]')?.addEventListener('click', () => {
+      sellInventoryItem(it.id, true);
+      closeModal('itemDetailModal');
+    });
+  }
   openModal('itemDetailModal');
 }
 
@@ -2441,6 +2634,7 @@ function selectInventoryItem(it) {
 
 function selectTargetItem(it) {
   if (!it) return;
+  it = getMarketSkin(it);
   const iv = getInputVal();
   if (iv > 0 && it.price <= iv) {
     showToast(`Ціль має коштувати більше за ${formatCredits(iv)}`, 'warn');
@@ -2501,11 +2695,17 @@ function renderMultiSlots() {
       const wear = getWear(s);
       return `<div class="multi-slot">
         <span class="wear-badge wear-${wear.code} absolute top-1 left-1">${wear.code}</span>
-        <span class="rm" onclick="event.stopPropagation();removeFromMulti('${escapeHtml(String(s.id))}')"><i class="fa-solid fa-xmark"></i></span>
+        <button type="button" class="rm" data-multi-remove-id="${escapeHtml(String(s.id))}" aria-label="Видалити"><i class="fa-solid fa-xmark"></i></button>
         <img src="${escapeHtml(s.img || '')}" alt="" data-skin-name="${escapeHtml(s.name)}" onerror="handleSkinImageError(this)">
         <div class="price">${formatCredits(s.price).replace(' DC', '')}</div>
       </div>`;
     }).join('');
+    g.querySelectorAll('[data-multi-remove-id]').forEach(button => {
+      button.addEventListener('click', event => {
+        event.stopPropagation();
+        removeFromMulti(button.dataset.multiRemoveId);
+      });
+    });
   }
   const lbl = document.getElementById('multiCountLabel');
   if (lbl) lbl.textContent = String(multiInputSkins.length);
@@ -2710,15 +2910,14 @@ function renderSmartSuggestions(inputVal) {
 
     const actualChance = calcChance(inputVal, best.price || targetPrice);
     const sk = getSkinKey ? getSkinKey(best) : '';
-    const safeN = best.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
     const displayName = best.name.length > 18 ? best.name.slice(0, 16) + '…' : best.name;
     const priceStr = typeof formatCredits === 'function' ? formatCredits(best.price || 0) : (best.price || 0) + ' DC';
 
-    return `<button class="upg-sugg-card" data-preset="${p.key}" onclick="applySuggestion('${safeN}')" style="background:${p.bg};border-color:${p.border}">
+    return `<button type="button" class="upg-sugg-card" data-preset="${p.key}" data-suggestion-key="${escapeHtml(sk)}" style="background:${p.bg};border-color:${p.border}">
   <div class="upg-sugg-icon" style="color:${p.accent}">${p.icon}</div>
   <div class="upg-sugg-body">
     <div class="upg-sugg-label" style="color:${p.accent}">${p.label}</div>
-    <div class="upg-sugg-name">${displayName}</div>
+    <div class="upg-sugg-name">${escapeHtml(displayName)}</div>
     <div class="upg-sugg-meta">
       <span class="upg-sugg-chance" style="color:${p.accent}">${actualChance.toFixed(1)}%</span>
       <span class="upg-sugg-price">${priceStr}</span>
@@ -2726,10 +2925,13 @@ function renderSmartSuggestions(inputVal) {
   </div>
 </button>`;
   }).join('');
+  el.querySelectorAll('[data-suggestion-key]').forEach(button => {
+    button.addEventListener('click', () => applySuggestion(button.dataset.suggestionKey));
+  });
 }
 
-function applySuggestion(skinName) {
-  const skin = CS2_SKINS.find(s => s.name === skinName);
+function applySuggestion(skinKey) {
+  const skin = getSkinByKey(skinKey) || CS2_SKINS.find(s => s.name === skinKey);
   if (!skin) return;
   selectedTargetSkin = skin;
   const tei = document.getElementById('targetEmptyState');
@@ -2742,10 +2944,9 @@ function applySuggestion(skinName) {
   if (timg) setImageSource(timg, skin.img, skin.name, getSkinKey(skin));
   if (tnm)  tnm.textContent  = skin.name;
   if (trar) trar.textContent = skin.rarity || '';
-  // Highlight the clicked card by matching skin name in the onclick attr
+  // Highlight by a data attribute, never by executable inline code.
   document.querySelectorAll('.upg-sugg-card').forEach(c => {
-    const attr = c.getAttribute('onclick') || '';
-    c.classList.toggle('is-active', attr.includes(skinName.replace(/'/g, "\\'")));
+    c.classList.toggle('is-active', c.dataset.suggestionKey === getSkinKey(skin));
   });
   recalculateUpgrade();
 }
@@ -2841,7 +3042,10 @@ function showResultModal(win, skin, bonus = 0) {
 }
 
 function executeUpgrade() {
-  if (isRolling) return;
+  if (isRolling || pendingWager || isCaseOpening || isFreeCaseOpening) {
+    if (pendingWager || isCaseOpening || isFreeCaseOpening) showToast('Спочатку дочекайся завершення поточного раунду', 'warn');
+    return;
+  }
   const iv = getInputVal(), tv = getTargetVal();
   const inSkin = selectedInputSkin, tgtSkin = selectedTargetSkin;
   const multiAtStart = [...multiInputSkins];
@@ -2862,6 +3066,23 @@ function executeUpgrade() {
     showToast('Недостатньо кредитів', 'warn');
     return;
   }
+  if (selectedInputMode === 'skin' && (!inSkin || !userInventory.some(item => item.id === inSkin.id))) {
+    showToast('Обраного скіна вже немає в інвентарі', 'warn');
+    return;
+  }
+  if (selectedInputMode === 'multi' && !multiAtStart.every(item => userInventory.some(owned => owned.id === item.id))) {
+    showToast('Деяких скінів уже немає в інвентарі', 'warn');
+    return;
+  }
+
+  const chance = calcChance(iv, tv);
+  const winBonus = getWinBonus(tv);
+  const roll = Math.random() * 100;
+  const isWin = roll <= chance;
+  const wagerId = beginPendingWager({
+    inventory: selectedInputMode === 'skin' ? [inSkin] : selectedInputMode === 'multi' ? multiAtStart : [],
+    balance: selectedInputMode === 'balance' ? balanceStake : 0
+  });
 
   ensureDailyState();
   ensureWeeklyState();
@@ -2880,21 +3101,12 @@ function executeUpgrade() {
 
   // Deduct/consume inputs IMMEDIATELY to prevent dupes via rapid clicking or page hopping
   if (selectedInputMode === 'skin' && inSkin) {
-    if (!userInventory.some(i => i.id === inSkin.id)) {
-      showToast('Обраного скіна вже немає в інвентарі', 'warn');
-      return;
-    }
     userInventory = userInventory.filter(i => i.id !== inSkin.id);
     selectedInputSkin = null;
     document.getElementById('inputSkinState')?.classList.add('hidden');
     document.getElementById('inputEmptyState')?.classList.remove('hidden');
   } else if (selectedInputMode === 'multi') {
     const ids = new Set(multiAtStart.map(x => x.id));
-    const allExist = multiAtStart.every(m => userInventory.some(i => i.id === m.id));
-    if (!allExist) {
-      showToast('Деяких скінів уже немає в інвентарі', 'warn');
-      return;
-    }
     userInventory = userInventory.filter(i => !ids.has(i.id));
     multiInputSkins = [];
     renderMultiSlots();
@@ -2917,11 +3129,6 @@ function executeUpgrade() {
   const rollStatus = document.getElementById('rollStatusText');
   if (rollStatus) rollStatus.textContent = 'ОБЕРТАННЯ...';
 
-  const chance = calcChance(iv, tv);
-  const winBonus = getWinBonus(tv);
-  const roll = Math.random() * 100;
-  const isWin = roll <= chance;
-
   const start = performance.now(), dur = 3200, turns = 5;
   const finalAngle = turns * Math.PI * 2 + (roll / 100) * Math.PI * 2;
   const tick = setInterval(() => beep(380 + Math.random() * 240, 0.03, 'square'), 90);
@@ -2937,6 +3144,7 @@ function executeUpgrade() {
     }
 
     clearInterval(tick);
+    if (!completePendingWager(wagerId)) return;
     isRolling = false;
     document.querySelector('.upg-wheel-box')?.classList.remove('is-spinning');
     if (btn) btn.disabled = false;
@@ -2982,6 +3190,7 @@ function executeUpgrade() {
   if (isFast) {
     // Skip animation, resolve immediately
     clearInterval(tick);
+    if (!completePendingWager(wagerId)) return;
     renderCanvas(chance, finalAngle % (Math.PI * 2));
     isRolling = false;
     document.querySelector('.upg-wheel-box')?.classList.remove('is-spinning');
@@ -3032,24 +3241,36 @@ function getCaseSkinPool(caseType) {
   const usable = CS2_SKINS.filter(isUsableSkin);
   if (!usable.length) return [];
 
-  let pool = [];
+  const sampleByPrice = (items, limit) => {
+    const sorted = [...items].sort((a, b) => (a.price || 0) - (b.price || 0));
+    if (sorted.length <= limit) return sorted;
+    return Array.from({ length: limit }, (_, index) => {
+      const position = Math.round(index * (sorted.length - 1) / (limit - 1));
+      return sorted[position];
+    });
+  };
+
+  let themed = [];
   if (typeof cfg.filter === 'function') {
-    pool = usable.filter(cfg.filter);
+    themed = usable.filter(cfg.filter);
   }
 
-  // Ensure every case has at least 8 exciting skins
-  if (pool.length < 8) {
-    const needed = 8 - pool.length;
-    const existing = new Set(pool.map(s => getSkinKey(s)));
-    const sorted = [...usable].sort((a, b) => Math.abs((b.price || 0) - (cfg.cost * 1.5)) - Math.abs((a.price || 0) - (cfg.cost * 1.5)));
-    for (const s of sorted) {
-      if (!existing.has(getSkinKey(s))) {
-        pool.push(s);
-        existing.add(getSkinKey(s));
-        if (pool.length >= 8) break;
-      }
-    }
-  }
+  // Every paid case intentionally contains affordable filler items. Previously
+  // knife/glove filters could consist entirely of premium skins, making a good
+  // drop almost guaranteed instead of rare.
+  const affordable = usable.filter(s => (s.price || 0) <= Math.max(20, cfg.cost * 0.9));
+  const nearest = [...usable]
+    .sort((a, b) => Math.abs((a.price || 0) - cfg.cost) - Math.abs((b.price || 0) - cfg.cost))
+    .slice(0, 48);
+  const seen = new Set();
+  const pool = [...sampleByPrice(themed, 120), ...sampleByPrice(affordable, 120), ...nearest]
+    .filter(s => {
+      const key = getSkinKey(s);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 240);
 
   return pool.sort((a, b) => (b.price || 0) - (a.price || 0));
 }
@@ -3063,19 +3284,55 @@ function _buildDropChanceMap(caseType) {
   const n = pool.length;
   if (!n) return new Map();
 
-  // Key-Drop probability curve: top items are rare (~0.1-1%), mid items (~5-15%), base items (~20-40%)
-  const raw = pool.map((s, i) => {
-    const price = Math.max(1, Number(s.price) || 50);
-    const rankWeight = Math.pow((i + 1) / n, 2.2);
-    const priceWeight = 1 / Math.pow(price, 0.45);
-    return Math.max(0.005, rankWeight * priceWeight * 100);
+  const cfg = CASE_TYPES[caseType] || CASE_TYPES.budget_covert;
+  const caseCost = Math.max(1, cfg.aliasTo ? (CASE_TYPES[cfg.aliasTo]?.cost || cfg.cost) : cfg.cost);
+  // 55% low, 32% below-cost, 12% break-even, 0.7% profitable,
+  // 0.25% premium and 0.05% jackpot (before unavailable-tier rollover).
+  const tierWeights = [55, 32, 12, 0.7, 0.25, 0.05];
+  const buckets = Array.from({ length: tierWeights.length }, () => []);
+  const tierFor = price => {
+    const ratio = Math.max(0, Number(price) || 0) / caseCost;
+    if (ratio <= 0.45) return 0;
+    if (ratio <= 0.85) return 1;
+    if (ratio <= 1.5) return 2;
+    if (ratio <= 3) return 3;
+    if (ratio <= 7) return 4;
+    return 5;
+  };
+  pool.forEach(item => buckets[tierFor(item.price)].push(item));
+
+  // Keep the intended return profile even when a small catalog has no item in
+  // one of the tiers. Missing probability flows to the closest cheaper tier
+  // (or, for the cheapest missing tier, to the next available tier) instead
+  // of making every remaining item disproportionately valuable.
+  const effectiveTierWeights = [...tierWeights];
+  buckets.forEach((bucket, index) => {
+    if (bucket.length) return;
+    let target = -1;
+    for (let next = index + 1; next < buckets.length; next++) {
+      if (buckets[next].length) { target = next; break; }
+    }
+    if (target < 0) {
+      for (let previous = index - 1; previous >= 0; previous--) {
+        if (buckets[previous].length) { target = previous; break; }
+      }
+    }
+    if (target >= 0) {
+      effectiveTierWeights[target] += effectiveTierWeights[index];
+      effectiveTierWeights[index] = 0;
+    }
   });
 
-  const sum = raw.reduce((a, b) => a + b, 0);
+  const activeWeight = effectiveTierWeights.reduce((sum, weight) => sum + weight, 0);
   const result = new Map();
-  if (sum > 0) {
-    pool.forEach((s, i) => {
-      result.set(getSkinKey(s), (raw[i] / sum) * 100);
+  if (activeWeight > 0) {
+    buckets.forEach((bucket, index) => {
+      if (!bucket.length) return;
+      const raw = bucket.map(item => 1 / Math.pow(Math.max(1, Number(item.price) || 1), 0.22));
+      const rawSum = raw.reduce((sum, weight) => sum + weight, 0);
+      bucket.forEach((item, itemIndex) => {
+        result.set(getSkinKey(item), (effectiveTierWeights[index] / activeWeight) * (raw[itemIndex] / rawSum) * 100);
+      });
     });
   }
 
@@ -3096,7 +3353,20 @@ function pickCaseSkin(poolType = 'regular', caseType = 'budget_covert') {
   if (poolType === 'free') {
     const cheapOnly = usable.filter(s => (s.price || 0) <= 300);
     const pool = cheapOnly.length ? cheapOnly : usable;
-    return pool[Math.floor(Math.random() * pool.length)];
+    const freeTiers = [
+      pool.filter(s => (s.price || 0) <= 75),
+      pool.filter(s => (s.price || 0) > 75 && (s.price || 0) <= 160),
+      pool.filter(s => (s.price || 0) > 160)
+    ];
+    const weights = [75, 22, 3];
+    const total = freeTiers.reduce((sum, tier, index) => sum + (tier.length ? weights[index] : 0), 0);
+    let roll = Math.random() * total;
+    for (let index = 0; index < freeTiers.length; index++) {
+      if (!freeTiers[index].length) continue;
+      roll -= weights[index];
+      if (roll <= 0) return freeTiers[index][Math.floor(Math.random() * freeTiers[index].length)];
+    }
+    return pool[0];
   }
 
   const pool = getCaseSkinPool(caseType);
@@ -3205,7 +3475,7 @@ function openPowerCase(caseType = 'budget_covert') {
   let cfg = CASE_TYPES[caseType] || CASE_TYPES.budget_covert;
   if (cfg.aliasTo) cfg = CASE_TYPES[cfg.aliasTo] || cfg;
 
-  if (!currentUser || !gameState || isCaseOpening || isRolling) return;
+  if (!currentUser || !gameState || isCaseOpening || isFreeCaseOpening || isRolling || pendingWager) return;
 
   currentActiveCaseId = cfg.id;
   window.__caseType = 'paid';
@@ -3260,7 +3530,7 @@ function updateFreeCaseBtn() {
 }
 
 function openFreeDailyCase() {
-  if (!currentUser || !gameState || isFreeCaseOpening || isRolling || isCaseOpening) return;
+  if (!currentUser || !gameState || isFreeCaseOpening || isRolling || isCaseOpening || pendingWager) return;
   if (getFreeCaseLeft() > 0) {
     showToast('Безкоштовний кейс ще недоступний', 'warn');
     return;
@@ -3324,12 +3594,13 @@ function buildSingleReelTrack(trackId, winner) {
 
 function startCaseReel() {
   const btn = document.getElementById('caseReelBtn');
-  if (btn?.disabled) return;
+  if (btn?.disabled || isCaseOpening || isFreeCaseOpening || pendingWager) return;
 
   const isFree = window.__caseType === 'free';
   const mult = isFree ? 1 : caseMultiplier;
   const cfg = CASE_TYPES[currentActiveCaseId] || CASE_TYPES.budget_covert;
   const totalCost = isFree ? 0 : (cfg.cost * mult);
+  const previousFreeCaseAt = isFree ? getFreeCaseLastAt() : 0;
 
   if (isFree) {
     if (getFreeCaseLeft() > 0) {
@@ -3343,6 +3614,9 @@ function startCaseReel() {
       return;
     }
   }
+
+  isCaseOpening = !isFree;
+  isFreeCaseOpening = isFree;
 
   // Deduct balance or trigger cooldown
   if (isFree) {
@@ -3362,7 +3636,22 @@ function startCaseReel() {
   const winners = [];
   for (let i = 0; i < mult; i++) {
     const w = pickCaseSkin(isFree ? 'free' : 'regular', currentActiveCaseId);
-    winners.push(w);
+    if (w) winners.push(w);
+  }
+  if (winners.length !== mult) {
+    isCaseOpening = false;
+    isFreeCaseOpening = false;
+    if (!isFree) {
+      currentUser.balance += totalCost;
+      updateBalanceUI();
+    } else if (previousFreeCaseAt > 0) {
+      localStorage.setItem(STORAGE.freeCase, String(previousFreeCaseAt));
+    } else {
+      localStorage.removeItem(STORAGE.freeCase);
+    }
+    updateFreeCaseBtn();
+    showToast('Каталог кейсу ще завантажується. Спробуй ще раз.', 'warn');
+    return;
   }
 
   // Create demo items and store
@@ -3399,6 +3688,8 @@ function startCaseReel() {
 
   if (isFast) {
     soundCase();
+    isCaseOpening = false;
+    isFreeCaseOpening = false;
     displayCaseDropResult(wonItems, isFree, cfg.name);
     return;
   }
@@ -3443,6 +3734,8 @@ function startCaseReel() {
     clearInterval(ticks);
     if (status) status.textContent = 'Готово!';
     soundCase();
+    isCaseOpening = false;
+    isFreeCaseOpening = false;
     displayCaseDropResult(wonItems, isFree, cfg.name);
   }, 4500);
 }
@@ -3724,6 +4017,10 @@ function spinCoin(isPlayerWin) {
 
 function startBattle() {
   if (battleInProgress || !battlePlayerItem || !battleBotItem) return;
+  if (pendingWager || isCaseOpening || isFreeCaseOpening) {
+    showToast('Спочатку дочекайся завершення поточного раунду', 'warn');
+    return;
+  }
   if (!userInventory.some(i => i.id === battlePlayerItem.id)) {
     showToast('Обраного скіна вже немає в твоєму інвентарі', 'warn');
     battlePlayerItem = null;
@@ -3733,6 +4030,25 @@ function startBattle() {
     if (startBtn) startBtn.disabled = true;
     return;
   }
+  const playerStake = battlePlayerItem;
+  const wagerId = beginPendingWager({ inventory: [playerStake] });
+
+  // Reserve the stake before the coin starts. It cannot be sold, upgraded or
+  // selected for another game while this battle is unresolved.
+  userInventory = userInventory.filter(item => item.id !== playerStake.id);
+  if (selectedInputSkin?.id === playerStake.id) {
+    selectedInputSkin = null;
+    document.getElementById('inputSkinState')?.classList.add('hidden');
+    document.getElementById('inputEmptyState')?.classList.remove('hidden');
+    recalculateUpgrade();
+  }
+  multiInputSkins = multiInputSkins.filter(item => item.id !== playerStake.id);
+  renderMultiSlots();
+  renderInventoryGrid();
+  renderProfileInventory();
+  updateAvatarBadge();
+  saveState();
+
   battleInProgress = true;
   const startBtn = document.getElementById('battleStartBtn');
   if (startBtn) {
@@ -3745,6 +4061,7 @@ function startBattle() {
 
   const isPlayerWin = Math.random() < 0.5;
   spinCoin(isPlayerWin).then(() => {
+    if (!isPendingWager(wagerId)) return;
     const pSlot = document.getElementById('battlePlayerSlot');
     const bSlot = document.getElementById('battleBotSlot');
     ensureDailyState();
@@ -3758,6 +4075,8 @@ function startBattle() {
       if (outcome) outcome.innerHTML = `<span class="text-emerald-300 text-lg">🪙 Монетка впала на ТВОЮ сторону! Ти забираєш «${escapeHtml(battleBotItem.name)}».</span>`;
       pSlot?.classList.add('is-winner');
       bSlot?.classList.add('is-loser');
+      // A win returns the reserved stake and awards the opponent's item.
+      userInventory.push(playerStake);
       const botItem = makeDemoItem(battleBotItem, '-battle');
       userInventory.push(botItem);
       gameState.stats.battleWins = (gameState.stats.battleWins || 0) + 1;
@@ -3767,15 +4086,6 @@ function startBattle() {
       if (outcome) outcome.innerHTML = `<span class="text-red-300 text-lg">🪙 Монетка впала на сторону БОТА. «${escapeHtml(battlePlayerItem.name)}» переходить йому.</span>`;
       bSlot?.classList.add('is-winner');
       pSlot?.classList.add('is-loser');
-      userInventory = userInventory.filter(i => i.id !== battlePlayerItem.id);
-      if (selectedInputSkin?.id === battlePlayerItem.id) {
-        selectedInputSkin = null;
-        document.getElementById('inputSkinState')?.classList.add('hidden');
-        document.getElementById('inputEmptyState')?.classList.remove('hidden');
-        recalculateUpgrade();
-      }
-      multiInputSkins = multiInputSkins.filter(x => x.id !== battlePlayerItem.id);
-      renderMultiSlots();
       addXp(40);
     }
 
@@ -3790,6 +4100,7 @@ function startBattle() {
       bonus: 0
     });
     gameState.rounds = gameState.rounds.slice(0, ROUND_HISTORY_LIMIT);
+    completePendingWager(wagerId);
     checkAchievements();
     saveState();
     renderInventoryGrid();
@@ -4097,7 +4408,8 @@ function royaleGenerateBots() {
 }
 
 // ── Reset ──────────────────────────────────────────────────────────────────
-function resetRoyale() {
+function resetRoyale(force = false) {
+  if (royaleInProgress && !force) return;
   royalePlayerSkins  = [];
   royaleBotPools     = [[], [], []];
   royaleInProgress   = false;
@@ -4120,6 +4432,10 @@ function resetRoyale() {
 // ── Spin animation ─────────────────────────────────────────────────────────
 function startRoyale() {
   if (royaleInProgress) return;
+  if (pendingWager || isCaseOpening || isFreeCaseOpening) {
+    showToast('Спочатку дочекайся завершення поточного раунду', 'warn');
+    return;
+  }
   if (royalePlayerSkins.length === 0) {
     showToast('Додай хоча б 1 скін', 'warn');
     return;
@@ -4133,6 +4449,8 @@ function startRoyale() {
     renderRoyalePlayerSlots();
     return;
   }
+
+  const wagerId = beginPendingWager({ inventory: royalePlayerSkins });
 
   // Deduct player skins immediately to prevent duplication while wheel spins
   const playerIds = new Set(royalePlayerSkins.map(s => s.id));
@@ -4198,14 +4516,15 @@ function startRoyale() {
     } else {
       // Done spinning
       document.getElementById('royaleWheelWrap')?.classList.remove('is-spinning');
-      royaleSettle(winnerIdx);
+      if (isPendingWager(wagerId)) royaleSettle(winnerIdx, wagerId);
     }
   }
   requestAnimationFrame(animateSpin);
 }
 
 // ── Settle result ──────────────────────────────────────────────────────────
-function royaleSettle(winnerIdx) {
+function royaleSettle(winnerIdx, wagerId) {
+  if (!completePendingWager(wagerId)) return;
   const userWon = winnerIdx === 0;
 
   // Collect all skins in the pot
@@ -4369,6 +4688,10 @@ function clearContract() {
 }
 
 function executeContract() {
+  if (pendingWager || isCaseOpening || isFreeCaseOpening || isRolling) {
+    showToast('Спочатку дочекайся завершення поточного раунду', 'warn');
+    return;
+  }
   const items = contractItems.filter(Boolean);
   if (items.length !== 5) {
     showToast(`Потрібно 5 предметів (у тебе ${items.length})`, 'warn');
@@ -4463,19 +4786,19 @@ function startLiveFeedSimulation() {
 function estimateSkinPrice(skin) {
   const rarity = skin?.rarity?.name || skin?.rarity || 'Consumer Grade';
   const t = {
-    'Consumer Grade': 18,
-    'Industrial Grade': 38,
-    'Mil-Spec Grade': 95,
-    'Restricted': 260,
-    'Classified': 780,
-    'Covert': 2400,
-    'Contraband': 85000,
-    'Extraordinary': 12500
+    'Consumer Grade': 12,
+    'Industrial Grade': 25,
+    'Mil-Spec Grade': 60,
+    'Restricted': 140,
+    'Classified': 360,
+    'Covert': 900,
+    'Contraband': 6500,
+    'Extraordinary': 5000
   };
   const b = t[rarity] || 55;
   const idStr = String(skin?.id ?? Math.random());
   const hash = [...idStr].reduce((s, c) => s + c.charCodeAt(0), 0);
-  return Math.round(b * (0.72 + (hash % 57) / 100));
+  return Math.min(7200, Math.max(10, Math.round(b * (0.80 + (hash % 41) / 100))));
 }
 
 async function fetchSkinCatalog(url) {
@@ -4502,8 +4825,11 @@ async function loadCompleteSkinCatalog() {
       const cached = sessionStorage.getItem(STORAGE.catalogCache);
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 50 && parsed[0].img) {
-          cachedSkins = parsed;
+        const normalized = Array.isArray(parsed)
+          ? parsed.map((skin, index) => normalizeCatalogSkin(skin, index)).filter(Boolean)
+          : [];
+        if (normalized.length > 50) {
+          cachedSkins = normalized;
         }
       }
     } catch {}
@@ -4529,16 +4855,19 @@ async function loadCompleteSkinCatalog() {
     if (!cat) throw new Error('All mirrors failed');
 
     const ex = new Map(CS2_SKINS.map(s => [s.name, s.price]));
-    CS2_SKINS = cat.filter(s => s.image && s.weapon && s.category?.name).map((s, i) => ({
-      id: s.id || `cs2-${i}`,
-      name: s.name,
-      weapon: s.weapon.name,
-      category: s.category?.name || 'Інше',
-      rarity: s.rarity?.name || 'Consumer Grade',
-      rarityColor: s.rarity?.color || '#b0c3d9',
-      img: s.image,
-      price: ex.get(s.name) || estimateSkinPrice(s)
-    })).sort((a, b) => a.weapon.localeCompare(b.weapon) || a.name.localeCompare(b.name));
+    const normalizedCatalog = cat.map((skin, index) => normalizeCatalogSkin({
+      id: skin.id || `cs2-${index}`,
+      name: skin.name,
+      weapon: skin.weapon?.name,
+      category: skin.category?.name || 'Інше',
+      rarity: skin.rarity?.name || 'Consumer Grade',
+      rarityColor: skin.rarity?.color || '#b0c3d9',
+      img: skin.image,
+      price: ex.get(skin.name) || estimateSkinPrice(skin)
+    }, index)).filter(Boolean);
+    if (normalizedCatalog.length < 50) throw new Error('Catalog validation failed');
+    CS2_SKINS = normalizedCatalog.sort((a, b) => a.weapon.localeCompare(b.weapon) || a.name.localeCompare(b.name));
+    _dropChanceCache.clear();
 
     try {
       sessionStorage.setItem(STORAGE.catalogCache, JSON.stringify(CS2_SKINS));
@@ -4579,27 +4908,62 @@ function resetShopFilters() {
   filterShop();
 }
 
-function getPriceMultiplierToday(skin) {
-  const seed = getTodayKey() + '|' + String(skin.id || skin.name || '');
+const MARKET_TICK_MS = 5 * 60 * 1000;
+
+function hashMarketSeed(seed) {
   let h = 2166136261;
   for (let i = 0; i < seed.length; i++) {
     h ^= seed.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
-  h = (h >>> 0);
-  return 0.90 + (h % 21) / 100;
+  return h >>> 0;
+}
+
+function getMarketTick() {
+  return Math.floor(Date.now() / MARKET_TICK_MS);
+}
+
+function getMarketMultiplier(skin, tick = getMarketTick()) {
+  const skinKey = String(skin?.sourceSkinId || skin?.id || skin?.name || 'cs2');
+  // A daily value keeps the market coherent; a smaller 5-minute value creates
+  // visible, bounded movement instead of altering the underlying game value.
+  const dailyHash = hashMarketSeed(`${getTodayKey()}|${skinKey}|daily`);
+  const tickHash = hashMarketSeed(`${getTodayKey()}|${skinKey}|${tick}`);
+  const dailyMultiplier = 0.92 + (dailyHash % 1601) / 10_000;
+  const tickMultiplier = 0.985 + (tickHash % 301) / 10_000;
+  return dailyMultiplier * tickMultiplier;
 }
 
 function getFloatedPrice(skin) {
   const base = Number(skin.basePrice ?? skin.price) || 0;
-  return Math.round(base * getPriceMultiplierToday(skin));
+  return Math.max(1, Math.round(base * getMarketMultiplier(skin)));
 }
 
 function getTrend(skin) {
-  const m = getPriceMultiplierToday(skin);
-  if (m > 1.02) return { dir: 'up', arrow: '↑', cls: 'trend-up' };
-  if (m < 0.98) return { dir: 'down', arrow: '↓', cls: 'trend-down' };
-  return { dir: 'flat', arrow: '•', cls: 'trend-flat' };
+  const tick = getMarketTick();
+  const current = getMarketMultiplier(skin, tick);
+  const previous = getMarketMultiplier(skin, tick - 1);
+  const change = previous > 0 ? ((current / previous) - 1) * 100 : 0;
+  const percent = Math.abs(change).toFixed(1);
+  if (change > 0.05) return { dir: 'up', arrow: '↑', cls: 'trend-up', label: `+${percent}%` };
+  if (change < -0.05) return { dir: 'down', arrow: '↓', cls: 'trend-down', label: `−${percent}%` };
+  return { dir: 'flat', arrow: '•', cls: 'trend-flat', label: '0.0%' };
+}
+
+function getMarketSkin(skin) {
+  if (!skin) return skin;
+  const basePrice = Number(skin.basePrice ?? skin.price) || 1;
+  return { ...skin, basePrice, price: getFloatedPrice(skin) };
+}
+
+function startMarketTicker() {
+  let renderedTick = getMarketTick();
+  setInterval(() => {
+    const nextTick = getMarketTick();
+    if (nextTick === renderedTick) return;
+    renderedTick = nextTick;
+    if (document.getElementById('shopModal')?.classList.contains('flex')) filterShop();
+  }, 30_000);
 }
 
 let filterShopTimeout = null;
@@ -4631,14 +4995,15 @@ function filterShop() {
   let list = CS2_SKINS.filter(s => {
     if (!isUsableSkin(s)) return false;
     if (cat !== 'all' && s.category !== cat) return false;
-    if (s.price < minP || s.price > maxP) return false;
-    if (s.price <= minTarget) return false;
+    const marketPrice = getFloatedPrice(s);
+    if (marketPrice < minP || marketPrice > maxP) return false;
+    if (marketPrice <= minTarget) return false;
     if (!q) return true;
     return `${s.name} ${s.weapon || ''}`.toLowerCase().includes(q);
   });
 
-  if (sort === 'price-asc') list.sort((a, b) => a.price - b.price);
-  else if (sort === 'price-desc') list.sort((a, b) => b.price - a.price);
+  if (sort === 'price-asc') list.sort((a, b) => getFloatedPrice(a) - getFloatedPrice(b));
+  else if (sort === 'price-desc') list.sort((a, b) => getFloatedPrice(b) - getFloatedPrice(a));
   else list.sort((a, b) => a.name.localeCompare(b.name));
 
   filteredSkins = list;
@@ -4675,7 +5040,7 @@ function renderShopGrid(skins) {
         <div class="text-center w-full mt-2 min-w-0">
           <p class="font-bold text-xs text-white truncate" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</p>
           <p class="text-[10px] truncate mt-1" style="color:${escapeHtml(s.rarityColor || '#f59e0b')}">${escapeHtml(s.rarity)}</p>
-          <p class="text-amber-400 font-extrabold text-xs mt-0.5">${formatCredits(floated)} <span class="${trend.cls}">${trend.arrow}</span></p>
+          <p class="text-amber-400 font-extrabold text-xs mt-0.5">${formatCredits(floated)} <span class="${trend.cls}" title="Зміна за останні 5 хвилин" aria-label="Зміна ціни ${trend.label}">${trend.arrow} ${trend.label}</span></p>
           <p class="text-[9px] text-gray-500">від · FT</p>
         </div>
       </button>
@@ -4696,7 +5061,7 @@ function renderShopGrid(skins) {
 function exportSave() {
   try {
     const data = {
-      version: '3.6',
+      version: '3.7',
       exportedAt: Date.now(),
       balance: currentUser?.balance ?? 0,
       inventory: userInventory,
@@ -4726,18 +5091,9 @@ function importSave(event) {
     try {
       const data = JSON.parse(e.target.result);
       if (!data.inventory || !data.gameState) throw new Error('Bad format');
-      userInventory = Array.isArray(data.inventory) ? data.inventory.map(it => {
-        if (!it) return null;
-        const wear = it.wear && WEAR_TIERS.find(w => w.code === it.wear.code) ? it.wear : WEAR_TIERS[2];
-        const bp = Number(it.basePrice ?? it.price ?? 0);
-        return {
-          ...it,
-          wear,
-          basePrice: bp,
-          price: priceWithWear(bp, wear),
-          addedAt: it.addedAt || Date.now()
-        };
-      }).filter(Boolean) : [];
+      userInventory = Array.isArray(data.inventory)
+        ? data.inventory.map((item, index) => normalizeStoredItem(item, index)).filter(Boolean)
+        : [];
 
       const d = createDefaultGameState();
       gameState = {
@@ -4749,8 +5105,15 @@ function importSave(event) {
         allTime: { ...createDefaultAllTime(), ...(data.gameState.allTime || {}) },
         collectionRewards: data.gameState.collectionRewards || {}
       };
-      if (data.account) account = { ...account, ...data.account };
-      if (typeof data.balance === 'number' && currentUser) currentUser.balance = data.balance;
+      if (data.account) {
+        account = {
+          ...account,
+          nick: cleanText(data.account.nick || account?.nick || 'Гравець', 24),
+          steamId: /^\d{17}$/.test(String(data.account.steamId || '')) ? String(data.account.steamId) : account?.steamId,
+          createdAt: clampNumber(data.account.createdAt, 0, Number.MAX_SAFE_INTEGER, account?.createdAt || Date.now())
+        };
+      }
+      if (currentUser) currentUser.balance = clampNumber(data.balance, 0, MAX_STORED_BALANCE, currentUser.balance);
       ensureDailyState();
       ensureWeeklyState();
       saveState();
@@ -4792,6 +5155,7 @@ window.addEventListener('DOMContentLoaded', () => {
   renderCaseButtons();
 
   loadCompleteSkinCatalog().finally(() => {
+    startMarketTicker();
     startLiveFeedSimulation();
     updateTopupUI();
     renderCaseTopDrops();

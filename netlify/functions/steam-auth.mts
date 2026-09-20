@@ -22,9 +22,18 @@ export default async (request: Request) => {
 
   const verify = new URLSearchParams(url.searchParams)
   verify.set('openid.mode', 'check_authentication')
-  const response = await fetch(STEAM_OPENID, { method: 'POST', body: verify })
-  const valid = response.ok && (await response.text()).includes('is_valid:true')
-  const steamId = claimedId.match(/\/id\/(\d+)$/)?.[1]
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 10_000)
+  let valid = false
+  try {
+    const response = await fetch(STEAM_OPENID, { method: 'POST', body: verify, signal: controller.signal })
+    valid = response.ok && (await response.text()).includes('is_valid:true')
+  } catch {
+    valid = false
+  } finally {
+    clearTimeout(timeout)
+  }
+  const steamId = claimedId.match(/^https:\/\/steamcommunity\.com\/openid\/id\/(\d{17})$/)?.[1]
   if (!valid || !steamId) return Response.redirect(`${origin}/?steam_error=1`, 302)
   return Response.redirect(`${origin}/?steamid=${encodeURIComponent(steamId)}`, 302)
 }
