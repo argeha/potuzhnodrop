@@ -1,6 +1,6 @@
 {
   "name": "potuzhno-drop-demo",
-  "version": "3.7.2",
+  "version": "3.7.6",
   "private": true,
   "description": "Potuzhno Drop — transparent parody game with virtual CS2 inventory.",
   "type": "module",

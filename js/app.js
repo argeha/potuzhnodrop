@@ -524,6 +524,29 @@ function createCaseSVG(theme) {
 </svg>`;
 }
 
+const CASE_ARTWORK = Object.freeze({
+  dragon_lair:      'assets/cases/dragon-lair-v3.png',
+  covert_ops:       'assets/cases/covert-ops-v3.png',
+  beast_mode:       'assets/cases/beast-mode-v3.png',
+  butterfly_fever:  'assets/cases/butterfly-fever-v3.png',
+  karambit_rush:    'assets/cases/karambit-rush-v3.png',
+  knife_club:       'assets/cases/knife-club-v3.png',
+  sport_gloves:     'assets/cases/sport-gloves-v3.png',
+  moto_special:     'assets/cases/moto-special-v3.png',
+  awp_king:         'assets/cases/awp-king-v3.png',
+  ak47_master:      'assets/cases/ak47-master-v3.png',
+  m4_storm:         'assets/cases/m4-storm-v3.png',
+  budget_covert:    'assets/cases/budget-covert-v3.png',
+  lucky_strike:     'assets/cases/lucky-strike-v3.png',
+  farm_rush:        'assets/cases/farm-rush-v3.png'
+});
+
+function createCaseArtwork(caseId, caseName, theme) {
+  const artwork = CASE_ARTWORK[caseId];
+  if (!artwork) return createCaseSVG(theme || 'gold');
+  return `<img src="${artwork}" alt="${escapeHtml(caseName)}" class="case-art" loading="lazy">`;
+}
+
 const TASK_POOL = [
   { id: 'rolls_3', title: 'Зроби 3 ролли', goal: 3, reward: 100, icon: 'fa-dice', value: s => s.rolls },
   { id: 'rolls_5', title: 'Зроби 5 роллів', goal: 5, reward: 180, icon: 'fa-dice', value: s => s.rolls },
@@ -3424,7 +3447,7 @@ function renderCaseCatalog() {
         <!-- 3D Case Preview -->
         <div class="p-5 flex flex-col items-center justify-center text-center cursor-pointer" onclick="openPowerCase('${id}')">
           <div class="w-28 h-28 sm:w-32 sm:h-32 case-preview-svg group-hover:scale-105 transition-transform duration-300">
-            ${createCaseSVG(c.theme || 'gold')}
+            ${createCaseArtwork(id, c.name, c.theme)}
           </div>
           <h3 class="font-heading mt-3 text-2xl font-black uppercase text-white tracking-wider truncate w-full group-hover:text-amber-300 transition-colors">${c.name}</h3>
           <p class="text-[11px] text-gray-400 truncate w-full mt-0.5">${c.desc}</p>
