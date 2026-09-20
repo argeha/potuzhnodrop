@@ -426,7 +426,7 @@ export class PotuzhnoState {
   async resolveSteamProfile(steamId) {
     const key = `steam-profile:${steamId}`
     const cached = await this.storage.get(key)
-    if (cached?.steamId === steamId && Date.now() - Number(cached.updatedAt || 0) < STEAM_PROFILE_TTL) return cached
+    if (cached?.steamId === steamId && cached.avatar && Date.now() - Number(cached.updatedAt || 0) < STEAM_PROFILE_TTL) return cached
 
     const fallback = {
       steamId,
