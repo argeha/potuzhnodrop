@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 3.8 ============ */
+/* ============ ПОТУЖНО DROP 3.9 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -13,7 +13,8 @@ const STORAGE = {
   topup: 'potuzhno_v5_topup',
   freeCase: 'potuzhno_v5_freecase',
   catalogCache: 'potuzhno_catalog_cache_v38',
-  pendingWager: 'potuzhno_v6_pending_wager'
+  pendingWager: 'potuzhno_v6_pending_wager',
+  fair: 'potuzhno_v9_fair'
 };
 
 const PAGES = ['upgrader', 'case', 'battle', 'royale', 'contract', 'tasks', 'profile', 'about'];
@@ -48,6 +49,8 @@ function showPage(id) {
     renderProfileInventory();
     renderAllTime();
     renderRecentAch();
+    renderCloudSyncUI();
+    renderFairUI();
   }
   if (id === 'battle') resetCoinVisual();
   if (id === 'royale') {
@@ -91,8 +94,8 @@ const WEAR_TIERS = [
   { code: 'BS', name: 'Battle-Scarred', min: 0.45, max: 1, mult: 0.70 }
 ];
 
-function rollWear() {
-  const r = Math.random();
+function rollWear(randomValue = Math.random()) {
+  const r = clampNumber(randomValue, 0, 0.999999999, Math.random());
   if (r < 0.10) return WEAR_TIERS[0];
   if (r < 0.28) return WEAR_TIERS[1];
   if (r < 0.75) return WEAR_TIERS[2];
@@ -281,6 +284,8 @@ let isCaseOpening = false;
 let isFreeCaseOpening = false;
 let account = null;
 let pendingWager = null;
+let fairState = null;
+let lastCaseFairAudit = [];
 
 let battlePlayerItem = null;
 let battleBotItem = null;
@@ -871,6 +876,333 @@ function updateAccountUI() {
   const lv = document.getElementById('accountLevel');
   if (lv) lv.textContent = String(getPlayerLevel());
   updatePrestigeUI();
+  renderCloudSyncUI();
+  renderFairUI();
+}
+
+/* ===== SERVER PROFILE + VERIFIABLE CASE ROLLS ===== */
+const UUID_PATTERN = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i;
+const SECRET_PATTERN = /^[A-Za-z0-9_-]{24,160}$/;
+
+function makeRandomSecret(bytesLength = 32) {
+  const bytes = new Uint8Array(bytesLength);
+  crypto.getRandomValues(bytes);
+  let binary = '';
+  bytes.forEach(value => { binary += String.fromCharCode(value); });
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function makeUuid() {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const hex = Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, '0'));
+  hex[6] = `4${hex[6][1]}`;
+  hex[8] = `${(Number.parseInt(hex[8][0], 16) & 0x3 | 0x8).toString(16)}${hex[8][1]}`;
+  return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`;
+}
+
+function getTodayUtc() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function isCloudProfile(value) {
+  return Boolean(value && UUID_PATTERN.test(String(value.id || '')) && SECRET_PATTERN.test(String(value.recoveryCode || '')));
+}
+
+function loadFairState() {
+  let stored = null;
+  try { stored = JSON.parse(localStorage.getItem(STORAGE.fair) || 'null'); } catch {}
+  const audits = Array.isArray(stored?.audits)
+    ? stored.audits.filter(audit => audit && /^\d{4}-\d{2}-\d{2}$/.test(String(audit.day || '')) && Number.isSafeInteger(audit.nonce) && Number.isFinite(Number(audit.roll)) && SECRET_PATTERN.test(String(audit.serverSeedHash || ''))).slice(0, 20)
+    : [];
+  fairState = {
+    deviceId: UUID_PATTERN.test(String(stored?.deviceId || '')) ? stored.deviceId : makeUuid(),
+    clientSeed: SECRET_PATTERN.test(String(stored?.clientSeed || '')) ? stored.clientSeed : makeRandomSecret(),
+    nonce: Math.floor(clampNumber(stored?.nonce, 0, 1_000_000_000, 0)),
+    audits
+  };
+  lastCaseFairAudit = audits.slice(0, 5);
+  saveFairState();
+}
+
+function saveFairState() {
+  if (fairState) localStorage.setItem(STORAGE.fair, JSON.stringify(fairState));
+}
+
+function formatSyncTime(timestamp) {
+  const time = Number(timestamp);
+  if (!Number.isFinite(time) || time <= 0) return 'ще не збережено';
+  return new Intl.DateTimeFormat('uk-UA', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(time));
+}
+
+function setCloudBusy(busy) {
+  ['cloudCreateBtn', 'cloudSaveBtn', 'cloudLoadBtn', 'cloudConnectBtn'].forEach(id => {
+    const button = document.getElementById(id);
+    if (button) button.disabled = busy;
+  });
+}
+
+function renderCloudSyncUI() {
+  const connected = isCloudProfile(account?.cloud);
+  const status = document.getElementById('cloudSyncStatus');
+  const details = document.getElementById('cloudSyncDetails');
+  const create = document.getElementById('cloudCreateBtn');
+  const save = document.getElementById('cloudSaveBtn');
+  const load = document.getElementById('cloudLoadBtn');
+  const code = document.getElementById('cloudRecoveryBtn');
+  if (status) status.textContent = connected ? 'Серверний профіль підключено' : 'Лише локальне збереження';
+  if (details) details.textContent = connected
+    ? `Остання синхронізація: ${formatSyncTime(account.cloud.updatedAt)}. Код відновлення зберігається лише у твоєму браузері.`
+    : 'Створи профіль, щоб зберігати прогрес на Netlify та відновити його кодом на іншому пристрої.';
+  if (create) create.classList.toggle('hidden', connected);
+  if (save) save.classList.toggle('hidden', !connected);
+  if (load) load.classList.toggle('hidden', !connected);
+  if (code) code.classList.toggle('hidden', !connected);
+}
+
+function renderFairUI() {
+  const audit = fairState?.audits?.[0] || lastCaseFairAudit?.[0];
+  const state = document.getElementById('fairStatus');
+  const details = document.getElementById('fairDetails');
+  const verify = document.getElementById('fairVerifyBtn');
+  if (state) state.textContent = audit ? 'Є серверний запис останнього дропа' : 'Серверна перевірка з’явиться після відкриття кейсу';
+  if (details) details.textContent = audit
+    ? `${audit.caseId || 'Кейс'} · ${audit.day} · nonce #${audit.nonce} · hash ${String(audit.serverSeedHash).slice(0, 12)}…`
+    : 'Для локальної розробки без Netlify сайт чесно використовує локальну випадковість.';
+  if (verify) verify.disabled = !audit || audit.day >= getTodayUtc();
+}
+
+async function requestJson(url, options = {}, timeout = 7000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(cleanText(data?.error || 'Сервер не відповів коректно.', 180));
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function buildPortableSave() {
+  return {
+    version: '3.9',
+    exportedAt: Date.now(),
+    balance: currentUser?.balance ?? 0,
+    inventory: userInventory,
+    gameState,
+    account: {
+      nick: account?.nick || 'Гравець',
+      steamId: account?.steamId || null,
+      createdAt: account?.createdAt || Date.now()
+    }
+  };
+}
+
+function applyPortableSave(data) {
+  if (!data || typeof data !== 'object' || !Array.isArray(data.inventory) || !data.gameState || typeof data.gameState !== 'object') {
+    throw new Error('Bad format');
+  }
+  userInventory = data.inventory.map((item, index) => normalizeStoredItem(item, index)).filter(Boolean);
+
+  const defaults = createDefaultGameState();
+  gameState = {
+    ...defaults,
+    ...data.gameState,
+    stats: { ...defaults.stats, ...(data.gameState.stats || {}) },
+    daily: { ...createDefaultDaily(), ...(data.gameState.daily || {}) },
+    weekly: { ...createDefaultWeekly(), ...(data.gameState.weekly || {}) },
+    allTime: { ...createDefaultAllTime(), ...(data.gameState.allTime || {}) },
+    collectionRewards: data.gameState.collectionRewards || {}
+  };
+  const savedCloud = isCloudProfile(account?.cloud) ? account.cloud : null;
+  if (data.account && typeof data.account === 'object') {
+    account = {
+      ...account,
+      nick: cleanText(data.account.nick || account?.nick || 'Гравець', 24),
+      steamId: /^\d{17}$/.test(String(data.account.steamId || '')) ? String(data.account.steamId) : account?.steamId,
+      createdAt: clampNumber(data.account.createdAt, 0, Number.MAX_SAFE_INTEGER, account?.createdAt || Date.now())
+    };
+  }
+  if (savedCloud) account.cloud = savedCloud;
+  if (currentUser) currentUser.balance = clampNumber(data.balance, 0, MAX_STORED_BALANCE, currentUser.balance);
+  ensureDailyState();
+  ensureWeeklyState();
+  saveState();
+  updateBalanceUI();
+  renderInventoryGrid();
+  renderProfileInventory();
+  updateAvatarBadge();
+  renderGameHub();
+  updateAccountUI();
+}
+
+async function createCloudProfile() {
+  if (isCloudProfile(account?.cloud)) return;
+  const cloud = { id: makeUuid(), recoveryCode: makeRandomSecret(32), updatedAt: 0 };
+  setCloudBusy(true);
+  try {
+    const data = await requestJson('/api/profile/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create', accountId: cloud.id, recoveryCode: cloud.recoveryCode, payload: buildPortableSave() })
+    });
+    account.cloud = { ...cloud, updatedAt: Number(data.updatedAt) || Date.now() };
+    saveState();
+    renderCloudSyncUI();
+    openCloudRecoveryModal();
+    showToast('Серверний профіль створено. Збережи код відновлення.', 'success');
+  } catch (error) {
+    showToast(error?.message || 'Не вдалося створити серверний профіль.', 'error');
+  } finally {
+    setCloudBusy(false);
+  }
+}
+
+async function saveCloudProfile() {
+  if (!isCloudProfile(account?.cloud)) return openCloudConnectModal();
+  setCloudBusy(true);
+  try {
+    const data = await requestJson('/api/profile/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save', accountId: account.cloud.id, recoveryCode: account.cloud.recoveryCode, payload: buildPortableSave() })
+    });
+    account.cloud.updatedAt = Number(data.updatedAt) || Date.now();
+    saveState();
+    renderCloudSyncUI();
+    showToast('Прогрес збережено на сервері.', 'success');
+  } catch (error) {
+    showToast(error?.message || 'Не вдалося синхронізувати профіль.', 'error');
+  } finally {
+    setCloudBusy(false);
+  }
+}
+
+async function loadCloudProfile() {
+  if (!isCloudProfile(account?.cloud)) return openCloudConnectModal();
+  setCloudBusy(true);
+  try {
+    const data = await requestJson('/api/profile/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'load', accountId: account.cloud.id, recoveryCode: account.cloud.recoveryCode })
+    });
+    applyPortableSave(data.payload);
+    account.cloud.updatedAt = Number(data.updatedAt) || account.cloud.updatedAt;
+    saveState();
+    renderCloudSyncUI();
+    showToast('Прогрес відновлено із серверного профілю.', 'success');
+    return true;
+  } catch (error) {
+    showToast(error?.message || 'Не вдалося відновити профіль.', 'error');
+    return false;
+  } finally {
+    setCloudBusy(false);
+  }
+}
+
+function openCloudRecoveryModal() {
+  if (!isCloudProfile(account?.cloud)) return;
+  const id = document.getElementById('cloudRecoveryAccountId');
+  const code = document.getElementById('cloudRecoveryCode');
+  if (id) id.textContent = account.cloud.id;
+  if (code) code.textContent = account.cloud.recoveryCode;
+  openModal('cloudRecoveryModal');
+}
+
+async function copyCloudRecoveryCode() {
+  if (!isCloudProfile(account?.cloud)) return;
+  try {
+    await navigator.clipboard.writeText(`ПОТУЖНО DROP\nID: ${account.cloud.id}\nКод: ${account.cloud.recoveryCode}`);
+    showToast('Дані відновлення скопійовано.', 'success');
+  } catch {
+    showToast('Скопіюй ID і код вручну.', 'warn');
+  }
+}
+
+function openCloudConnectModal() {
+  openModal('cloudConnectModal');
+}
+
+async function connectCloudProfile() {
+  const id = String(document.getElementById('cloudConnectId')?.value || '').trim();
+  const recoveryCode = String(document.getElementById('cloudConnectCode')?.value || '').trim();
+  if (!UUID_PATTERN.test(id) || !SECRET_PATTERN.test(recoveryCode)) {
+    showToast('Введи коректні ID профілю та код відновлення.', 'warn');
+    return;
+  }
+  const previousCloud = account?.cloud;
+  account.cloud = { id, recoveryCode, updatedAt: 0 };
+  const loaded = await loadCloudProfile();
+  if (loaded) {
+    closeModal('cloudConnectModal');
+  } else {
+    account.cloud = previousCloud;
+    saveState();
+    renderCloudSyncUI();
+  }
+}
+
+async function sha256Hex(value) {
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function getVerifiedCaseRoll(caseId, nonce) {
+  const proof = `${fairState.clientSeed}:${fairState.deviceId}:${nonce}:${caseId}`;
+  const data = await requestJson('/api/fair/roll', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceId: fairState.deviceId, clientSeed: fairState.clientSeed, caseId, nonce })
+  });
+  const roll = Number(data?.roll);
+  const wearRoll = Number(data?.wearRoll);
+  if (data?.nonce !== nonce || data?.proof !== proof || !/^\d{4}-\d{2}-\d{2}$/.test(String(data?.day || '')) || !SECRET_PATTERN.test(String(data?.serverSeedHash || '')) || !Number.isFinite(roll) || roll < 0 || roll >= 1 || !Number.isFinite(wearRoll) || wearRoll < 0 || wearRoll >= 1) {
+    throw new Error('Сервер повернув неперевірюваний раунд.');
+  }
+  return { roll, wearRoll, audit: { caseId, day: data.day, nonce, roll, wearRoll, serverSeedHash: data.serverSeedHash, proof, at: Date.now() } };
+}
+
+async function getCaseRolls(caseId, count) {
+  const nonces = Array.from({ length: count }, () => fairState.nonce++);
+  saveFairState();
+  const attempts = await Promise.all(nonces.map(async nonce => {
+    try { return await getVerifiedCaseRoll(caseId, nonce); } catch { return { roll: Math.random(), wearRoll: Math.random(), audit: null }; }
+  }));
+  const audits = attempts.map(result => result.audit).filter(Boolean);
+  lastCaseFairAudit = audits;
+  if (audits.length) {
+    fairState.audits = [...audits.reverse(), ...(fairState.audits || [])].slice(0, 20);
+    saveFairState();
+  }
+  renderFairUI();
+  return { rolls: attempts, verified: audits.length === count };
+}
+
+async function calculateHmacRoll(serverSeed, proof) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', encoder.encode(serverSeed), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(proof));
+  const view = new DataView(signature);
+  return { roll: view.getUint32(0, false) / 0x1_0000_0000, wearRoll: view.getUint32(4, false) / 0x1_0000_0000 };
+}
+
+async function verifyLastFairRound() {
+  const audit = fairState?.audits?.[0] || lastCaseFairAudit?.[0];
+  if (!audit) return showToast('Ще немає серверного раунду для перевірки.', 'warn');
+  if (audit.day >= getTodayUtc()) return showToast('Поточний seed розкриється наступного дня.', 'info');
+  try {
+    const data = await requestJson(`/api/fair/verify?day=${encodeURIComponent(audit.day)}`);
+    const seedHash = await sha256Hex(String(data.serverSeed || ''));
+    const calculated = await calculateHmacRoll(String(data.serverSeed || ''), audit.proof);
+    if (seedHash !== audit.serverSeedHash || Math.abs(calculated.roll - Number(audit.roll)) > 1e-12 || Math.abs(calculated.wearRoll - Number(audit.wearRoll)) > 1e-12) {
+      throw new Error('Перевірка не збіглася.');
+    }
+    showToast(`Раунд #${audit.nonce} підтверджено: hash і HMAC збігаються.`, 'success');
+  } catch (error) {
+    showToast(error?.message || 'Неможливо перевірити раунд.', 'error');
+  }
 }
 
 function updatePrestigeUI() {
@@ -973,7 +1305,7 @@ function handleSkinImageError(image, location = 'card') {
   }
 }
 
-function makeDemoItem(skin, suffix = '') {
+function makeDemoItem(skin, suffix = '', wearRandom = null) {
   const safeSkin = normalizeCatalogSkin({
     ...skin,
     weapon: skin.weapon || categorizeWeapon(skin.name) || 'CS2',
@@ -987,7 +1319,7 @@ function makeDemoItem(skin, suffix = '') {
     img: cleanImageUrl(skin?.img),
     price: clampNumber(skin?.basePrice ?? skin?.price, 1, MAX_STORED_ITEM_VALUE, 1)
   };
-  const wear = skin.wear ? normalizeWear(skin.wear) : rollWear();
+  const wear = skin.wear ? normalizeWear(skin.wear) : rollWear(wearRandom === null ? Math.random() : wearRandom);
   const basePrice = clampNumber(skin.basePrice ?? safeSkin.price, 1, MAX_STORED_ITEM_VALUE, 1);
   return {
     ...safeSkin,
@@ -1192,6 +1524,7 @@ function recoverInterruptedWager() {
 function loadState() {
   loadGameState();
   loadAccount();
+  loadFairState();
   const sid = localStorage.getItem(STORAGE.steamId);
   const started = localStorage.getItem(STORAGE.started) === '1';
   const bal = clampNumber(localStorage.getItem(STORAGE.balance), 0, MAX_STORED_BALANCE, DEMO_STARTING_BALANCE);
@@ -1946,7 +2279,7 @@ function copyLatestResult() {
     showToast('Спочатку зроби ролл', 'warn');
     return;
   }
-  const msg = `ПОТУЖНО DROP 3.8 · ${r.win ? 'Виграш' : 'Невдача'}: ${r.targetName} · ${r.chance ? `шанс ${Number(r.chance).toFixed(2)}% · ` : ''}лише віртуальна гра.`;
+  const msg = `ПОТУЖНО DROP 3.9 · ${r.win ? 'Виграш' : 'Невдача'}: ${r.targetName} · ${r.chance ? `шанс ${Number(r.chance).toFixed(2)}% · ` : ''}лише віртуальна гра.`;
   const done = () => showToast('Результат скопійовано', 'success');
   if (navigator.clipboard?.writeText) {
     navigator.clipboard.writeText(msg).then(done).catch(() => showToast('Не вдалося', 'warn'));
@@ -3419,9 +3752,10 @@ function getCaseMetrics(caseType) {
   return result;
 }
 
-function pickCaseSkin(poolType = 'regular', caseType = 'budget_covert') {
+function pickCaseSkin(poolType = 'regular', caseType = 'budget_covert', fixedRoll = Math.random()) {
   const usable = CS2_SKINS.filter(isUsableSkin);
   if (!usable.length) return null;
+  const normalizedRoll = clampNumber(fixedRoll, 0, 0.999999999, Math.random());
 
   if (poolType === 'free') {
     const cheapOnly = usable.filter(s => (s.price || 0) <= 300);
@@ -3433,11 +3767,14 @@ function pickCaseSkin(poolType = 'regular', caseType = 'budget_covert') {
     ];
     const weights = [75, 22, 3];
     const total = freeTiers.reduce((sum, tier, index) => sum + (tier.length ? weights[index] : 0), 0);
-    let roll = Math.random() * total;
+    let roll = normalizedRoll * total;
     for (let index = 0; index < freeTiers.length; index++) {
       if (!freeTiers[index].length) continue;
+      if (roll < weights[index]) {
+        const itemIndex = Math.min(freeTiers[index].length - 1, Math.floor((roll / weights[index]) * freeTiers[index].length));
+        return freeTiers[index][itemIndex];
+      }
       roll -= weights[index];
-      if (roll <= 0) return freeTiers[index][Math.floor(Math.random() * freeTiers[index].length)];
     }
     return pool[0];
   }
@@ -3447,9 +3784,9 @@ function pickCaseSkin(poolType = 'regular', caseType = 'budget_covert') {
 
   const chances = pool.map(s => getItemDropChance(s, caseType));
   const total = chances.reduce((a, b) => a + b, 0);
-  let roll = Math.random() * total;
+  let roll = normalizedRoll * total;
   for (let i = 0; i < pool.length; i++) {
-    if (roll <= chances[i]) return pool[i];
+    if (roll < chances[i]) return pool[i];
     roll -= chances[i];
   }
   return pool[pool.length - 1];
@@ -3671,7 +4008,7 @@ function buildSingleReelTrack(trackId, winner) {
   return { winnerIndex, cardWidth: 132, gap: 10 };
 }
 
-function startCaseReel() {
+async function startCaseReel() {
   const btn = document.getElementById('caseReelBtn');
   if (btn?.disabled || isCaseOpening || isFreeCaseOpening || pendingWager) return;
 
@@ -3711,10 +4048,15 @@ function startCaseReel() {
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>ОБЕРТАННЯ…';
   }
 
-  // Pick winners
+  const fairStatus = document.getElementById('caseReelStatus');
+  if (fairStatus) fairStatus.textContent = 'Фіксуємо перевірюваний seed…';
+  const fairRolls = await getCaseRolls(currentActiveCaseId, mult);
+
+  // Pick winners. Each skin and its wear now come from one server HMAC result
+  // when the Netlify endpoint is available; local development uses the explicit fallback above.
   const winners = [];
   for (let i = 0; i < mult; i++) {
-    const w = pickCaseSkin(isFree ? 'free' : 'regular', currentActiveCaseId);
+    const w = pickCaseSkin(isFree ? 'free' : 'regular', currentActiveCaseId, fairRolls.rolls[i]?.roll);
     if (w) winners.push(w);
   }
   if (winners.length !== mult) {
@@ -3729,12 +4071,16 @@ function startCaseReel() {
       localStorage.removeItem(STORAGE.freeCase);
     }
     updateFreeCaseBtn();
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-play mr-2"></i>ВІДКРИТИ КЕЙС';
+    }
     showToast('Каталог кейсу ще завантажується. Спробуй ще раз.', 'warn');
     return;
   }
 
   // Create demo items and store
-  const wonItems = winners.map(w => makeDemoItem(w, isFree ? '-freecase' : '-case'));
+  const wonItems = winners.map((w, index) => makeDemoItem(w, isFree ? '-freecase' : '-case', fairRolls.rolls[index]?.wearRoll));
   wonItems.forEach(it => userInventory.push(it));
   lastWonCaseItems = wonItems;
   lastOpenedCaseId = currentActiveCaseId;
@@ -3828,6 +4174,14 @@ function displayCaseDropResult(items, isFree, caseName) {
   const totalVal = items.reduce((s, it) => s + (it.price || 0), 0);
   const totalValEl = document.getElementById('caseResultTotalVal');
   if (totalValEl) totalValEl.textContent = `${formatCredits(totalVal)}`;
+  const proof = document.getElementById('caseResultFairProof');
+  const verified = lastCaseFairAudit.length === items.length && items.length > 0;
+  if (proof) {
+    proof.innerHTML = verified
+      ? `<i class="fa-solid fa-shield-halved mr-1 text-emerald-300"></i>Перевірюваний seed · ${escapeHtml(lastCaseFairAudit[0].day)} · hash ${escapeHtml(String(lastCaseFairAudit[0].serverSeedHash).slice(0, 10))}…`
+      : '<i class="fa-solid fa-laptop-code mr-1 text-amber-300"></i>Локальний режим: серверна перевірка недоступна';
+    proof.className = `mb-4 rounded-xl border px-3 py-2 text-[11px] font-bold ${verified ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100' : 'border-amber-500/30 bg-amber-500/10 text-amber-100'}`;
+  }
 
   const grid = document.getElementById('caseResultItemsGrid');
   if (grid) {
@@ -5217,14 +5571,7 @@ function renderShopGrid(skins) {
 /* Export / Import */
 function exportSave() {
   try {
-    const data = {
-      version: '3.8',
-      exportedAt: Date.now(),
-      balance: currentUser?.balance ?? 0,
-      inventory: userInventory,
-      gameState,
-      account
-    };
+    const data = buildPortableSave();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -5247,39 +5594,7 @@ function importSave(event) {
   reader.onload = e => {
     try {
       const data = JSON.parse(e.target.result);
-      if (!data.inventory || !data.gameState) throw new Error('Bad format');
-      userInventory = Array.isArray(data.inventory)
-        ? data.inventory.map((item, index) => normalizeStoredItem(item, index)).filter(Boolean)
-        : [];
-
-      const d = createDefaultGameState();
-      gameState = {
-        ...d,
-        ...data.gameState,
-        stats: { ...d.stats, ...(data.gameState.stats || {}) },
-        daily: { ...createDefaultDaily(), ...(data.gameState.daily || {}) },
-        weekly: { ...createDefaultWeekly(), ...(data.gameState.weekly || {}) },
-        allTime: { ...createDefaultAllTime(), ...(data.gameState.allTime || {}) },
-        collectionRewards: data.gameState.collectionRewards || {}
-      };
-      if (data.account) {
-        account = {
-          ...account,
-          nick: cleanText(data.account.nick || account?.nick || 'Гравець', 24),
-          steamId: /^\d{17}$/.test(String(data.account.steamId || '')) ? String(data.account.steamId) : account?.steamId,
-          createdAt: clampNumber(data.account.createdAt, 0, Number.MAX_SAFE_INTEGER, account?.createdAt || Date.now())
-        };
-      }
-      if (currentUser) currentUser.balance = clampNumber(data.balance, 0, MAX_STORED_BALANCE, currentUser.balance);
-      ensureDailyState();
-      ensureWeeklyState();
-      saveState();
-      updateBalanceUI();
-      renderInventoryGrid();
-      renderProfileInventory();
-      updateAvatarBadge();
-      renderGameHub();
-      updateAccountUI();
+      applyPortableSave(data);
       showToast('Збереження імпортовано!', 'success');
       soundWin();
     } catch {
@@ -5437,6 +5752,14 @@ window.startSteamLogin = startSteamLogin;
 window.continueSteamLogin = continueSteamLogin;
 window.loginWithManualSteamId = loginWithManualSteamId;
 window.saveAccountNick = saveAccountNick;
+window.createCloudProfile = createCloudProfile;
+window.saveCloudProfile = saveCloudProfile;
+window.loadCloudProfile = loadCloudProfile;
+window.openCloudRecoveryModal = openCloudRecoveryModal;
+window.copyCloudRecoveryCode = copyCloudRecoveryCode;
+window.openCloudConnectModal = openCloudConnectModal;
+window.connectCloudProfile = connectCloudProfile;
+window.verifyLastFairRound = verifyLastFairRound;
 window.doPrestige = doPrestige;
 window.topupWatchAd = topupWatchAd;
 window.topupShareSite = topupShareSite;

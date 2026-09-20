@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ПОТУЖНО DROP 3.8 — гра-пародія про CS2</title>
+<title>ПОТУЖНО DROP 3.9 — гра-пародія про CS2</title>
 <meta name="description" content="Прозора гра-пародія про апгрейд CS2: віртуальні предмети, нуль депозитів і нуль реальних призів.">
 <meta name="theme-color" content="#080A0F">
 <!-- Preconnect для швидшого завантаження зовнішніх ресурсів -->
@@ -22,7 +22,7 @@
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-<link rel="stylesheet" href="css/style.css?v=3.8.0">
+<link rel="stylesheet" href="css/style.css?v=3.9.0">
 </head>
 <body class="min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -31,7 +31,7 @@
 <div class="w-full max-w-xl overflow-hidden rounded-3xl border border-amber-500/40 bg-[#111722] shadow-2xl">
 <div class="demo-ribbon h-2"></div>
 <div class="p-6 sm:p-9">
-<span class="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-extrabold uppercase tracking-[.18em] text-amber-300">Важливе попередження · v3.8</span>
+<span class="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-extrabold uppercase tracking-[.18em] text-amber-300">Важливе попередження · v3.9</span>
 <h2 class="font-heading mt-5 text-4xl font-bold uppercase leading-none text-white">Це лише симулятор</h2>
 <p class="mt-4 text-sm leading-6 text-gray-300">ПОТУЖНО DROP — це гра-пародія. Тут немає реальних виграшів, депозитів, трейдів або виведення скінів. Усі предмети та кредити існують лише в браузері й не мають грошової цінності.</p>
 <div class="mt-5 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-4 text-sm text-amber-100"><strong>Не надсилайте цьому сайту гроші, скіни, пароль Steam, код Steam Guard або API-ключ.</strong></div>
@@ -49,7 +49,7 @@
 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-3">
 <a href="#upgrader" onclick="showPage('upgrader');return false" class="flex items-center gap-3 shrink-0">
 <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-black font-extrabold text-2xl shadow-lg shadow-amber-500/20"><i class="fa-solid font-heading">P</i></div>
-<span class="font-heading text-2xl sm:text-3xl font-extrabold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-amber-200 to-yellow-500 uppercase leading-none">ПОТУЖНО DROP <small class="hidden sm:inline ml-1 align-middle text-[11px] tracking-widest text-amber-300">3.8</small></span>
+<span class="font-heading text-2xl sm:text-3xl font-extrabold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-amber-200 to-yellow-500 uppercase leading-none">ПОТУЖНО DROP <small class="hidden sm:inline ml-1 align-middle text-[11px] tracking-widest text-amber-300">3.9</small></span>
 </a>
 <nav class="desktop-nav hidden lg:flex items-center gap-0.5 flex-1 justify-center">
 <a href="#upgrader" data-nav="upgrader" class="nav-link" onclick="showPage('upgrader');return false"><i class="fa-solid fa-bolt text-xs"></i> Апгрейд</a>
@@ -568,6 +568,40 @@
 </article>
 
 <div class="grid gap-5 lg:grid-cols-2">
+<article class="glass-panel rounded-2xl border border-emerald-500/25 p-5">
+<div class="flex items-start justify-between gap-4">
+<div>
+<p class="text-xs font-bold uppercase tracking-widest text-emerald-400">Резервна копія</p>
+<h3 class="mt-1 text-xl font-extrabold text-white"><i class="fa-solid fa-cloud-arrow-up mr-2 text-emerald-400"></i>Серверний профіль</h3>
+<p id="cloudSyncStatus" class="mt-2 text-sm font-bold text-emerald-100">Лише локальне збереження</p>
+<p id="cloudSyncDetails" class="mt-1 text-xs leading-5 text-gray-500">Створи профіль, щоб зберегти свій віртуальний прогрес.</p>
+</div>
+<i class="fa-solid fa-shield-halved mt-1 text-xl text-emerald-400/70"></i>
+</div>
+<div class="mt-4 flex flex-wrap gap-2">
+<button id="cloudCreateBtn" onclick="createCloudProfile()" class="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-xs font-bold text-emerald-100 hover:bg-emerald-500/20 disabled:opacity-50"><i class="fa-solid fa-cloud-arrow-up mr-1"></i>Створити профіль</button>
+<button id="cloudSaveBtn" onclick="saveCloudProfile()" class="hidden rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-xs font-bold text-emerald-100 hover:bg-emerald-500/20 disabled:opacity-50"><i class="fa-solid fa-floppy-disk mr-1"></i>Зберегти</button>
+<button id="cloudLoadBtn" onclick="loadCloudProfile()" class="hidden rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-4 py-2 text-xs font-bold text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-50"><i class="fa-solid fa-cloud-arrow-down mr-1"></i>Відновити</button>
+<button id="cloudRecoveryBtn" onclick="openCloudRecoveryModal()" class="hidden rounded-lg border border-gray-700 bg-black/20 px-4 py-2 text-xs font-bold text-gray-300 hover:border-gray-500"><i class="fa-solid fa-key mr-1"></i>Код</button>
+<button onclick="openCloudConnectModal()" class="rounded-lg border border-gray-700 bg-black/20 px-4 py-2 text-xs font-bold text-gray-300 hover:border-gray-500"><i class="fa-solid fa-link mr-1"></i>Підключити</button>
+</div>
+</article>
+
+<article class="glass-panel rounded-2xl border border-violet-500/25 p-5">
+<div class="flex items-start justify-between gap-4">
+<div>
+<p class="text-xs font-bold uppercase tracking-widest text-violet-300">Fair play</p>
+<h3 class="mt-1 text-xl font-extrabold text-white"><i class="fa-solid fa-dice-d20 mr-2 text-violet-300"></i>Перевірка кейсу</h3>
+<p id="fairStatus" class="mt-2 text-sm font-bold text-violet-100">Серверна перевірка з’явиться після відкриття кейсу</p>
+<p id="fairDetails" class="mt-1 text-xs leading-5 text-gray-500">Поточний seed публікується як hash, а наступного дня його можна перевірити.</p>
+</div>
+<i class="fa-solid fa-fingerprint mt-1 text-xl text-violet-300/70"></i>
+</div>
+<button id="fairVerifyBtn" onclick="verifyLastFairRound()" class="mt-4 rounded-lg border border-violet-500/40 bg-violet-500/10 px-4 py-2 text-xs font-bold text-violet-100 hover:bg-violet-500/20 disabled:cursor-not-allowed disabled:opacity-40"><i class="fa-solid fa-shield-check mr-1"></i>Перевірити останній seed</button>
+</article>
+</div>
+
+<div class="grid gap-5 lg:grid-cols-2">
 <article class="glass-panel rounded-2xl border border-brand-border p-5">
 <div class="flex items-center justify-between gap-3"><div><p class="text-xs font-bold uppercase tracking-widest text-gray-500">Останні 20</p><h3 class="mt-1 text-xl font-extrabold text-white"><i class="fa-solid fa-clock-rotate-left mr-2 text-amber-400"></i>Історія</h3></div><button onclick="copyLatestResult()" class="rounded-lg border border-gray-700 px-3 py-2 text-xs font-bold text-gray-300 hover:border-amber-500/50 hover:text-white"><i class="fa-solid fa-share-nodes mr-1"></i>Поділитись</button></div>
 <div id="roundHistory" class="mt-4 max-h-[400px] space-y-2 overflow-y-auto pr-1"></div>
@@ -620,7 +654,7 @@
 </main>
 
 <footer class="border-t border-brand-border py-5 px-4 text-center">
-<p class="text-xs text-gray-500">ПОТУЖНО DROP 3.8 — гра-пародія. <a href="#about" onclick="showPage('about');return false" class="text-amber-400 hover:text-amber-300">Детальніше</a></p>
+<p class="text-xs text-gray-500">ПОТУЖНО DROP 3.9 — гра-пародія. <a href="#about" onclick="showPage('about');return false" class="text-amber-400 hover:text-amber-300">Детальніше</a></p>
 </footer>
 
 <!-- MODALS -->
@@ -631,6 +665,10 @@
 <div id="shopModal" class="modal-backdrop fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4"><div class="glass-panel rounded-2xl max-w-5xl w-full p-6 border border-brand-border relative max-h-[88vh] flex flex-col"><button onclick="closeModal('shopModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button><div class="pr-10 mb-4"><div class="flex items-end justify-between gap-4"><h3 class="font-heading text-2xl font-bold text-white uppercase">Каталог скінів</h3><span id="shopCount" class="text-xs font-bold text-amber-400">Завантаження…</span></div><p class="text-[11px] text-gray-500 mt-1">DC — умовна цінність. Ринковий індикатор оновлюється кожні 5 хвилин; це не реальні ціни Steam.</p></div><div id="shopTargetFilterBanner" class="hidden mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-100"><i class="fa-solid fa-filter mr-1"></i>Показано тільки скіни, дорожчі за <span id="shopTargetFilterValue" class="font-bold">—</span>.</div><div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3"><label class="relative col-span-2"><i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs"></i><input id="shopSearch" type="search" oninput="debounceFilterShop()" placeholder="Пошук: AK-47, Asiimov…" class="w-full bg-black/30 border border-brand-border rounded-xl py-2.5 pl-9 pr-3 text-sm text-white focus:outline-none focus:border-amber-500/60"></label><select id="shopSort" onchange="filterShop()" class="bg-brand-card border border-brand-border rounded-xl px-3 py-2.5 text-sm text-gray-200 focus:outline-none"><option value="name-asc">Назва A→Я</option><option value="price-asc">Ціна ↑</option><option value="price-desc">Ціна ↓</option></select><select id="shopCategory" onchange="filterShop()" class="bg-brand-card border border-brand-border rounded-xl px-3 py-2.5 text-sm text-gray-200 focus:outline-none"><option value="all">Уся зброя</option></select></div><div class="grid grid-cols-2 sm:grid-cols-[1fr_1fr_auto] gap-2 mb-4"><input id="shopMinPrice" type="number" oninput="debounceFilterShop()" placeholder="Ціна від, DC" class="bg-black/30 border border-brand-border rounded-xl py-2.5 px-3 text-sm text-white focus:outline-none"><input id="shopMaxPrice" type="number" oninput="debounceFilterShop()" placeholder="Ціна до, DC" class="bg-black/30 border border-brand-border rounded-xl py-2.5 px-3 text-sm text-white focus:outline-none"><button onclick="resetShopFilters()" class="rounded-xl border border-gray-700 bg-black/20 px-4 py-2.5 text-xs font-bold text-gray-300 hover:bg-gray-800">Скинути</button></div><div id="shopGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 overflow-y-auto pr-1 flex-1"></div><button id="shopMoreBtn" onclick="showMoreSkins()" class="hidden mt-4 py-2.5 rounded-xl border border-brand-border bg-brand-card hover:bg-gray-800 text-sm font-bold text-amber-400 transition">Показати ще</button></div></div>
 
 <div id="accountModal" class="modal-backdrop fixed inset-0 z-[95] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4"><div class="glass-panel rounded-2xl max-w-md w-full p-6 border border-brand-border relative"><button onclick="closeModal('accountModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button><h3 class="font-heading text-2xl font-bold text-white uppercase mb-3"><i class="fa-solid fa-user text-amber-400 mr-2"></i>Мій акаунт</h3><label class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Нікнейм</label><input id="accountNickInput" type="text" maxlength="24" class="w-full bg-black/40 border border-brand-border rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-amber-500/60" placeholder="Потужний гравець"><button onclick="saveAccountNick()" class="mt-4 w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-extrabold rounded-xl transition text-sm">Зберегти</button><div class="mt-4 rounded-xl border border-gray-700 bg-black/20 p-3 text-[11px] leading-5 text-gray-400">XP: <span id="accountXp" class="font-mono text-gray-200">0</span><br>Рівень: <span id="accountLevel" class="font-mono text-gray-200">1</span></div></div></div>
+
+<div id="cloudRecoveryModal" class="modal-backdrop fixed inset-0 z-[96] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4"><div class="glass-panel rounded-3xl max-w-md w-full p-6 border border-emerald-500/35 relative"><button onclick="closeModal('cloudRecoveryModal')" class="absolute right-4 top-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button><div class="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-300"><i class="fa-solid fa-key text-xl"></i></div><h3 class="font-heading text-2xl font-extrabold uppercase text-white">Код відновлення</h3><p class="mt-2 text-sm leading-6 text-gray-400">Збережи обидва значення поза браузером. Хто має код — може відновити твій віртуальний профіль.</p><div class="mt-4 space-y-3 rounded-xl border border-gray-700 bg-black/30 p-3 text-xs"><div><p class="mb-1 font-bold uppercase tracking-wider text-gray-500">ID профілю</p><code id="cloudRecoveryAccountId" class="block break-all text-cyan-200">—</code></div><div><p class="mb-1 font-bold uppercase tracking-wider text-gray-500">Код</p><code id="cloudRecoveryCode" class="block break-all text-emerald-200">—</code></div></div><button onclick="copyCloudRecoveryCode()" class="mt-4 w-full rounded-xl bg-emerald-500 py-3 text-sm font-extrabold text-black hover:bg-emerald-400"><i class="fa-solid fa-copy mr-2"></i>Скопіювати дані</button></div></div>
+
+<div id="cloudConnectModal" class="modal-backdrop fixed inset-0 z-[96] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4"><div class="glass-panel rounded-3xl max-w-md w-full p-6 border border-cyan-500/35 relative"><button onclick="closeModal('cloudConnectModal')" class="absolute right-4 top-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button><h3 class="font-heading text-2xl font-extrabold uppercase text-white"><i class="fa-solid fa-cloud-arrow-down mr-2 text-cyan-300"></i>Відновити профіль</h3><p class="mt-2 text-sm leading-6 text-gray-400">Введи дані з екрана «Код». Поточний локальний прогрес буде замінено серверною копією.</p><label class="mt-4 block text-xs font-bold uppercase tracking-wider text-gray-400">ID профілю<input id="cloudConnectId" type="text" autocomplete="off" spellcheck="false" class="mt-2 w-full rounded-xl border border-brand-border bg-black/40 px-3 py-3 font-mono text-xs text-white focus:border-cyan-500/60 focus:outline-none" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></label><label class="mt-3 block text-xs font-bold uppercase tracking-wider text-gray-400">Код відновлення<input id="cloudConnectCode" type="password" autocomplete="off" spellcheck="false" class="mt-2 w-full rounded-xl border border-brand-border bg-black/40 px-3 py-3 font-mono text-xs text-white focus:border-cyan-500/60 focus:outline-none" placeholder="Встав код"></label><button id="cloudConnectBtn" onclick="connectCloudProfile()" class="mt-5 w-full rounded-xl bg-cyan-500 py-3 text-sm font-extrabold text-black hover:bg-cyan-400 disabled:opacity-50"><i class="fa-solid fa-link mr-2"></i>Підключити й відновити</button></div></div>
 
 <div id="topupModal" class="modal-backdrop fixed inset-0 z-[95] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4"><div class="glass-panel rounded-3xl max-w-md w-full p-7 border border-amber-500/35 relative"><button onclick="closeModal('topupModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button><i class="fa-solid fa-coins text-3xl text-amber-400"></i><h3 class="font-heading mt-3 text-3xl font-extrabold uppercase text-white">Поповнити</h3><div class="mt-4 space-y-2"><button onclick="topupWatchAd()" class="w-full flex items-center justify-between rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-left hover:bg-amber-500/20 transition"><span class="text-sm font-bold text-amber-100"><i class="fa-solid fa-tv mr-2"></i>Симуляція реклами</span><span class="text-xs font-extrabold text-amber-300">+150 DC · 60с</span></button><button onclick="topupShareSite()" class="w-full flex items-center justify-between rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-4 py-3 text-left hover:bg-cyan-500/20 transition"><span class="text-sm font-bold text-cyan-100"><i class="fa-solid fa-share-nodes mr-2"></i>Поділитись</span><span class="text-xs font-extrabold text-cyan-300">+250 DC</span></button><button onclick="topupLevelReward()" class="w-full flex items-center justify-between rounded-xl border border-violet-500/40 bg-violet-500/10 px-4 py-3 text-left hover:bg-violet-500/20 transition"><span class="text-sm font-bold text-violet-100"><i class="fa-solid fa-star mr-2"></i>Бонус за рівень</span><span id="topupLevelRewardLabel" class="text-xs font-extrabold text-violet-300">+— DC</span></button></div></div></div>
 
@@ -736,6 +774,7 @@
       <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Загальна вартість:</span>
       <span class="font-heading text-2xl font-extrabold text-amber-300" id="caseResultTotalVal">0 DC</span>
     </div>
+    <div id="caseResultFairProof" class="hidden"></div>
 
     <!-- Key-Drop Action Buttons -->
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -757,6 +796,6 @@
 
 <div id="toastContainer" class="fixed bottom-6 right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm"></div>
 
-<script src="js/app.js?v=3.8.0" defer></script>
+<script src="js/app.js?v=3.9.0" defer></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 {
   "name": "potuzhno-drop-demo",
-  "version": "3.8.0",
+  "version": "3.9.0",
   "private": true,
   "description": "Potuzhno Drop — transparent parody game with virtual CS2 inventory.",
   "type": "module",
@@ -8,9 +8,12 @@
     "node": ">=22.12 <25"
   },
   "scripts": {
-    "check": "node --check js/app.js && node --check netlify/functions/steam-auth.mts && node --check netlify/functions/steam-inventory.mts && node --check netlify/functions/skin-catalog.mts"
+    "check": "node --check js/app.js && node --check netlify/functions/steam-auth.mts && node --check netlify/functions/steam-inventory.mts && node --check netlify/functions/skin-catalog.mts && node --check netlify/functions/profile-sync.mts && node --check netlify/functions/fair-roll.mts && node --check netlify/functions/fair-verify.mts"
   },
   "devDependencies": {
     "@netlify/functions": "^6.0.0"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^11.1.0"
   }
 }
