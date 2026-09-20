@@ -11,6 +11,11 @@ const IMAGE_HOSTS = new Set([
   'raw.githubusercontent.com',
   'cdn.jsdelivr.net',
 ])
+const AVATAR_HOSTS = new Set([
+  'avatars.steamstatic.com',
+  'avatars.akamai.steamstatic.com',
+  'steamcdn-a.akamaihd.net',
+])
 const CATALOG_SOURCES = [
   'https://cdn.jsdelivr.net/gh/ByMykel/CSGO-API@main/public/api/en/skins.json',
   'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/skins.json',
@@ -24,6 +29,9 @@ const MAX_PAYLOAD_BYTES = 750_000
 const MAX_PRICE = 1_000_000
 const WAIT_TTL = 10_000
 const MATCH_TTL = 10 * 60_000
+const STEAM_PROFILE_TTL = 6 * 60 * 60_000
+const STEAM_SESSION_TTL = 30 * 24 * 60 * 60_000
+const STEAM_SESSION_COOKIE = 'potuzhno_steam_session'
 const encoder = new TextEncoder()
 
 const json = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), {
@@ -78,9 +86,39 @@ function cleanImage(value) {
   }
 }
 
+function cleanAvatar(value) {
+  try {
+    const url = new URL(cleanText(value, 2048))
+    return url.protocol === 'https:' && AVATAR_HOSTS.has(url.hostname) ? url.href : ''
+  } catch {
+    return ''
+  }
+}
+
+function decodeXmlText(value) {
+  return cleanText(String(value || '')
+    .replace(/^<!\[CDATA\[/, '')
+    .replace(/\]\]>$/, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'"), 160)
+}
+
+function xmlTag(xml, tag) {
+  const match = String(xml || '').match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i'))
+  return decodeXmlText(match?.[1] || '')
+}
+
 function cleanColor(value) {
   const color = cleanText(value, 32)
   return /^#[0-9a-f]{3,8}$/i.test(color) ? color : '#b0c3d9'
+}
+
+function readCookie(request, name) {
+  const prefix = `${name}=`
+  return (request.headers.get('Cookie') || '').split(';').map(value => value.trim()).find(value => value.startsWith(prefix))?.slice(prefix.length) || ''
 }
 
 function parseStake(value) {
@@ -150,6 +188,7 @@ export class PotuzhnoState {
       if (path === '/api/fair/verify') return await this.fairVerify(request)
       if (path === '/api/matchmaking') return await this.matchmaking(request)
       if (path === '/api/steam/auth') return await this.steamAuth(request)
+      if (path === '/api/steam/profile') return await this.steamProfile(request)
       if (path === '/api/steam/inventory') return await this.steamInventory(request)
       if (path === '/api/catalog/skins') return await this.skinCatalog(request)
       return json({ error: 'Маршрут API не знайдено.' }, 404)
@@ -347,13 +386,69 @@ export class PotuzhnoState {
     }
     const steamId = claimedId.match(/^https:\/\/steamcommunity\.com\/openid\/id\/(\d{17})$/)?.[1]
     if (!valid || !steamId) return Response.redirect(`${origin}/?steam_error=1`, 302)
-    return Response.redirect(`${origin}/?steamid=${encodeURIComponent(steamId)}`, 302)
+    const sessionToken = randomHex(32)
+    const maxAge = Math.floor(STEAM_SESSION_TTL / 1000)
+    await this.storage.put(`steam-session:${sessionToken}`, { steamId, expiresAt: Date.now() + STEAM_SESSION_TTL })
+    const headers = new Headers({
+      Location: `${origin}/?steam_connected=1`,
+      'Cache-Control': 'no-store',
+    })
+    headers.append('Set-Cookie', `${STEAM_SESSION_COOKIE}=${sessionToken}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${url.protocol === 'https:' ? '; Secure' : ''}`)
+    return new Response(null, { status: 302, headers })
+  }
+
+  async getSteamSession(request) {
+    const token = readCookie(request, STEAM_SESSION_COOKIE)
+    if (!/^[a-f0-9]{64}$/i.test(token)) return null
+    const session = await this.storage.get(`steam-session:${token}`)
+    if (!/^\d{17}$/.test(String(session?.steamId || ''))) return null
+    if (Number(session.expiresAt || 0) > Date.now()) return session
+    await this.storage.delete(`steam-session:${token}`)
+    return null
+  }
+
+  async resolveSteamProfile(steamId) {
+    const key = `steam-profile:${steamId}`
+    const cached = await this.storage.get(key)
+    if (cached?.steamId === steamId && Date.now() - Number(cached.updatedAt || 0) < STEAM_PROFILE_TTL) return cached
+
+    const fallback = {
+      steamId,
+      name: `Steam_${steamId.slice(-4)}`,
+      avatar: '',
+      profileUrl: `https://steamcommunity.com/profiles/${steamId}/`,
+      visibility: 'unknown',
+      updatedAt: Date.now(),
+    }
+    try {
+      const response = await timedFetch(`https://steamcommunity.com/profiles/${steamId}/?xml=1`, {
+        headers: { Accept: 'application/xml,text/xml;q=0.9,*/*;q=0.8' },
+      })
+      if (!response.ok) return cached?.steamId === steamId ? cached : fallback
+      const xml = await response.text()
+      const name = xmlTag(xml, 'steamID') || fallback.name
+      const avatar = cleanAvatar(xmlTag(xml, 'avatarFull') || xmlTag(xml, 'avatarMedium') || xmlTag(xml, 'avatarIcon'))
+      const visibility = cleanText(xmlTag(xml, 'privacyState'), 24).toLowerCase() || 'unknown'
+      const profile = { ...fallback, name, avatar, visibility, updatedAt: Date.now() }
+      await this.storage.put(key, profile)
+      return profile
+    } catch {
+      return cached?.steamId === steamId ? cached : fallback
+    }
+  }
+
+  async steamProfile(request) {
+    if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
+    const session = await this.getSteamSession(request)
+    if (!session) return json({ error: 'Сесія Steam завершилась. Увійди через Steam ще раз.' }, 401)
+    return json(await this.resolveSteamProfile(session.steamId), 200, { 'Cache-Control': 'private, max-age=300' })
   }
 
   async steamInventory(request) {
     if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
-    const steamId = new URL(request.url).searchParams.get('steamid') || ''
-    if (!/^\d{17}$/.test(steamId)) return json({ error: 'Некоректний Steam ID' }, 400)
+    const session = await this.getSteamSession(request)
+    if (!session) return json({ error: 'Сесія Steam завершилась. Увійди через Steam ще раз.' }, 401)
+    const steamId = session.steamId
     let response
     try {
       response = await timedFetch(`https://steamcommunity.com/inventory/${steamId}/730/2?l=ukrainian&count=500`)
@@ -373,16 +468,19 @@ export class PotuzhnoState {
     const descriptions = new Map((data.descriptions || []).map(item => [`${item.classid}_${item.instanceid}`, item]))
     const items = (data.assets || []).slice(0, 500).map(asset => {
       const item = descriptions.get(`${asset.classid}_${asset.instanceid}`)
-      const icon = typeof item?.icon_url === 'string' && /^[A-Za-z0-9_\-/]+$/.test(item.icon_url) ? item.icon_url : ''
-      if (!item || !item.tradable || !icon) return null
+      const rawIcon = item?.icon_url_large || item?.icon_url
+      const icon = typeof rawIcon === 'string' && /^[A-Za-z0-9_\-/]+$/.test(rawIcon) ? rawIcon : ''
+      if (!item || !icon) return null
       return {
-        id: asset.assetid,
-        name: String(item.market_hash_name || item.name || 'CS2 Skin').slice(0, 160),
-        rarity: String(item.tags?.find(tag => tag.category === 'Rarity')?.localized_tag_name || 'CS2').slice(0, 48),
+        id: cleanText(asset.assetid, 64),
+        name: cleanText(item.market_hash_name || item.name || 'CS2 Skin', 160),
+        rarity: cleanText(item.tags?.find(tag => tag.category === 'Rarity')?.localized_tag_name || 'CS2', 48),
+        rarityColor: cleanColor(item.tags?.find(tag => tag.category === 'Rarity')?.color),
         img: `https://community.cloudflare.steamstatic.com/economy/image/${icon}/360fx360f`,
+        tradable: Boolean(item.tradable),
       }
     }).filter(Boolean)
-    return json({ items }, 200, { 'Cache-Control': 'private, no-store' })
+    return json({ items, profile: await this.resolveSteamProfile(steamId) }, 200, { 'Cache-Control': 'private, no-store' })
   }
 
   async skinCatalog(request) {
