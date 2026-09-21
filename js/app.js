@@ -235,6 +235,7 @@ function normalizeStoredItem(item, index = 0) {
     id,
     sourceSkinId: cleanText(item.sourceSkinId || item.id || '', 128),
     steamAssetId: cleanText(item.steamAssetId || '', 64),
+    steamOwnerId: /^\d{17}$/.test(String(item.steamOwnerId || '')) ? String(item.steamOwnerId) : '',
     steamImported: item.steamImported === true,
     name,
     rarity: cleanText(item.rarity || 'CS2', 48),
@@ -291,6 +292,12 @@ let pendingWager = null;
 let fairState = null;
 let lastCaseFairAudit = [];
 let steamSyncPromise = null;
+let steamConnectionState = 'disconnected';
+let steamConnectionMessage = '';
+
+// The Steam community endpoint returns up to 500 assets at a time. Keeping the
+// work bounded gives the UI a responsive, recoverable sync even for huge inventories.
+const STEAM_SYNC_PAGE_LIMIT = 6;
 
 let battlePlayerItem = null;
 let battleBotItem = null;
@@ -757,6 +764,46 @@ function normalizeSteamProfile(profile, steamId = '') {
   };
 }
 
+function normalizeSteamImportRecord(record, steamId = '') {
+  const sid = /^\d{17}$/.test(String(record?.steamId || steamId || '')) ? String(record?.steamId || steamId) : '';
+  if (!sid) return null;
+  const assetIds = Array.isArray(record?.assetIds)
+    ? [...new Set(record.assetIds.map(id => cleanText(id, 64)).filter(Boolean))].slice(-5_000)
+    : [];
+  return {
+    steamId: sid,
+    assetIds,
+    lastSyncAt: clampNumber(record?.lastSyncAt, 0, Number.MAX_SAFE_INTEGER, 0)
+  };
+}
+
+function normalizeSteamImportMap(rawRecords, legacyRecord = null) {
+  const imports = {};
+  if (rawRecords && typeof rawRecords === 'object' && !Array.isArray(rawRecords)) {
+    Object.entries(rawRecords).slice(-4).forEach(([steamId, record]) => {
+      const normalized = normalizeSteamImportRecord(record, steamId);
+      if (normalized) imports[normalized.steamId] = normalized;
+    });
+  }
+  const legacy = normalizeSteamImportRecord(legacyRecord);
+  if (legacy && !imports[legacy.steamId]) imports[legacy.steamId] = legacy;
+  return imports;
+}
+
+function getSteamImportMap() {
+  return normalizeSteamImportMap(account?.steamImports, account?.steamImport);
+}
+
+function setSteamImportRecord(steamId, record) {
+  const normalized = normalizeSteamImportRecord(record, steamId);
+  if (!normalized || !account) return normalized;
+  const imports = getSteamImportMap();
+  imports[normalized.steamId] = normalized;
+  account.steamImports = imports;
+  account.steamImport = normalized;
+  return normalized;
+}
+
 function formatCredits(v) {
   return `${Math.max(0, Math.round(Number(v) || 0)).toLocaleString('uk-UA')} DC`;
 }
@@ -869,10 +916,15 @@ function loadAccount() {
     account = { nick: 'Гравець_' + Math.random().toString(36).slice(2, 6).toUpperCase(), createdAt: Date.now() };
     localStorage.setItem(STORAGE.account, JSON.stringify(account));
   }
+  const steamImports = normalizeSteamImportMap(account.steamImports, account.steamImport);
+  if (Object.keys(steamImports).length) {
+    account.steamImports = steamImports;
+    if (account.steamId && steamImports[account.steamId]) account.steamImport = steamImports[account.steamId];
+  }
   if (account.steamId && !account.steamProfile) {
     account.steamProfile = normalizeSteamProfile(null, account.steamId);
-    localStorage.setItem(STORAGE.account, JSON.stringify(account));
   }
+  localStorage.setItem(STORAGE.account, JSON.stringify(account));
 }
 
 function saveAccountNick() {
@@ -909,6 +961,15 @@ function updateAccountUI() {
   renderSteamNudge();
 }
 
+function setSteamConnectionState(state, message = '') {
+  steamConnectionState = ['checking', 'connected', 'syncing', 'expired', 'error', 'disconnected'].includes(state)
+    ? state
+    : 'disconnected';
+  steamConnectionMessage = cleanText(message, 180);
+  applyLoggedInUI();
+  renderSteamProfileCard();
+}
+
 function renderSteamProfileCard() {
   const card = document.getElementById('steamProfileCard');
   if (!card) return;
@@ -926,13 +987,37 @@ function renderSteamProfileCard() {
   const id = document.getElementById('profileSteamId');
   if (id) id.textContent = profile.steamId;
   const status = document.getElementById('profileSteamStatus');
-  if (status) status.textContent = profile.visibility === 'public'
-    ? 'Публічний профіль · підключено'
-    : 'Steam підключено · доступність інвентарю залежить від приватності';
+  const statusText = {
+    checking: 'Перевіряємо з’єднання зі Steam…',
+    connected: profile.visibility === 'public'
+      ? 'Публічний профіль · підключено'
+      : 'Steam підключено · доступність інвентарю залежить від приватності',
+    syncing: 'Steam синхронізується — перевіряємо нові предмети…',
+    expired: 'Сесія Steam завершилась. Увійди знову, щоб синхронізувати предмети.',
+    error: steamConnectionMessage || 'Steam тимчасово недоступний. Профіль збережено локально.',
+    disconnected: 'Steam відключено від цього браузера.'
+  };
+  if (status) {
+    status.textContent = statusText[steamConnectionState] || statusText.disconnected;
+    status.classList.toggle('text-cyan-100/75', ['checking', 'connected', 'syncing'].includes(steamConnectionState));
+    status.classList.toggle('text-amber-200', steamConnectionState === 'expired');
+    status.classList.toggle('text-red-200', steamConnectionState === 'error');
+  }
   const count = document.getElementById('profileSteamImportedCount');
   if (count) count.textContent = String(getSteamImportRecord(profile.steamId).assetIds.length);
   const link = document.getElementById('profileSteamLink');
   if (link) link.href = profile.profileUrl;
+  const sync = document.getElementById('steamProfileSyncBtn');
+  const reconnect = document.getElementById('steamProfileReconnectBtn');
+  const disconnect = document.getElementById('steamDisconnectBtn');
+  const canSync = steamConnectionState === 'connected';
+  if (sync && !steamSyncPromise) {
+    sync.disabled = !canSync;
+    sync.classList.toggle('opacity-50', !canSync);
+    sync.classList.toggle('cursor-not-allowed', !canSync);
+  }
+  if (reconnect) reconnect.classList.toggle('hidden', !['expired', 'error'].includes(steamConnectionState));
+  if (disconnect) disconnect.disabled = steamConnectionState === 'syncing';
 }
 
 /* ===== SERVER PROFILE + VERIFIABLE CASE ROLLS ===== */
@@ -1041,7 +1126,7 @@ async function requestJson(url, options = {}, timeout = 7000) {
 
 function buildPortableSave() {
   return {
-    version: '4.2',
+    version: '4.3',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -1051,6 +1136,7 @@ function buildPortableSave() {
       steamId: account?.steamId || null,
       steamProfile: account?.steamProfile || null,
       steamImport: account?.steamImport || null,
+      steamImports: account?.steamImports || null,
       createdAt: account?.createdAt || Date.now()
     }
   };
@@ -1076,22 +1162,17 @@ function applyPortableSave(data) {
   if (data.account && typeof data.account === 'object') {
     const restoredSteamId = /^\d{17}$/.test(String(data.account.steamId || '')) ? String(data.account.steamId) : account?.steamId;
     const restoredProfile = normalizeSteamProfile(data.account.steamProfile, restoredSteamId);
-    const rawImport = data.account.steamImport;
-    const restoredImport = rawImport?.steamId === restoredSteamId && Array.isArray(rawImport.assetIds)
-      ? {
-        steamId: restoredSteamId,
-        assetIds: [...new Set(rawImport.assetIds.map(id => cleanText(id, 64)).filter(Boolean))].slice(-5_000),
-        lastSyncAt: clampNumber(rawImport.lastSyncAt, 0, Number.MAX_SAFE_INTEGER, 0)
-      }
-      : null;
+    const restoredImports = normalizeSteamImportMap(data.account.steamImports, data.account.steamImport);
+    const mergedImports = { ...getSteamImportMap(), ...restoredImports };
+    const restoredImport = mergedImports[restoredSteamId] || null;
     const preservedProfile = account?.steamProfile?.steamId === restoredSteamId ? account.steamProfile : null;
-    const preservedImport = account?.steamImport?.steamId === restoredSteamId ? account.steamImport : null;
     account = {
       ...account,
       nick: cleanText(data.account.nick || account?.nick || 'Гравець', 24),
       steamId: restoredSteamId,
       steamProfile: restoredProfile || preservedProfile,
-      steamImport: restoredImport || preservedImport,
+      steamImports: mergedImports,
+      steamImport: restoredImport,
       createdAt: clampNumber(data.account.createdAt, 0, Number.MAX_SAFE_INTEGER, account?.createdAt || Date.now())
     };
   }
@@ -1631,6 +1712,8 @@ function loadState() {
     avatar: steamProfile?.avatar || '',
     steamProfile
   };
+  steamConnectionState = steamProfile ? 'checking' : 'disconnected';
+  steamConnectionMessage = '';
 
   if (!started) {
     currentUser.balance = DEMO_STARTING_BALANCE;
@@ -1665,9 +1748,18 @@ function applyLoggedInUI() {
     }
     const dot = document.getElementById('steamConnectionDot');
     if (dot) {
-      dot.classList.remove('bg-amber-400');
-      dot.classList.add('bg-cyan-300');
-      dot.title = 'Steam підключено';
+      const isConnected = steamConnectionState === 'connected';
+      const isWorking = ['checking', 'syncing'].includes(steamConnectionState);
+      dot.classList.toggle('bg-cyan-300', isConnected);
+      dot.classList.toggle('bg-amber-400', !isConnected && !isWorking);
+      dot.classList.toggle('bg-violet-400', isWorking);
+      dot.title = isConnected
+        ? 'Steam підключено'
+        : steamConnectionState === 'syncing'
+          ? 'Steam синхронізується'
+          : steamConnectionState === 'checking'
+            ? 'Перевіряємо сесію Steam'
+            : 'Потрібно повторно увійти в Steam';
     }
   } else {
     sb?.classList.remove('hidden');
@@ -2549,7 +2641,18 @@ function openInventoryModalFromProfile() {
   openModal('inventoryModal');
 }
 
+function resetSteamLoginModal() {
+  const button = document.getElementById('steamLoginContinueBtn');
+  if (button) {
+    button.disabled = false;
+    button.innerHTML = '<i class="fa-brands fa-steam mr-2"></i>Увійти через Steam';
+  }
+  const hint = document.getElementById('steamLoginHint');
+  if (hint) hint.textContent = 'Пароль, Steam Guard, API-ключі та Trade Offers не запитуються. Потрібен лише публічний профіль та інвентар.';
+}
+
 function startSteamLogin() {
+  resetSteamLoginModal();
   openModal('steamModal');
 }
 
@@ -2566,17 +2669,17 @@ function continueSteamLogin() {
 }
 
 function getSteamImportRecord(steamId) {
-  const record = account?.steamImport;
-  if (record?.steamId === steamId && Array.isArray(record.assetIds)) {
-    return { ...record, assetIds: record.assetIds.map(id => cleanText(id, 64)).filter(Boolean) };
-  }
-  return { steamId, assetIds: [], lastSyncAt: 0 };
+  return normalizeSteamImportRecord(getSteamImportMap()[steamId], steamId) || { steamId, assetIds: [], lastSyncAt: 0 };
 }
 
 function getKnownSteamAssetIds(steamId) {
   const known = new Set(getSteamImportRecord(steamId).assetIds);
   userInventory.forEach(item => {
     const legacyImported = String(item?.id || '').startsWith('steam-demo-');
+    const ownerId = /^\d{17}$/.test(String(item?.steamOwnerId || ''))
+      ? String(item.steamOwnerId)
+      : String(item?.id || '').match(/^steam-copy-(\d{17})-/)?.[1] || '';
+    if (ownerId && ownerId !== steamId) return;
     const assetId = cleanText(item?.steamAssetId || (legacyImported ? item?.sourceSkinId : ''), 64);
     if (assetId) known.add(assetId);
   });
@@ -2587,22 +2690,41 @@ function fallbackSteamProfile(steamId) {
   return normalizeSteamProfile({ steamId, name: `Steam_${steamId.slice(-4)}`, avatar: '', visibility: 'unknown' }, steamId);
 }
 
-async function fetchSteamProfile() {
-  const response = await fetch('/api/steam/profile', { cache: 'no-store' });
+async function fetchSteamSession() {
+  const response = await fetch('/api/steam/session', { cache: 'no-store', credentials: 'same-origin' });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(cleanText(data?.error || 'Не вдалося завантажити Steam-профіль.', 180));
-  return normalizeSteamProfile(data) || null;
+  const profile = normalizeSteamProfile(data?.profile);
+  if (!data?.connected || !profile) throw new Error('Steam-профіль не підтверджено.');
+  return { profile, expiresAt: clampNumber(data.expiresAt, 0, Number.MAX_SAFE_INTEGER, 0) };
+}
+
+async function restoreSteamSession() {
+  if (!currentUser?.steamId) return false;
+  try {
+    const session = await fetchSteamSession();
+    applySteamIdentity(session.profile.steamId, session.profile);
+    setSteamConnectionState('connected');
+    return true;
+  } catch (error) {
+    setSteamConnectionState('expired', error?.message || 'Сесія Steam завершилась.');
+    return false;
+  }
 }
 
 function applySteamIdentity(steamId, rawProfile) {
   const profile = normalizeSteamProfile(rawProfile, steamId) || fallbackSteamProfile(steamId);
   const currentNick = cleanText(account?.nick, 24);
   const useSteamName = !currentNick || currentNick.startsWith('Гравець_') || /^Steam_\d{4}$/.test(currentNick);
+  const importRecord = getSteamImportRecord(steamId);
+  const steamImports = getSteamImportMap();
+  steamImports[steamId] = importRecord;
   account = {
     ...(account || {}),
     steamId,
     steamProfile: profile,
-    steamImport: getSteamImportRecord(steamId),
+    steamImport: importRecord,
+    steamImports,
     nick: useSteamName ? profile.name : currentNick
   };
   currentUser = {
@@ -2633,6 +2755,7 @@ function importSteamItems(steamId, items) {
     imported.push({
       id: `steam-copy-${steamId}-${assetId}`,
       steamAssetId: assetId,
+      steamOwnerId: steamId,
       steamImported: true,
       sourceSkinId: assetId,
       name: cleanText(item?.name, 160) || 'CS2 Skin',
@@ -2647,11 +2770,11 @@ function importSteamItems(steamId, items) {
     });
   });
   userInventory.push(...imported);
-  account.steamImport = {
+  setSteamImportRecord(steamId, {
     steamId,
     assetIds: [...known].slice(-5_000),
     lastSyncAt: Date.now()
-  };
+  });
   return imported;
 }
 
@@ -2670,31 +2793,45 @@ function setSteamSyncUI(syncing) {
       ? '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Синхронізація…'
       : button.dataset.steamLabel;
   });
-  const dot = document.getElementById('steamConnectionDot');
-  if (dot && currentUser?.steamId) {
-    dot.classList.toggle('bg-amber-400', syncing);
-    dot.classList.toggle('bg-cyan-300', !syncing);
-    dot.title = syncing ? 'Steam синхронізується' : 'Steam підключено';
-  }
+}
+
+async function fetchSteamInventoryPage(cursor = '') {
+  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
+  const response = await fetch(`/api/steam/inventory${query}`, { cache: 'no-store', credentials: 'same-origin' });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(cleanText(data?.error || 'Не вдалося завантажити Steam-інвентар.', 180));
+  return data;
 }
 
 async function performSteamInventorySync() {
   const status = document.getElementById('inventoryStatus');
   if (status) status.textContent = 'Оновлюємо публічний Steam-профіль і перевіряємо нові предмети…';
+  setSteamConnectionState('syncing');
   setSteamSyncUI(true);
   try {
-    const profile = await fetchSteamProfile();
+    const session = await fetchSteamSession();
+    const profile = session.profile;
     const steamId = profile?.steamId;
     if (!/^\d{17}$/.test(String(steamId || ''))) throw new Error('Steam-профіль не підтверджено.');
     applySteamIdentity(steamId, profile);
-    const r = await fetch('/api/steam/inventory');
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || 'Не вдалося');
-    applySteamIdentity(steamId, d.profile || profile);
-    const imported = importSteamItems(steamId, d.items);
+    let cursor = '';
+    let pages = 0;
+    let inventoryProfile = profile;
+    const items = [];
+    do {
+      pages += 1;
+      if (status) status.textContent = `Скануємо Steam-інвентар: сторінка ${pages}${pages > 1 ? ` · знайдено ${items.length}` : ''}…`;
+      const data = await fetchSteamInventoryPage(cursor);
+      inventoryProfile = normalizeSteamProfile(data.profile, steamId) || inventoryProfile;
+      items.push(...(Array.isArray(data.items) ? data.items : []));
+      cursor = data.hasMore && /^\d{1,24}$/.test(String(data.nextCursor || '')) ? String(data.nextCursor) : '';
+    } while (cursor && pages < STEAM_SYNC_PAGE_LIMIT);
+    applySteamIdentity(steamId, inventoryProfile);
+    const imported = importSteamItems(steamId, items);
+    const truncated = Boolean(cursor);
     if (status) status.textContent = imported.length
-      ? `Steam синхронізовано: додано ${imported.length} нових віртуальних копій.`
-      : 'Steam синхронізовано: нових предметів немає. Продані у грі копії не повертаються.';
+      ? `Steam синхронізовано: додано ${imported.length} нових віртуальних копій${truncated ? ' з перших 3 000 предметів' : ''}.`
+      : `Steam синхронізовано: нових предметів немає. Продані у грі копії не повертаються${truncated ? '; перевірено перші 3 000 предметів' : ''}.`;
     applyLoggedInUI();
     updateAccountUI();
     renderInventoryGrid();
@@ -2703,11 +2840,15 @@ async function performSteamInventorySync() {
     saveState();
     renderGameHub();
     checkAchievements();
+    setSteamConnectionState('connected');
     showToast(imported.length ? `Steam: +${imported.length} нових предметів` : 'Steam уже синхронізований', 'success');
   } catch (e) {
-    if (status) status.textContent = `${e.message || 'Не вдалося завантажити інвентар'}. Steam-профіль збережено, повтори синхронізацію пізніше.`;
-    showToast(e.message || 'Не вдалося завантажити інвентар', 'warn');
-    if (/сесі|підтверджено/i.test(String(e.message || ''))) startSteamLogin();
+    const message = e?.message || 'Не вдалося завантажити інвентар';
+    const needsLogin = /сесі|підтверджено|увійди/i.test(String(message));
+    if (status) status.textContent = `${message}. ${needsLogin ? 'Підключи Steam ще раз.' : 'Профіль збережено, повтори синхронізацію пізніше.'}`;
+    setSteamConnectionState(needsLogin ? 'expired' : 'error', message);
+    showToast(message, 'warn');
+    if (needsLogin) startSteamLogin();
   } finally {
     setSteamSyncUI(false);
   }
@@ -2726,21 +2867,74 @@ async function syncSteamInventory() {
   }
 }
 
+async function disconnectSteam() {
+  if (!currentUser?.steamId || steamSyncPromise) return;
+  const button = document.getElementById('steamDisconnectBtn');
+  if (button) {
+    button.disabled = true;
+    button.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Відключаємо…';
+  }
+  try {
+    const response = await fetch('/api/steam/logout', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'X-Requested-With': 'PotuzhnoDrop' }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(cleanText(data?.error || 'Не вдалося відключити Steam.', 180));
+    const previousName = currentUser.name;
+    account = {
+      ...(account || {}),
+      steamId: null,
+      steamProfile: null,
+      steamImport: null,
+      nick: account?.nick || previousName || 'Гравець'
+    };
+    currentUser = {
+      ...currentUser,
+      steamId: null,
+      steamProfile: null,
+      avatar: '',
+      name: account.nick
+    };
+    localStorage.removeItem(STORAGE.steamId);
+    setSteamConnectionState('disconnected');
+    saveState();
+    updateAccountUI();
+    refreshInventoryModal();
+    showToast('Steam відключено. Віртуальний інвентар гри збережено.', 'success');
+  } catch (error) {
+    setSteamConnectionState('error', error?.message || 'Не вдалося відключити Steam.');
+    showToast(error?.message || 'Не вдалося відключити Steam.', 'error');
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = '<i class="fa-solid fa-link-slash mr-1"></i>Відключити';
+    }
+  }
+}
+
 async function processSteamCallback() {
   const params = new URLSearchParams(location.search);
-  if (params.has('steam_error')) {
-    showToast('Не вдалося підтвердити вхід через Steam', 'error');
+  const error = params.get('steam_error');
+  if (error) {
+    const message = error === 'state'
+      ? 'Час входу Steam завершився або сторінка повернення відкрита не в тому браузері. Спробуй ще раз.'
+      : 'Steam не підтвердив вхід. Спробуй ще раз.';
+    setSteamConnectionState(currentUser?.steamId ? 'expired' : 'disconnected', message);
+    showToast(message, 'error');
     history.replaceState({}, '', location.pathname);
-    return;
+    return true;
   }
   const connected = params.get('steam_connected') === '1';
   const sid = params.get('steamid');
-  if (!connected && !sid) return;
+  if (!connected && !sid) return false;
   history.replaceState({}, '', location.pathname);
   closeModal('steamModal');
   showToast('Steam підтверджено. Підключаємо профіль…', 'success');
   if (/^\d{17}$/.test(String(sid || ''))) applySteamIdentity(sid, fallbackSteamProfile(sid));
   await syncSteamInventory();
+  return true;
 }
 
 function claimDailyBonus() {
@@ -5984,7 +6178,10 @@ window.addEventListener('DOMContentLoaded', () => {
   renderMultiSlots();
   renderContractSlots();
   renderProfileInventory();
-  processSteamCallback();
+  void (async () => {
+    const returnedFromSteam = await processSteamCallback();
+    if (!returnedFromSteam) await restoreSteamSession();
+  })();
   renderCaseButtons();
 
   loadCompleteSkinCatalog().finally(() => {
@@ -6113,6 +6310,7 @@ window.closeModal = closeModal;
 window.startSteamLogin = startSteamLogin;
 window.continueSteamLogin = continueSteamLogin;
 window.syncSteamInventory = syncSteamInventory;
+window.disconnectSteam = disconnectSteam;
 window.dismissSteamNudge = dismissSteamNudge;
 window.handleSteamAvatarError = handleSteamAvatarError;
 window.saveAccountNick = saveAccountNick;

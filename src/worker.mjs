@@ -33,6 +33,8 @@ const MATCH_TTL = 10 * 60_000
 const STEAM_PROFILE_TTL = 6 * 60 * 60_000
 const STEAM_SESSION_TTL = 30 * 24 * 60 * 60_000
 const STEAM_SESSION_COOKIE = 'potuzhno_steam_session'
+const STEAM_AUTH_TTL = 10 * 60_000
+const STEAM_AUTH_COOKIE = 'potuzhno_steam_auth'
 const encoder = new TextEncoder()
 
 const json = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), {
@@ -137,6 +139,10 @@ function readCookie(request, name) {
   return (request.headers.get('Cookie') || '').split(';').map(value => value.trim()).find(value => value.startsWith(prefix))?.slice(prefix.length) || ''
 }
 
+function sessionCookie(name, value, maxAge, secure) {
+  return `${name}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`
+}
+
 function parseStake(value) {
   const name = cleanText(value?.name, 160)
   const img = cleanImage(value?.img)
@@ -204,6 +210,8 @@ export class PotuzhnoState {
       if (path === '/api/fair/verify') return await this.fairVerify(request)
       if (path === '/api/matchmaking') return await this.matchmaking(request)
       if (path === '/api/steam/auth') return await this.steamAuth(request)
+      if (path === '/api/steam/session') return await this.steamSession(request)
+      if (path === '/api/steam/logout') return await this.steamLogout(request)
       if (path === '/api/steam/profile') return await this.steamProfile(request)
       if (path === '/api/steam/inventory') return await this.steamInventory(request)
       if (path === '/api/catalog/skins') return await this.skinCatalog(request)
@@ -380,18 +388,45 @@ export class PotuzhnoState {
     const origin = url.origin
     const claimedId = url.searchParams.get('openid.claimed_id')
     if (!claimedId) {
-      const callback = `${origin}/api/steam/auth`
+      const state = randomHex(32)
+      const callback = new URL(`${origin}/api/steam/auth`)
+      callback.searchParams.set('state', state)
+      await this.storage.put(`steam-auth:${state}`, { origin, expiresAt: Date.now() + STEAM_AUTH_TTL })
       const params = new URLSearchParams({
         'openid.ns': 'http://specs.openid.net/auth/2.0',
         'openid.mode': 'checkid_setup',
-        'openid.return_to': callback,
+        'openid.return_to': callback.href,
         'openid.realm': origin,
         'openid.identity': 'http://specs.openid.net/auth/2.0/identifier_select',
         'openid.claimed_id': 'http://specs.openid.net/auth/2.0/identifier_select',
       })
-      return Response.redirect(`${STEAM_OPENID}?${params}`, 302)
+      const headers = new Headers({
+        Location: `${STEAM_OPENID}?${params}`,
+        'Cache-Control': 'no-store',
+      })
+      headers.append('Set-Cookie', sessionCookie(STEAM_AUTH_COOKIE, state, Math.floor(STEAM_AUTH_TTL / 1000), url.protocol === 'https:'))
+      return new Response(null, { status: 302, headers })
     }
-    const verify = new URLSearchParams(url.searchParams)
+
+    const state = url.searchParams.get('state') || ''
+    const authCookie = readCookie(request, STEAM_AUTH_COOKIE)
+    const pending = /^[a-f0-9]{64}$/i.test(state) && equalHash(state, authCookie)
+      ? await this.storage.get(`steam-auth:${state}`)
+      : null
+    const clearAuth = sessionCookie(STEAM_AUTH_COOKIE, '', 0, url.protocol === 'https:')
+    if (!pending || pending.origin !== origin || Number(pending.expiresAt || 0) <= Date.now()) {
+      if (pending) await this.storage.delete(`steam-auth:${state}`)
+      const headers = new Headers({ Location: `${origin}/?steam_error=state`, 'Cache-Control': 'no-store' })
+      headers.append('Set-Cookie', clearAuth)
+      return new Response(null, { status: 302, headers })
+    }
+    // A state is intentionally single-use even when Steam validation fails.
+    await this.storage.delete(`steam-auth:${state}`)
+
+    const verify = new URLSearchParams()
+    url.searchParams.forEach((value, key) => {
+      if (key.startsWith('openid.')) verify.append(key, value)
+    })
     verify.set('openid.mode', 'check_authentication')
     let valid = false
     try {
@@ -401,15 +436,20 @@ export class PotuzhnoState {
       valid = false
     }
     const steamId = claimedId.match(/^https:\/\/steamcommunity\.com\/openid\/id\/(\d{17})$/)?.[1]
-    if (!valid || !steamId) return Response.redirect(`${origin}/?steam_error=1`, 302)
+    if (!valid || !steamId) {
+      const headers = new Headers({ Location: `${origin}/?steam_error=verification`, 'Cache-Control': 'no-store' })
+      headers.append('Set-Cookie', clearAuth)
+      return new Response(null, { status: 302, headers })
+    }
     const sessionToken = randomHex(32)
     const maxAge = Math.floor(STEAM_SESSION_TTL / 1000)
-    await this.storage.put(`steam-session:${sessionToken}`, { steamId, expiresAt: Date.now() + STEAM_SESSION_TTL })
+    await this.storage.put(`steam-session:${sessionToken}`, { steamId, createdAt: Date.now(), expiresAt: Date.now() + STEAM_SESSION_TTL })
     const headers = new Headers({
       Location: `${origin}/?steam_connected=1`,
       'Cache-Control': 'no-store',
     })
-    headers.append('Set-Cookie', `${STEAM_SESSION_COOKIE}=${sessionToken}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${url.protocol === 'https:' ? '; Secure' : ''}`)
+    headers.append('Set-Cookie', sessionCookie(STEAM_SESSION_COOKIE, sessionToken, maxAge, url.protocol === 'https:'))
+    headers.append('Set-Cookie', clearAuth)
     return new Response(null, { status: 302, headers })
   }
 
@@ -483,14 +523,44 @@ export class PotuzhnoState {
     return json(await this.resolveSteamProfile(session.steamId), 200, { 'Cache-Control': 'private, no-store' })
   }
 
+  async steamSession(request) {
+    if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
+    const session = await this.getSteamSession(request)
+    if (!session) return json({ connected: false, error: 'Сесія Steam завершилась. Увійди через Steam ще раз.' }, 401)
+    return json({
+      connected: true,
+      profile: await this.resolveSteamProfile(session.steamId),
+      expiresAt: session.expiresAt,
+    }, 200, { 'Cache-Control': 'private, no-store' })
+  }
+
+  async steamLogout(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    const url = new URL(request.url)
+    const requestOrigin = request.headers.get('Origin')
+    if (requestOrigin && requestOrigin !== url.origin) return json({ error: 'Некоректне походження запиту.' }, 403)
+    const token = readCookie(request, STEAM_SESSION_COOKIE)
+    if (/^[a-f0-9]{64}$/i.test(token)) await this.storage.delete(`steam-session:${token}`)
+    const headers = new Headers(JSON_HEADERS)
+    headers.append('Set-Cookie', sessionCookie(STEAM_SESSION_COOKIE, '', 0, url.protocol === 'https:'))
+    headers.append('Set-Cookie', sessionCookie(STEAM_AUTH_COOKIE, '', 0, url.protocol === 'https:'))
+    return new Response(JSON.stringify({ connected: false }), { status: 200, headers })
+  }
+
   async steamInventory(request) {
     if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
     const session = await this.getSteamSession(request)
     if (!session) return json({ error: 'Сесія Steam завершилась. Увійди через Steam ще раз.' }, 401)
     const steamId = session.steamId
+    const cursor = new URL(request.url).searchParams.get('cursor') || ''
+    if (cursor && !/^\d{1,24}$/.test(cursor)) return json({ error: 'Некоректна сторінка інвентарю Steam.' }, 400)
+    const inventoryUrl = new URL(`https://steamcommunity.com/inventory/${steamId}/730/2`)
+    inventoryUrl.searchParams.set('l', 'ukrainian')
+    inventoryUrl.searchParams.set('count', '500')
+    if (cursor) inventoryUrl.searchParams.set('start_assetid', cursor)
     let response
     try {
-      response = await timedFetch(`https://steamcommunity.com/inventory/${steamId}/730/2?l=ukrainian&count=500`)
+      response = await timedFetch(inventoryUrl.href)
     } catch {
       return json({ error: 'Steam тимчасово не віддає інвентар.' }, 502)
     }
@@ -519,7 +589,15 @@ export class PotuzhnoState {
         tradable: Boolean(item.tradable),
       }
     }).filter(Boolean)
-    return json({ items, profile: await this.resolveSteamProfile(steamId) }, 200, { 'Cache-Control': 'private, no-store' })
+    const hasMore = data.more_items === true || data.more_items === 1
+    const nextCursor = hasMore && /^\d{1,24}$/.test(String(data.last_assetid || '')) ? String(data.last_assetid) : null
+    return json({
+      items,
+      profile: await this.resolveSteamProfile(steamId),
+      page: cursor ? Number(cursor) : 0,
+      hasMore: Boolean(nextCursor),
+      nextCursor,
+    }, 200, { 'Cache-Control': 'private, no-store' })
   }
 
   async skinCatalog(request) {
