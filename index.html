@@ -29,13 +29,13 @@
 <link rel="preconnect" href="https://community.akamai.steamstatic.com">
 <link rel="preconnect" href="https://avatars.steamstatic.com">
 <!-- Tailwind зібраний локально: інтерфейс не залежить від зовнішнього CDN. -->
-<link rel="stylesheet" href="/css/tailwind.css?v=5.1.0">
+<link rel="stylesheet" href="/css/tailwind.css?v=5.2.0">
 <!-- Font Awesome -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-<link rel="stylesheet" href="/css/style.css?v=5.1.0">
+<link rel="stylesheet" href="/css/style.css?v=5.2.0">
 </head>
 <body class="min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -62,7 +62,7 @@
 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-3">
 <a href="#upgrader" onclick="showPage('upgrader');return false" class="flex items-center gap-3 shrink-0">
 <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-black font-extrabold text-2xl shadow-lg shadow-amber-500/20"><i class="fa-solid font-heading">P</i></div>
-<span class="font-heading text-2xl sm:text-3xl font-extrabold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-amber-200 to-yellow-500 uppercase leading-none">ПОТУЖНО DROP <small class="hidden sm:inline ml-1 align-middle text-[11px] tracking-widest text-amber-300">5.0</small></span>
+<span class="font-heading text-2xl sm:text-3xl font-extrabold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-amber-200 to-yellow-500 uppercase leading-none">ПОТУЖНО DROP <small class="hidden sm:inline ml-1 align-middle text-[11px] tracking-widest text-amber-300">5.2</small></span>
 </a>
 <nav class="desktop-nav hidden lg:flex items-center gap-0.5 flex-1 justify-center">
 <a href="#upgrader" data-nav="upgrader" class="nav-link" onclick="showPage('upgrader');return false"><i class="fa-solid fa-bolt text-xs"></i> Апгрейд</a>
@@ -485,10 +485,6 @@
 <!-- PROFILE -->
 <section data-page="profile" class="page-view profile-page hidden space-y-5">
 <div id="profileLootStrip" class="profile-loot-strip" aria-label="Предмети з інвентарю"></div>
-<div class="mode-intro mode-intro-profile flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-2">
-<div><span class="text-xs font-extrabold uppercase tracking-[.2em] text-amber-400">Профіль</span><h1 class="font-heading mt-1 text-4xl sm:text-5xl font-extrabold uppercase tracking-wider text-white">Твій профіль</h1></div>
-<p class="max-w-lg text-sm leading-6 text-gray-400">Інвентар, статистика, історія, експорт збереження.</p>
-</div>
 
 <article id="profileOverview" class="profile-command-center">
 <div class="profile-command-main">
@@ -508,14 +504,14 @@
 <div class="profile-social-actions"><button type="button" onclick="openPublicProfileSearch()" class="profile-find-button"><i class="fa-solid fa-magnifying-glass"></i> Знайти друга</button><button type="button" onclick="openOwnBattleRoom()" class="profile-room-button"><i class="fa-solid fa-dice"></i> Кімната 1v1</button><button id="profileHideBtn" type="button" onclick="unpublishPublicProfile()" class="profile-hide-button hidden"><i class="fa-solid fa-eye-slash"></i> Приховати</button><button type="button" onclick="copyPublicProfileLink()" class="profile-copy-button"><i class="fa-solid fa-link"></i> Моє посилання</button></div>
 </article>
 
-<article id="steamProfileCard" class="glass-panel hidden overflow-hidden rounded-2xl border border-cyan-400/30 bg-gradient-to-br from-cyan-500/[.09] via-[#111722] to-violet-500/[.08] p-5">
-<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-<div class="flex min-w-0 items-center gap-4"><div class="relative shrink-0"><img id="profileSteamAvatar" alt="Steam-аватар" class="h-16 w-16 rounded-2xl border-2 border-cyan-300/80 object-cover shadow-lg shadow-cyan-500/25" onerror="handleSteamAvatarError(this)"><span class="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-lg border border-[#17212b] bg-cyan-300 text-[11px] text-slate-950"><i class="fa-brands fa-steam"></i></span></div><div class="min-w-0"><p class="text-[10px] font-extrabold uppercase tracking-[.18em] text-cyan-300">Steam інтеграція</p><h3 id="profileSteamName" class="mt-1 truncate text-lg font-extrabold text-white">Steam</h3><p id="profileSteamId" class="mt-1 truncate font-mono text-[11px] text-gray-400">—</p><p id="profileSteamStatus" class="mt-1 text-xs text-cyan-100/75">Підключено</p></div></div>
-<div class="flex flex-wrap gap-2"><div class="rounded-xl border border-cyan-400/20 bg-black/20 px-3 py-2 text-center"><p id="profileSteamImportedCount" class="font-heading text-2xl font-extrabold text-cyan-200">0</p><p class="text-[9px] font-bold uppercase tracking-wider text-gray-500">імпортовано</p></div><button id="steamProfileSyncBtn" onclick="syncSteamInventory()" class="rounded-xl border border-cyan-300/35 bg-cyan-300/10 px-3 py-2 text-xs font-extrabold text-cyan-100 transition hover:bg-cyan-300 hover:text-slate-950"><i class="fa-solid fa-rotate mr-1"></i>Синхронізувати</button><button id="steamProfileReconnectBtn" onclick="startSteamLogin()" class="hidden rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-xs font-extrabold text-amber-100 transition hover:bg-amber-400 hover:text-slate-950"><i class="fa-solid fa-right-to-bracket mr-1"></i>Увійти знову</button><button id="steamDisconnectBtn" onclick="disconnectSteam()" class="rounded-xl border border-gray-700 bg-black/20 px-3 py-2 text-xs font-bold text-gray-300 hover:border-red-400/40 hover:bg-red-500/10 hover:text-red-200" title="Відключити Steam лише від цього сайту"><i class="fa-solid fa-link-slash mr-1"></i>Відключити</button><a id="profileSteamLink" href="#" target="_blank" rel="noopener noreferrer" class="rounded-xl border border-gray-700 bg-black/20 px-3 py-2 text-xs font-bold text-gray-300 hover:bg-gray-800"><i class="fa-solid fa-arrow-up-right-from-square mr-1"></i>Steam</a></div>
-</div>
-<p class="mt-4 rounded-xl border border-cyan-400/15 bg-black/15 p-3 text-[11px] leading-5 text-gray-400"><i class="fa-solid fa-shield-halved mr-1 text-cyan-300"></i>Профіль та предмети читаються публічно. Це віртуальні копії: сайт не бачить пароль, Steam Guard, API-ключ і не може надсилати Trade Offers.</p>
+<article id="steamProfileCard" class="profile-steam-console hidden">
+<div class="profile-steam-console-copy"><span class="profile-steam-console-icon"><i class="fa-brands fa-steam"></i></span><div class="min-w-0"><p>STEAM ПІДКЛЮЧЕНО</p><h3 id="profileSteamName">Steam</h3><span id="profileSteamId" class="sr-only">—</span><small id="profileSteamStatus">Публічний профіль та інвентар доступні для синхронізації</small></div></div>
+<div class="profile-steam-console-actions"><div class="profile-steam-count"><strong id="profileSteamImportedCount">0</strong><span>Steam-копій</span></div><button id="steamProfileSyncBtn" onclick="syncSteamInventory()"><i class="fa-solid fa-rotate"></i><span>Синхронізувати</span></button><button id="steamProfileReconnectBtn" onclick="startSteamLogin()" class="hidden"><i class="fa-solid fa-right-to-bracket"></i><span>Увійти знову</span></button><a id="profileSteamLink" href="#" target="_blank" rel="noopener noreferrer" title="Відкрити профіль у Steam"><i class="fa-solid fa-arrow-up-right-from-square"></i></a><button id="steamDisconnectBtn" onclick="disconnectSteam()" title="Відключити Steam лише від цього сайту"><i class="fa-solid fa-link-slash"></i></button></div>
 </article>
 
+<details class="profile-data-drawer">
+<summary><span><i class="fa-solid fa-chart-simple"></i> Розширена статистика</span><small>досягнення, рекорди й усі показники</small><i class="fa-solid fa-chevron-down"></i></summary>
+<div class="profile-drawer-content">
 <article id="recentAchCard" class="glass-panel rounded-2xl border border-amber-500/20 p-5 hidden">
 <div class="flex items-center justify-between mb-3">
 <div><p class="text-xs font-bold uppercase tracking-widest text-gray-500">Останні досягнення</p><h3 class="mt-1 text-xl font-extrabold text-white"><i class="fa-solid fa-trophy mr-2 text-amber-400"></i>Твої перемоги</h3></div>
@@ -541,6 +537,8 @@
 <div class="alltime-card"><div class="alltime-label">Кредитних роллів</div><div id="atCredits" class="alltime-value text-amber-300">0</div></div>
 </div>
 </article>
+</div>
+</details>
 
 <article id="profileInventoryPanel" class="profile-inventory-panel">
 <div class="profile-inventory-heading">
@@ -549,7 +547,6 @@
 <h3><i class="fa-solid fa-boxes-stacked"></i>Мої скіни</h3>
 </div>
 <div class="profile-inventory-actions">
-<button onclick="openInventoryModalFromProfile()" class="px-4 py-2 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20 text-xs font-bold transition"><i class="fa-solid fa-up-right-and-down-left-from-center mr-1"></i>Модалкою</button>
 <button onclick="sellAllDuplicates()" class="px-4 py-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20 text-xs font-bold transition"><i class="fa-solid fa-sack-dollar mr-1"></i>Продати дублі</button>
 </div>
 </div>
@@ -578,6 +575,9 @@
 </div>
 </article>
 
+<details class="profile-data-drawer profile-utilities">
+<summary><span><i class="fa-solid fa-sliders"></i> Дані й налаштування</span><small>резервна копія, Fair play, історія та тема</small><i class="fa-solid fa-chevron-down"></i></summary>
+<div class="profile-drawer-content">
 <article class="glass-panel rounded-2xl border border-cyan-500/25 p-5">
 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
 <div>
@@ -655,6 +655,8 @@
 <button onclick="resetDemoGame()" class="px-5 py-3 rounded-xl bg-red-500/15 border border-red-500/40 text-red-200 hover:bg-red-500 hover:text-white font-extrabold text-sm transition"><i class="fa-solid fa-rotate-left mr-2"></i>Почати спочатку</button>
 </div>
 </article>
+</div>
+</details>
 </section>
 
 <!-- ABOUT -->
@@ -828,6 +830,6 @@
 
 <div id="toastContainer" class="fixed bottom-6 right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm"></div>
 
-<script src="/js/app.js?v=5.1.0" defer></script>
+<script src="/js/app.js?v=5.2.0" defer></script>
 </body>
 </html>
