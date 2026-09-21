@@ -291,6 +291,7 @@ let account = null;
 let pendingWager = null;
 let fairState = null;
 let lastCaseFairAudit = [];
+let lastDropContext = 'case';
 let steamSyncPromise = null;
 let steamConnectionState = 'disconnected';
 let steamConnectionMessage = '';
@@ -751,6 +752,16 @@ function handleSteamAvatarError(image) {
   image.classList.add('fallback-skin');
 }
 
+function setSteamAvatarSource(image, steamId, avatar, name = 'Steam') {
+  if (!image) return;
+  image.dataset.steamName = name || 'Steam';
+  // The same-origin endpoint avoids client-side Steam CDN/CSP/hotlink failures.
+  // It validates the active HttpOnly Steam session before proxying an avatar.
+  image.src = /^\d{17}$/.test(String(steamId || '')) && cleanImageUrl(avatar)
+    ? '/api/steam/avatar'
+    : createSteamAvatarFallback(image.dataset.steamName);
+}
+
 function normalizeSteamProfile(profile, steamId = '') {
   const sid = /^\d{17}$/.test(String(profile?.steamId || steamId || '')) ? String(profile?.steamId || steamId) : '';
   if (!sid) return null;
@@ -949,8 +960,7 @@ function updateAccountUI() {
   const avatarLarge = document.getElementById('profileAvatarLarge');
   if (avatarLarge) {
     const avatarName = currentUser?.name || account?.nick || 'Гравець';
-    avatarLarge.dataset.steamName = avatarName;
-    avatarLarge.src = currentUser?.avatar || createSteamAvatarFallback(avatarName);
+    setSteamAvatarSource(avatarLarge, currentUser?.steamId, currentUser?.avatar, avatarName);
   }
   const connectionText = document.getElementById('profileConnectionText');
   if (connectionText) connectionText.textContent = currentUser?.steamId ? 'STEAM ПРОФІЛЬ ПІДКЛЮЧЕНО' : 'ПРОФІЛЬ ГРИ';
@@ -995,8 +1005,7 @@ function renderSteamProfileCard() {
 
   const avatar = document.getElementById('profileSteamAvatar');
   if (avatar) {
-    avatar.dataset.steamName = profile.name;
-    avatar.src = profile.avatar || createSteamAvatarFallback(profile.name);
+    setSteamAvatarSource(avatar, profile.steamId, profile.avatar, profile.name);
   }
   const name = document.getElementById('profileSteamName');
   if (name) name.textContent = profile.name;
@@ -1772,8 +1781,7 @@ function applyLoggedInUI() {
     ab.title = `${currentUser.name || 'Steam'} · Steam підключено`;
     const avatar = document.getElementById('userAvatarImg');
     if (avatar) {
-      avatar.dataset.steamName = currentUser.name || 'Steam';
-      avatar.src = currentUser.avatar || createSteamAvatarFallback(currentUser.name);
+      setSteamAvatarSource(avatar, currentUser.steamId, currentUser.avatar, currentUser.name || 'Steam');
     }
     const dot = document.getElementById('steamConnectionDot');
     if (dot) {
@@ -4662,22 +4670,37 @@ async function startCaseReel() {
   }, 4500);
 }
 
-function displayCaseDropResult(items, isFree, caseName) {
+function displayCaseDropResult(items, isFree, caseName, resultKind = 'case') {
   closeModal('caseReelModal');
+  const isCaseResult = resultKind === 'case';
+  lastDropContext = isCaseResult ? 'case' : 'contract';
 
   const resHeader = document.getElementById('caseResultHeader');
   if (resHeader) resHeader.textContent = isFree ? 'Безкоштовний кейс' : (caseName || 'Потужний кейс');
+  const resultTitle = document.getElementById('caseResultTitle');
+  if (resultTitle) resultTitle.textContent = isCaseResult ? 'ВІТАЄМО З ДРОПОМ!' : 'КОНТРАКТ ВИКОНАНО!';
+  const repeatButton = document.getElementById('caseRepeatBtn');
+  const repeatIcon = document.getElementById('caseRepeatIcon');
+  const repeatLabel = document.getElementById('caseRepeatLabel');
+  if (repeatButton) repeatButton.title = isCaseResult ? 'Відкрити кейс ще раз' : 'Повернутися до контракту';
+  if (repeatIcon) repeatIcon.className = isCaseResult ? 'fa-solid fa-rotate-right' : 'fa-solid fa-boxes-packing';
+  if (repeatLabel) repeatLabel.textContent = isCaseResult ? 'Ще раз' : 'До контракту';
 
   const totalVal = items.reduce((s, it) => s + (it.price || 0), 0);
   const totalValEl = document.getElementById('caseResultTotalVal');
   if (totalValEl) totalValEl.textContent = `${formatCredits(totalVal)}`;
   const proof = document.getElementById('caseResultFairProof');
-  const verified = lastCaseFairAudit.length === items.length && items.length > 0;
+  const verified = isCaseResult && lastCaseFairAudit.length === items.length && items.length > 0;
   if (proof) {
-    proof.innerHTML = verified
-      ? `<i class="fa-solid fa-shield-halved mr-1 text-emerald-300"></i>Перевірюваний seed · ${escapeHtml(lastCaseFairAudit[0].day)} · hash ${escapeHtml(String(lastCaseFairAudit[0].serverSeedHash).slice(0, 10))}…`
-      : '<i class="fa-solid fa-laptop-code mr-1 text-amber-300"></i>Локальний режим: серверна перевірка недоступна';
-    proof.className = `mb-4 rounded-xl border px-3 py-2 text-[11px] font-bold ${verified ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100' : 'border-amber-500/30 bg-amber-500/10 text-amber-100'}`;
+    if (!isCaseResult) {
+      proof.innerHTML = '';
+      proof.className = 'hidden';
+    } else {
+      proof.innerHTML = verified
+        ? `<i class="fa-solid fa-shield-halved mr-1 text-emerald-300"></i>Перевірюваний seed · ${escapeHtml(lastCaseFairAudit[0].day)} · hash ${escapeHtml(String(lastCaseFairAudit[0].serverSeedHash).slice(0, 10))}…`
+        : '<i class="fa-solid fa-laptop-code mr-1 text-amber-300"></i>Локальний режим: серверна перевірка недоступна';
+      proof.className = `mb-4 rounded-xl border px-3 py-2 text-[11px] font-bold ${verified ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100' : 'border-amber-500/30 bg-amber-500/10 text-amber-100'}`;
+    }
   }
 
   const grid = document.getElementById('caseResultItemsGrid');
@@ -4774,9 +4797,17 @@ function sendCaseDropToUpgrader() {
 }
 
 function repeatCaseOpen() {
+  if (lastDropContext !== 'case') return repeatDropAction();
   closeModal('caseModal');
   openPowerCase(lastOpenedCaseId || 'budget_covert');
   setTimeout(() => startCaseReel(), 150);
+}
+
+function repeatDropAction() {
+  if (lastDropContext === 'case') return repeatCaseOpen();
+  closeModal('caseModal');
+  showPage('contract');
+  showToast('Контракт завершено. Обери 5 нових предметів для наступного.', 'info');
 }
 
 function showCaseDetails(caseType) {
@@ -5824,7 +5855,7 @@ function executeContract() {
   soundWin();
 
   lastWonCaseItems = [item];
-  displayCaseDropResult([item], false, 'Контракт обміну');
+  displayCaseDropResult([item], false, 'Контракт обміну', 'contract');
 }
 
 /* ===== LIVE FEED & SIMULATION ===== */
@@ -6355,6 +6386,7 @@ window.openCurrentCaseFromDetails = openCurrentCaseFromDetails;
 window.quickSellCaseResult = quickSellCaseResult;
 window.sendCaseDropToUpgrader = sendCaseDropToUpgrader;
 window.repeatCaseOpen = repeatCaseOpen;
+window.repeatDropAction = repeatDropAction;
 window.pickBattlePlayerItem = pickBattlePlayerItem;
 window.rerollBattleBot = rerollBattleBot;
 window.findBattleOpponent = findBattleOpponent;

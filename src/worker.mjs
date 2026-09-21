@@ -213,6 +213,7 @@ export class PotuzhnoState {
       if (path === '/api/steam/session') return await this.steamSession(request)
       if (path === '/api/steam/logout') return await this.steamLogout(request)
       if (path === '/api/steam/profile') return await this.steamProfile(request)
+      if (path === '/api/steam/avatar') return await this.steamAvatar(request)
       if (path === '/api/steam/inventory') return await this.steamInventory(request)
       if (path === '/api/catalog/skins') return await this.skinCatalog(request)
       return json({ error: 'Маршрут API не знайдено.' }, 404)
@@ -524,6 +525,30 @@ export class PotuzhnoState {
     const session = await this.getSteamSession(request)
     if (!session) return json({ error: 'Сесія Steam завершилась. Увійди через Steam ще раз.' }, 401)
     return json(await this.resolveSteamProfile(session.steamId), 200, { 'Cache-Control': 'private, no-store' })
+  }
+
+  async steamAvatar(request) {
+    if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
+    const session = await this.getSteamSession(request)
+    if (!session) return json({ error: 'Сесія Steam завершилась. Увійди через Steam ще раз.' }, 401)
+    const profile = await this.resolveSteamProfile(session.steamId)
+    const avatar = cleanAvatar(profile?.avatar)
+    if (!avatar) return json({ error: 'Steam не повернув аватар для цього профілю.' }, 404)
+    try {
+      const response = await timedFetch(avatar, { headers: { Accept: 'image/avif,image/webp,image/*,*/*;q=0.8' } })
+      const contentType = response.headers.get('Content-Type') || ''
+      if (!response.ok || !/^image\//i.test(contentType) || !response.body) throw new Error('Invalid Steam avatar response')
+      return new Response(response.body, {
+        status: 200,
+        headers: {
+          'Content-Type': contentType,
+          'Cache-Control': 'private, max-age=300',
+          'X-Content-Type-Options': 'nosniff',
+        },
+      })
+    } catch {
+      return json({ error: 'Steam тимчасово не віддає аватар.' }, 502)
+    }
   }
 
   async steamSession(request) {

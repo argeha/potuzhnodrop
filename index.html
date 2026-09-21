@@ -777,7 +777,7 @@
       <i class="fa-solid fa-box-open text-2xl"></i>
     </div>
     <p class="text-xs font-extrabold uppercase tracking-[.22em] text-amber-400" id="caseResultHeader">Потужний кейс</p>
-    <h3 class="font-heading mt-0.5 text-3xl sm:text-4xl font-extrabold uppercase text-white">ВІТАЄМО З ДРОПОМ!</h3>
+    <h3 id="caseResultTitle" class="font-heading mt-0.5 text-3xl sm:text-4xl font-extrabold uppercase text-white">ВІТАЄМО З ДРОПОМ!</h3>
     
     <!-- Dropped items list (single or multi-drop) -->
     <div id="caseResultItemsGrid" class="my-4 overflow-y-auto pr-1 max-h-[46vh] space-y-3">
@@ -799,8 +799,8 @@
       <button onclick="sendCaseDropToUpgrader()" class="py-3 px-2 bg-gradient-to-r from-amber-500 to-yellow-500 hover:brightness-110 text-black font-extrabold rounded-xl transition text-xs uppercase tracking-wider flex items-center justify-center gap-1 shadow-lg shadow-amber-500/20" title="Відправити скін в апгрейдер">
         <i class="fa-solid fa-bolt"></i> Апгрейд
       </button>
-      <button onclick="repeatCaseOpen()" class="py-3 px-2 bg-blue-600 hover:bg-blue-500 text-white font-extrabold rounded-xl transition text-xs uppercase tracking-wider flex items-center justify-center gap-1 shadow-lg shadow-blue-500/20" title="Відкрити ще раз">
-        <i class="fa-solid fa-rotate-right"></i> Ще раз
+      <button id="caseRepeatBtn" onclick="repeatDropAction()" class="py-3 px-2 bg-blue-600 hover:bg-blue-500 text-white font-extrabold rounded-xl transition text-xs uppercase tracking-wider flex items-center justify-center gap-1 shadow-lg shadow-blue-500/20" title="Відкрити ще раз">
+        <i id="caseRepeatIcon" class="fa-solid fa-rotate-right"></i> <span id="caseRepeatLabel">Ще раз</span>
       </button>
       <button onclick="closeModal('caseModal')" class="py-3 px-2 bg-gray-700 hover:bg-gray-600 text-white font-extrabold rounded-xl transition text-xs uppercase tracking-wider flex items-center justify-center gap-1" title="Залишити в інвентарі">
         <i class="fa-solid fa-check"></i> Забрати
@@ -811,6 +811,6 @@
 
 <div id="toastContainer" class="fixed bottom-6 right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm"></div>
 
-<script src="/js/app.js?v=4.2.0" defer></script>
+<script src="/js/app.js?v=4.2.1" defer></script>
 </body>
 </html>
