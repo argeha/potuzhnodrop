@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 4.1 ============ */
+/* ============ ПОТУЖНО DROP 5.0 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -29,8 +29,22 @@ function showPage(id) {
   currentPage = id;
 
   document.querySelectorAll('[data-page]').forEach(el => el.classList.toggle('hidden', el.dataset.page !== id));
-  document.querySelectorAll('[data-nav]').forEach(el => el.classList.toggle('active', el.dataset.nav === id));
-  document.querySelectorAll('[data-mobile-nav]').forEach(el => el.classList.toggle('active', el.dataset.mobileNav === id));
+  document.querySelectorAll('[data-nav]').forEach(el => {
+    const active = el.dataset.nav === id;
+    el.classList.toggle('active', active);
+    el.setAttribute('aria-current', active ? 'page' : 'false');
+  });
+  document.querySelectorAll('[data-mobile-nav]').forEach(el => {
+    const active = el.dataset.mobileNav === id;
+    el.classList.toggle('active', active);
+    el.setAttribute('aria-current', active ? 'page' : 'false');
+  });
+
+  const pageTitles = {
+    upgrader: 'Апгрейд', case: 'Кейси', battle: 'Бій', royale: 'Battle Royale',
+    contract: 'Контракт', tasks: 'Завдання', profile: 'Профіль', about: 'Про гру'
+  };
+  document.title = `${pageTitles[id] || 'Гра'} · ПОТУЖНО DROP`;
 
   localStorage.setItem(STORAGE.page, id);
   if (location.hash.replace('#', '') !== id) {
@@ -332,7 +346,7 @@ const CHANCE_POWER = 1.0;
 const CHANCE_MAX = 80;
 const CHANCE_MIN = 0.50;
 
-/* ===== KEY-DROP EDITION: КАТАЛОГ КЕЙСІВ ===== */
+/* ===== КАТАЛОГ КЕЙСІВ ===== */
 const CASE_TYPES = {
   // HOT & LIMITED
   dragon_lair: {
@@ -505,7 +519,7 @@ const CASE_TYPES = {
   legendary: { id: 'legendary', aliasTo: 'dragon_lair', cost: 5000, name: 'Легендарний кейс', category: 'hot', theme: 'red' }
 };
 
-/* ===== ВБУДОВАНІ SVG-КЕЙСИ KEY-DROP СТИЛЮ ===== */
+/* ===== ВБУДОВАНІ SVG-КЕЙСИ ===== */
 function createCaseSVG(theme) {
   const themes = {
     gray:    { c1: '#4b5563', c2: '#1f2937', accent: '#9ca3af' },
@@ -972,6 +986,10 @@ function saveAccountNick() {
 function updateAccountUI() {
   const n = document.getElementById('profileName');
   if (n) n.textContent = account?.nick || 'Гість';
+  const headerName = document.getElementById('headerSteamName');
+  if (headerName && currentUser?.steamId) {
+    headerName.textContent = cleanText(currentUser.name || account?.nick || 'Steam', 20) || 'Steam';
+  }
   const avatarLarge = document.getElementById('profileAvatarLarge');
   if (avatarLarge) {
     const avatarName = currentUser?.name || account?.nick || 'Гравець';
@@ -1999,6 +2017,10 @@ function applyLoggedInUI() {
     if (avatar) {
       setSteamAvatarSource(avatar, currentUser.steamId, currentUser.avatar, currentUser.name || 'Steam');
     }
+    const headerName = document.getElementById('headerSteamName');
+    const headerLevel = document.getElementById('headerSteamLevel');
+    if (headerName) headerName.textContent = cleanText(currentUser.name || 'Steam', 20) || 'Steam';
+    if (headerLevel) headerLevel.textContent = `LVL ${getPlayerLevel()}`;
     const dot = document.getElementById('steamConnectionDot');
     if (dot) {
       const isConnected = steamConnectionState === 'connected';
@@ -2018,6 +2040,10 @@ function applyLoggedInUI() {
     sb?.classList.remove('hidden');
     if (sb) sb.style.removeProperty('display');
     ab?.classList.add('hidden');
+    const headerName = document.getElementById('headerSteamName');
+    const headerLevel = document.getElementById('headerSteamLevel');
+    if (headerName) headerName.textContent = 'Steam';
+    if (headerLevel) headerLevel.textContent = 'Не підключено';
     const dot = document.getElementById('steamConnectionDot');
     if (dot) dot.title = '';
   }
@@ -2106,6 +2132,8 @@ function renderProfileProgress() {
   if (n) n.textContent = name;
   const pl = document.getElementById('profileLevel');
   if (pl) pl.textContent = `LVL ${level}`;
+  const headerLevel = document.getElementById('headerSteamLevel');
+  if (headerLevel && currentUser?.steamId) headerLevel.textContent = `LVL ${level}`;
   const xt = document.getElementById('xpText');
   if (xt) xt.textContent = `${p.current.toLocaleString('uk-UA')} / ${p.total} XP`;
   const xb = document.getElementById('xpBar');
@@ -2725,7 +2753,7 @@ function copyLatestResult() {
     showToast('Спочатку зроби ролл', 'warn');
     return;
   }
-  const msg = `ПОТУЖНО DROP 4.1 · ${r.win ? 'Виграш' : 'Невдача'}: ${r.targetName} · ${r.chance ? `шанс ${Number(r.chance).toFixed(2)}% · ` : ''}лише віртуальна гра.`;
+  const msg = `ПОТУЖНО DROP 5.0 · ${r.win ? 'Виграш' : 'Невдача'}: ${r.targetName} · ${r.chance ? `шанс ${Number(r.chance).toFixed(2)}% · ` : ''}лише віртуальна гра.`;
   const done = () => showToast('Результат скопійовано', 'success');
   if (navigator.clipboard?.writeText) {
     navigator.clipboard.writeText(msg).then(done).catch(() => showToast('Не вдалося', 'warn'));
@@ -4304,7 +4332,7 @@ function executeUpgrade() {
   requestAnimationFrame(anim);
 }
 
-/* ===== KEY-DROP SHANKS & POOLS ===== */
+/* ===== ПУЛИ ТА ШАНСИ КЕЙСІВ ===== */
 let currentCaseCategory = 'all';
 let currentActiveCaseId = 'budget_covert';
 let caseMultiplier = 1;
@@ -4505,7 +4533,7 @@ function pickCaseSkin(poolType = 'regular', caseType = 'budget_covert', fixedRol
 
 function setCaseCategory(cat) {
   currentCaseCategory = cat;
-  document.querySelectorAll('#caseCategoryBar .kd-cat-pill').forEach(btn => {
+  document.querySelectorAll('#caseCategoryBar .case-cat-pill').forEach(btn => {
     btn.classList.toggle('active', btn.getAttribute('onclick')?.includes(`'${cat}'`));
   });
   renderCaseCatalog();
@@ -4532,13 +4560,13 @@ function renderCaseCatalog() {
     const metrics = getCaseMetrics(id);
     const riskClass = metrics.breakEvenChance >= 15 ? 'is-balanced' : metrics.breakEvenChance >= 5 ? 'is-risky' : 'is-high-risk';
     return `
-      <div class="kd-case-card tier-${c.category || 'hot'} group">
-        <span class="kd-case-badge ${c.badgeClass || 'badge-hot'}">${c.badge || 'HOT'}</span>
+      <div class="case-catalog-card tier-${c.category || 'hot'} group">
+        <span class="case-catalog-badge ${c.badgeClass || 'badge-hot'}">${c.badge || 'HOT'}</span>
         
         <!-- Top Preview Strip -->
-        <div class="kd-case-top-strip">
+        <div class="case-catalog-preview-strip">
           ${previews.map(s => `
-            <div class="kd-case-top-item" title="${escapeHtml(s.name)} · ${formatCredits(s.price)}">
+            <div class="case-catalog-preview-item" title="${escapeHtml(s.name)} · ${formatCredits(s.price)}">
               <img src="${escapeHtml(s.img || '')}" alt="" onerror="handleSkinImageError(this)">
             </div>
           `).join('')}
@@ -4555,7 +4583,7 @@ function renderCaseCatalog() {
             <i class="fa-solid fa-coins text-amber-400 text-xs"></i>
             <span class="font-extrabold text-sm text-amber-300">${formatCredits(c.cost)}</span>
           </div>
-          <div class="kd-case-metrics" aria-label="Показники кейсу">
+          <div class="case-catalog-metrics" aria-label="Показники кейсу">
             <span title="Кількість предметів у кейсі"><i class="fa-solid fa-layer-group"></i>${metrics.count} скінів</span>
             <span class="${riskClass}" title="Шанс отримати предмет не дешевше ціни кейсу"><i class="fa-solid fa-chart-line"></i>Окуп ${formatCaseChance(metrics.breakEvenChance)}</span>
           </div>
@@ -4927,7 +4955,7 @@ function displayCaseDropResult(items, isFree, caseName, resultKind = 'case') {
       const wear = getWear(it);
       const isLegendary = (it.price || 0) >= 20000;
       return `
-        <div class="kd-result-card ${isLegendary ? 'is-legendary' : ''}">
+        <div class="case-result-card ${isLegendary ? 'is-legendary' : ''}">
           <div class="relative w-full flex items-center justify-center">
             <img src="${escapeHtml(it.img || '')}" alt="" class="h-28 sm:h-36 object-contain my-2" onerror="handleSkinImageError(this)">
           </div>
@@ -5081,7 +5109,7 @@ function openCurrentCaseFromDetails() {
 }
 
 function renderCaseTopDrops() {
-  // Top drops are rendered directly in each Key-Drop case card
+  // Preview drops are rendered directly in each catalogue card.
 }
 
 /* ===== 1v1 BATTLE ===== */
