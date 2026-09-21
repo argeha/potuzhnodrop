@@ -1531,7 +1531,7 @@ function applyPortableSave(data) {
 
 async function createCloudProfile() {
   if (isCloudProfile(account?.cloud)) return;
-  const cloud = { id: makeUuid(), recoveryCode: makeRandomSecret(32), updatedAt: 0 };
+  const cloud = { id: makeUuid(), recoveryCode: makeRandomSecret(32), updatedAt: 0, revision: 0 };
   setCloudBusy(true);
   try {
     const data = await requestJson('/api/profile/sync', {
@@ -1539,7 +1539,7 @@ async function createCloudProfile() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'create', accountId: cloud.id, recoveryCode: cloud.recoveryCode, payload: buildCloudSave() })
     });
-    account.cloud = { ...cloud, updatedAt: Number(data.updatedAt) || Date.now() };
+    account.cloud = { ...cloud, updatedAt: Number(data.updatedAt) || Date.now(), revision: Number(data.revision) || 1 };
     saveState();
     renderCloudSyncUI();
     openCloudRecoveryModal();
@@ -1558,9 +1558,10 @@ async function saveCloudProfile() {
     const data = await requestJson('/api/profile/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'save', accountId: account.cloud.id, recoveryCode: account.cloud.recoveryCode, payload: buildCloudSave() })
+      body: JSON.stringify({ action: 'save', accountId: account.cloud.id, recoveryCode: account.cloud.recoveryCode, revision: Number(account.cloud.revision) || 1, payload: buildCloudSave() })
     });
     account.cloud.updatedAt = Number(data.updatedAt) || Date.now();
+    account.cloud.revision = Number(data.revision) || (Number(account.cloud.revision) || 1) + 1;
     saveState();
     renderCloudSyncUI();
     showToast('Прогрес збережено на сервері.', 'success');
@@ -1582,6 +1583,7 @@ async function loadCloudProfile() {
     });
     applyPortableSave(data.payload);
     account.cloud.updatedAt = Number(data.updatedAt) || account.cloud.updatedAt;
+    account.cloud.revision = Number(data.revision) || 1;
     saveState();
     renderCloudSyncUI();
     showToast('Прогрес відновлено із серверного профілю.', 'success');
@@ -1625,7 +1627,7 @@ async function connectCloudProfile() {
     return;
   }
   const previousCloud = account?.cloud;
-  account.cloud = { id, recoveryCode, updatedAt: 0 };
+  account.cloud = { id, recoveryCode, updatedAt: 0, revision: 0 };
   const loaded = await loadCloudProfile();
   if (loaded) {
     closeModal('cloudConnectModal');

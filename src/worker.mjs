@@ -430,20 +430,31 @@ export class PotuzhnoState {
       if (!isPayload(body.payload)) return json({ error: 'Некоректне збереження.' }, 400)
       const result = await this.storage.transaction(async transaction => {
         if (await transaction.get(key)) return null
-        const data = { version: 1, recoveryHash, payload: body.payload, updatedAt: Date.now() }
+        const data = { version: 2, revision: 1, recoveryHash, payload: body.payload, updatedAt: Date.now() }
         await transaction.put(key, data)
         return data
       })
-      return result ? json({ updatedAt: result.updatedAt }) : json({ error: 'Профіль уже існує.' }, 409)
+      return result ? json({ updatedAt: result.updatedAt, revision: result.revision }) : json({ error: 'Профіль уже існує.' }, 409)
     }
 
     if (!entry || !equalHash(entry.recoveryHash, recoveryHash)) return json({ error: 'Профіль не знайдено або код відновлення неправильний.' }, 403)
-    if (action === 'load') return json({ payload: entry.payload, updatedAt: entry.updatedAt })
+    const revision = Math.max(1, Math.floor(Number(entry.revision) || 1))
+    if (action === 'load') return json({ payload: entry.payload, updatedAt: entry.updatedAt, revision })
     if (action !== 'save' || !isPayload(body.payload)) return json({ error: 'Некоректне збереження.' }, 400)
+    const expectedRevision = Number(body?.revision)
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1) return json({ error: 'Профіль застарів. Онови його перед збереженням.' }, 409)
 
-    const updatedAt = Date.now()
-    await this.storage.put(key, { ...entry, payload: body.payload, updatedAt })
-    return json({ updatedAt })
+    const saved = await this.storage.transaction(async transaction => {
+      const current = await transaction.get(key)
+      const currentRevision = Math.max(1, Math.floor(Number(current?.revision) || 1))
+      if (!current || !equalHash(current.recoveryHash, recoveryHash)) return { error: 'Профіль не знайдено або код відновлення неправильний.', status: 403 }
+      if (currentRevision !== expectedRevision) return { error: 'Профіль було змінено в іншій вкладці або на іншому пристрої. Спочатку завантаж актуальну версію.', status: 409, revision: currentRevision }
+      const updatedAt = Date.now()
+      const next = { ...current, version: 2, revision: currentRevision + 1, payload: body.payload, updatedAt }
+      await transaction.put(key, next)
+      return { updatedAt, revision: next.revision }
+    })
+    return saved.error ? json({ error: saved.error, revision: saved.revision }, saved.status) : json(saved)
   }
 
   async publicProfile(request) {
