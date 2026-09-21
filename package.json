@@ -8,11 +8,14 @@
     "node": ">=22.12 <25"
   },
   "scripts": {
-    "check": "node --check js/app.js && node --check src/worker.mjs && npx wrangler deploy --dry-run",
+    "build:styles": "tailwindcss -c tailwind.config.cjs -i css/tailwind.input.css -o css/tailwind.css --minify",
+    "build:assets": "node scripts/build-assets.mjs",
+    "check": "node --check js/app.js && node --check src/worker.mjs && npm run build:styles && npm run build:assets && npx wrangler deploy --dry-run",
     "build": "npm run check",
-    "dev": "wrangler dev"
+    "dev": "npm run build:styles && npm run build:assets && wrangler dev"
   },
   "devDependencies": {
+    "tailwindcss": "^3.4.17",
     "wrangler": "^4.135.0"
   }
 }

@@ -542,20 +542,20 @@ function createCaseSVG(theme) {
 }
 
 const CASE_ARTWORK = Object.freeze({
-  dragon_lair:      'assets/cases/dragon-lair-v3.png',
-  covert_ops:       'assets/cases/covert-ops-v3.png',
-  beast_mode:       'assets/cases/beast-mode-v3.png',
-  butterfly_fever:  'assets/cases/butterfly-fever-v3.png',
-  karambit_rush:    'assets/cases/karambit-rush-v3.png',
-  knife_club:       'assets/cases/knife-club-v3.png',
-  sport_gloves:     'assets/cases/sport-gloves-v3.png',
-  moto_special:     'assets/cases/moto-special-v3.png',
-  awp_king:         'assets/cases/awp-king-v3.png',
-  ak47_master:      'assets/cases/ak47-master-v3.png',
-  m4_storm:         'assets/cases/m4-storm-v3.png',
-  budget_covert:    'assets/cases/budget-covert-v3.png',
-  lucky_strike:     'assets/cases/lucky-strike-v3.png',
-  farm_rush:        'assets/cases/farm-rush-v3.png'
+  dragon_lair:      '/assets/cases/dragon-lair-v3.png',
+  covert_ops:       '/assets/cases/covert-ops-v3.png',
+  beast_mode:       '/assets/cases/beast-mode-v3.png',
+  butterfly_fever:  '/assets/cases/butterfly-fever-v3.png',
+  karambit_rush:    '/assets/cases/karambit-rush-v3.png',
+  knife_club:       '/assets/cases/knife-club-v3.png',
+  sport_gloves:     '/assets/cases/sport-gloves-v3.png',
+  moto_special:     '/assets/cases/moto-special-v3.png',
+  awp_king:         '/assets/cases/awp-king-v3.png',
+  ak47_master:      '/assets/cases/ak47-master-v3.png',
+  m4_storm:         '/assets/cases/m4-storm-v3.png',
+  budget_covert:    '/assets/cases/budget-covert-v3.png',
+  lucky_strike:     '/assets/cases/lucky-strike-v3.png',
+  farm_rush:        '/assets/cases/farm-rush-v3.png'
 });
 
 function createCaseArtwork(caseId, caseName, theme) {

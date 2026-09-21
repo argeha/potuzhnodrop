@@ -4,7 +4,7 @@
 
 ## Cloudflare Workers
 
-Проєкт працює у вже створеному Cloudflare Worker `potuzhnodrop`. Статичний сайт, API, профілі, перевірювані ролли та чесна 1v1-черга розгортаються одним Worker'ом; стан зберігається у SQLite-backed Durable Object, доступному на безкоштовному плані Cloudflare.
+Проєкт працює у вже створеному Cloudflare Worker `potuzhnodrop`. Статичний сайт, API, профілі, перевірювані ролли та чесна 1v1-черга розгортаються одним Worker'ом; стан зберігається у SQLite-backed Durable Object, доступному на безкоштовному плані Cloudflare. Перед deploy `npm run build` збирає локальний Tailwind і створює чисту папку `dist/` лише з публічними файлами.
 
 Для локальної перевірки:
 
@@ -14,7 +14,7 @@ npm run build
 npm run dev
 ```
 
-Git-збірка Cloudflare має виконувати `npm run build`; після цього Wrangler зчитає `wrangler.jsonc` і розгорне Worker у наявний сервіс.
+Git-збірка Cloudflare має виконувати `npm run build`; після цього Wrangler зчитає `wrangler.jsonc` і розгорне Worker з `dist/` у наявний сервіс.
 
 ## Steam 4.2
 

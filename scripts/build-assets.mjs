@@ -1,0 +1,26 @@
+import { copyFile, cp, mkdir, rm } from 'node:fs/promises'
+import { basename, dirname, join, resolve } from 'node:path'
+
+const projectRoot = resolve(process.cwd())
+const outputDir = resolve(projectRoot, 'dist')
+
+// Guard the generated folder before clearing it. Source files are never targets.
+if (dirname(outputDir) !== projectRoot || basename(outputDir) !== 'dist') {
+  throw new Error('Refusing to clear an unexpected asset output directory.')
+}
+
+await rm(outputDir, { recursive: true, force: true })
+await mkdir(join(outputDir, 'css'), { recursive: true })
+await mkdir(join(outputDir, 'js'), { recursive: true })
+
+await Promise.all([
+  copyFile(join(projectRoot, 'index.html'), join(outputDir, 'index.html')),
+  copyFile(join(projectRoot, '_headers'), join(outputDir, '_headers')),
+  copyFile(join(projectRoot, 'css', 'style.css'), join(outputDir, 'css', 'style.css')),
+  copyFile(join(projectRoot, 'css', 'tailwind.css'), join(outputDir, 'css', 'tailwind.css')),
+  copyFile(join(projectRoot, 'js', 'app.js'), join(outputDir, 'js', 'app.js')),
+  cp(join(projectRoot, 'assets', 'cases'), join(outputDir, 'assets', 'cases'), { recursive: true }),
+  cp(join(projectRoot, 'assets', 'partners'), join(outputDir, 'assets', 'partners'), { recursive: true }),
+])
+
+console.log('Built public assets in dist/.')
