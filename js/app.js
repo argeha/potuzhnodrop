@@ -533,7 +533,7 @@ function createCaseSVG(theme) {
   const t = themes[theme] || themes.gold;
   const uid = theme + '_' + Math.random().toString(36).slice(2, 7);
   return `
-<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" class="w-full h-full">
+<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" class="case-art w-full h-full" aria-hidden="true">
   <defs>
     <linearGradient id="body-${uid}" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="${t.c1}"/><stop offset="1" stop-color="${t.c2}"/>
@@ -583,7 +583,16 @@ const CASE_ARTWORK = Object.freeze({
 function createCaseArtwork(caseId, caseName, theme) {
   const artwork = CASE_ARTWORK[caseId];
   if (!artwork) return createCaseSVG(theme || 'gold');
-  return `<img src="${artwork}" alt="${escapeHtml(caseName)}" class="case-art" loading="lazy">`;
+  return `<img src="${artwork}" alt="${escapeHtml(caseName)}" class="case-art" loading="lazy" onerror="handleCaseArtworkError(this, '${escapeHtml(theme || 'gold')}')">`;
+}
+
+function handleCaseArtworkError(image, theme = 'gold') {
+  if (!image || image.dataset.caseFallbackApplied === '1') return;
+  image.dataset.caseFallbackApplied = '1';
+  const template = document.createElement('template');
+  template.innerHTML = createCaseSVG(theme);
+  const fallback = template.content.firstElementChild;
+  if (fallback) image.replaceWith(fallback);
 }
 
 const TASK_POOL = [
@@ -1195,14 +1204,19 @@ async function unpublishPublicProfile() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'unpublish', id: identity.id, writeKey: identity.writeKey })
     }, 6_000);
-  } catch {
-    // The local toggle still keeps the browser from publishing more data. A later
-    // explicit share can safely replace an expired or unavailable public record.
+  } catch (error) {
+    // A missing record is already private. Other failures must not pretend that a
+    // remotely published profile was hidden.
+    if (!/профіль не знайдено/i.test(String(error?.message || ''))) {
+      showToast(error?.message || 'Не вдалося приховати публічний профіль. Спробуй ще раз.', 'error');
+      return false;
+    }
   }
   account.publicProfile = { ...identity, enabled: false, updatedAt: 0 };
   localStorage.setItem(STORAGE.account, JSON.stringify(account));
   renderPublicProfileUI();
   showToast('Публічне посилання вимкнено.', 'info');
+  return true;
 }
 
 function renderPublicProfileUI() {
@@ -1375,9 +1389,43 @@ async function requestJson(url, options = {}, timeout = 7000) {
   }
 }
 
+const CLOUD_PROFILE_MAX_BYTES = 1_700_000;
+const CLOUD_INVENTORY_ENCODING = 'compact-v1';
+
+function compactCloudInventoryItem(item, index = 0) {
+  const normalized = normalizeStoredItem(item, index);
+  if (!normalized) return null;
+  const isSteamItem = Boolean(normalized.steamImported && normalized.steamAssetId && normalized.steamOwnerId);
+  return isSteamItem
+    ? [1, normalized.steamAssetId, normalized.steamOwnerId, normalized.name, normalized.rarity, normalized.rarityColor, normalized.img, normalized.basePrice, normalized.wear.code, normalized.virtual ? 1 : 0, normalized.exclusive ? 1 : 0, normalized.addedAt]
+    : [0, normalized.id, normalized.sourceSkinId, normalized.name, normalized.rarity, normalized.rarityColor, normalized.img, normalized.basePrice, normalized.wear.code, normalized.virtual ? 1 : 0, normalized.exclusive ? 1 : 0, normalized.addedAt];
+}
+
+function expandCloudInventoryItem(record, index = 0) {
+  if (!Array.isArray(record) || record.length < 12) return null;
+  const [isSteamItem, primaryId, secondaryId, name, rarity, rarityColor, img, basePrice, wearCode, virtual, exclusive, addedAt] = record;
+  const steamImported = isSteamItem === 1;
+  return normalizeStoredItem({
+    id: steamImported ? `steam-copy-${secondaryId}-${primaryId}` : primaryId,
+    sourceSkinId: steamImported ? primaryId : secondaryId,
+    steamAssetId: steamImported ? primaryId : '',
+    steamOwnerId: steamImported ? secondaryId : '',
+    steamImported,
+    name,
+    rarity,
+    rarityColor,
+    img,
+    basePrice,
+    wear: { code: wearCode },
+    virtual: virtual !== 0,
+    exclusive: exclusive === 1,
+    addedAt
+  }, index);
+}
+
 function buildPortableSave() {
   return {
-    version: '4.3',
+    version: '5.1',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -1394,40 +1442,61 @@ function buildPortableSave() {
   };
 }
 
+function buildCloudSave() {
+  const portable = buildPortableSave();
+  const cloudSave = {
+    ...portable,
+    version: '5.1-cloud',
+    inventoryEncoding: CLOUD_INVENTORY_ENCODING,
+    inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
+  };
+  const size = new TextEncoder().encode(JSON.stringify(cloudSave)).byteLength;
+  if (size > CLOUD_PROFILE_MAX_BYTES) {
+    throw new Error('Інвентар завеликий для хмарного профілю. Експортуй резервну копію та звільни місце в інвентарі.');
+  }
+  return cloudSave;
+}
+
+function expandCloudSave(data) {
+  if (!data || typeof data !== 'object' || data.inventoryEncoding !== CLOUD_INVENTORY_ENCODING || !Array.isArray(data.inventory)) return data;
+  return { ...data, inventory: data.inventory.map(expandCloudInventoryItem).filter(Boolean) };
+}
+
 function applyPortableSave(data) {
-  if (!data || typeof data !== 'object' || !Array.isArray(data.inventory) || !data.gameState || typeof data.gameState !== 'object') {
+  const portable = expandCloudSave(data);
+  if (!portable || typeof portable !== 'object' || !Array.isArray(portable.inventory) || !portable.gameState || typeof portable.gameState !== 'object') {
     throw new Error('Bad format');
   }
-  userInventory = data.inventory.map((item, index) => normalizeStoredItem(item, index)).filter(Boolean);
+  userInventory = portable.inventory.map((item, index) => normalizeStoredItem(item, index)).filter(Boolean);
 
   const defaults = createDefaultGameState();
   gameState = {
     ...defaults,
-    ...data.gameState,
-    stats: { ...defaults.stats, ...(data.gameState.stats || {}) },
-    daily: { ...createDefaultDaily(), ...(data.gameState.daily || {}) },
-    weekly: { ...createDefaultWeekly(), ...(data.gameState.weekly || {}) },
-    allTime: { ...createDefaultAllTime(), ...(data.gameState.allTime || {}) },
-    collectionRewards: data.gameState.collectionRewards || {}
+    ...portable.gameState,
+    stats: { ...defaults.stats, ...(portable.gameState.stats || {}) },
+    daily: { ...createDefaultDaily(), ...(portable.gameState.daily || {}) },
+    weekly: { ...createDefaultWeekly(), ...(portable.gameState.weekly || {}) },
+    allTime: { ...createDefaultAllTime(), ...(portable.gameState.allTime || {}) },
+    collectionRewards: portable.gameState.collectionRewards || {}
   };
   const savedCloud = isCloudProfile(account?.cloud) ? account.cloud : null;
   const savedPublicProfile = isPublicProfileIdentity(account?.publicProfile) ? account.publicProfile : null;
-  if (data.account && typeof data.account === 'object') {
-    const restoredSteamId = /^\d{17}$/.test(String(data.account.steamId || '')) ? String(data.account.steamId) : account?.steamId;
-    const restoredProfile = normalizeSteamProfile(data.account.steamProfile, restoredSteamId);
-    const restoredImports = normalizeSteamImportMap(data.account.steamImports, data.account.steamImport);
+  if (portable.account && typeof portable.account === 'object') {
+    const restoredSteamId = /^\d{17}$/.test(String(portable.account.steamId || '')) ? String(portable.account.steamId) : account?.steamId;
+    const restoredProfile = normalizeSteamProfile(portable.account.steamProfile, restoredSteamId);
+    const restoredImports = normalizeSteamImportMap(portable.account.steamImports, portable.account.steamImport);
     const mergedImports = { ...getSteamImportMap(), ...restoredImports };
     const restoredImport = mergedImports[restoredSteamId] || null;
     const preservedProfile = account?.steamProfile?.steamId === restoredSteamId ? account.steamProfile : null;
     account = {
       ...account,
-      nick: cleanText(data.account.nick || account?.nick || 'Гравець', 24),
+      nick: cleanText(portable.account.nick || account?.nick || 'Гравець', 24),
       steamId: restoredSteamId,
       steamProfile: restoredProfile || preservedProfile,
       steamImports: mergedImports,
       steamImport: restoredImport,
-      publicProfile: isPublicProfileIdentity(data.account.publicProfile) ? data.account.publicProfile : savedPublicProfile,
-      createdAt: clampNumber(data.account.createdAt, 0, Number.MAX_SAFE_INTEGER, account?.createdAt || Date.now())
+      publicProfile: isPublicProfileIdentity(portable.account.publicProfile) ? portable.account.publicProfile : savedPublicProfile,
+      createdAt: clampNumber(portable.account.createdAt, 0, Number.MAX_SAFE_INTEGER, account?.createdAt || Date.now())
     };
   }
   if (savedCloud) account.cloud = savedCloud;
@@ -1442,7 +1511,7 @@ function applyPortableSave(data) {
       name: profile?.name || account?.nick || currentUser.name,
       avatar: profile?.avatar || '',
       steamProfile: profile,
-      balance: clampNumber(data.balance, 0, MAX_STORED_BALANCE, currentUser.balance)
+      balance: clampNumber(portable.balance, 0, MAX_STORED_BALANCE, currentUser.balance)
     };
   }
   ensureDailyState();
@@ -1466,7 +1535,7 @@ async function createCloudProfile() {
     const data = await requestJson('/api/profile/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'create', accountId: cloud.id, recoveryCode: cloud.recoveryCode, payload: buildPortableSave() })
+      body: JSON.stringify({ action: 'create', accountId: cloud.id, recoveryCode: cloud.recoveryCode, payload: buildCloudSave() })
     });
     account.cloud = { ...cloud, updatedAt: Number(data.updatedAt) || Date.now() };
     saveState();
@@ -1487,7 +1556,7 @@ async function saveCloudProfile() {
     const data = await requestJson('/api/profile/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'save', accountId: account.cloud.id, recoveryCode: account.cloud.recoveryCode, payload: buildPortableSave() })
+      body: JSON.stringify({ action: 'save', accountId: account.cloud.id, recoveryCode: account.cloud.recoveryCode, payload: buildCloudSave() })
     });
     account.cloud.updatedAt = Number(data.updatedAt) || Date.now();
     saveState();
@@ -2005,7 +2074,6 @@ function loadState() {
 
 function applyLoggedInUI() {
   if (!currentUser) return;
-  document.getElementById('userBalanceBox')?.classList.remove('hidden');
   const sb = document.getElementById('steamAuthBtn');
   const ab = document.getElementById('userAvatarBox');
   if (currentUser.steamId) {
@@ -2037,7 +2105,6 @@ function applyLoggedInUI() {
             : 'Потрібно повторно увійти в Steam';
     }
   } else {
-    sb?.classList.remove('hidden');
     if (sb) sb.style.removeProperty('display');
     ab?.classList.add('hidden');
     const headerName = document.getElementById('headerSteamName');
@@ -2892,15 +2959,52 @@ function toggleMobileMenu() {
   document.getElementById('mobileMenu')?.classList.toggle('hidden');
 }
 
+const modalReturnFocus = new Map();
+
+function getModalPanel(modal) {
+  return modal?.querySelector('.glass-panel') || modal || null;
+}
+
+function getModalFocusables(modal) {
+  if (!modal) return [];
+  return [...modal.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+    .filter(element => element.getClientRects().length > 0);
+}
+
+function prepareModalAccessibility(modal) {
+  const panel = getModalPanel(modal);
+  if (!panel) return null;
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'true');
+  const heading = panel.querySelector('h1, h2, h3');
+  if (heading) {
+    if (!heading.id) heading.id = `${modal.id}-title`;
+    panel.setAttribute('aria-labelledby', heading.id);
+    panel.removeAttribute('aria-label');
+  } else if (!panel.hasAttribute('aria-label')) {
+    panel.setAttribute('aria-label', 'Діалог');
+  }
+  if (!panel.hasAttribute('tabindex')) panel.tabIndex = -1;
+  return panel;
+}
+
+function getTopOpenModal() {
+  const open = [...document.querySelectorAll('.modal-backdrop.flex:not(.hidden)')];
+  return open[open.length - 1] || null;
+}
+
 function openModal(id) {
   const el = document.getElementById(id);
   if (!el) return;
+  if (!modalReturnFocus.has(id)) modalReturnFocus.set(id, document.activeElement);
   el.classList.remove('hidden');
   el.classList.add('flex');
   if (id === 'inventoryModal') refreshInventoryModal();
   if (id === 'accountModal') updateAccountUI();
   if (id === 'prestigeModal') updatePrestigeUI();
   if (id === 'shopModal') filterShop();
+  const panel = prepareModalAccessibility(el);
+  window.setTimeout(() => (getModalFocusables(el)[0] || panel)?.focus(), 0);
 }
 
 function closeModal(id) {
@@ -2908,6 +3012,11 @@ function closeModal(id) {
   if (!el) return;
   el.classList.add('hidden');
   el.classList.remove('flex');
+  const returnTarget = modalReturnFocus.get(id);
+  modalReturnFocus.delete(id);
+  window.setTimeout(() => {
+    if (returnTarget instanceof HTMLElement && document.contains(returnTarget)) returnTarget.focus();
+  }, 0);
 }
 
 function refreshInventoryModal() {
@@ -6655,19 +6764,37 @@ window.addEventListener('DOMContentLoaded', () => {
 
   document.querySelectorAll('.modal-backdrop').forEach(el => {
     el.addEventListener('click', e => {
-      if (e.target === el) {
-        el.classList.add('hidden');
-        el.classList.remove('flex');
-      }
+      if (e.target === el) closeModal(el.id);
     });
   });
 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      document.querySelectorAll('.modal-backdrop.flex').forEach(m => {
-        m.classList.add('hidden');
-        m.classList.remove('flex');
-      });
+      const modal = getTopOpenModal();
+      if (modal) {
+        e.preventDefault();
+        closeModal(modal.id);
+      }
+      return;
+    }
+    if (e.key !== 'Tab') return;
+    const modal = getTopOpenModal();
+    if (!modal) return;
+    const focusables = getModalFocusables(modal);
+    const panel = prepareModalAccessibility(modal);
+    if (!focusables.length) {
+      e.preventDefault();
+      panel?.focus();
+      return;
+    }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (e.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (document.activeElement === last || !modal.contains(document.activeElement))) {
+      e.preventDefault();
+      first.focus();
     }
   });
 
@@ -6774,6 +6901,7 @@ window.syncSteamInventory = syncSteamInventory;
 window.disconnectSteam = disconnectSteam;
 window.dismissSteamNudge = dismissSteamNudge;
 window.handleSteamAvatarError = handleSteamAvatarError;
+window.handleCaseArtworkError = handleCaseArtworkError;
 window.saveAccountNick = saveAccountNick;
 window.createCloudProfile = createCloudProfile;
 window.saveCloudProfile = saveCloudProfile;

@@ -26,7 +26,10 @@ const ID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i
 const RECOVERY_CODE = /^[A-Za-z0-9_-]{40,160}$/
 const SEED = /^[A-Za-z0-9_-]{24,128}$/
 const CASE = /^[a-z0-9_]{2,40}$/
-const MAX_PAYLOAD_BYTES = 750_000
+// Durable Object SQLite values have a 2 MB ceiling. Keep profile payloads below
+// that limit after their metadata is added to the stored record.
+const MAX_PROFILE_PAYLOAD_BYTES = 1_700_000
+const MAX_PROFILE_REQUEST_BYTES = MAX_PROFILE_PAYLOAD_BYTES + 8_192
 const MAX_PRICE = 1_000_000
 const WAIT_TTL = 10_000
 const MATCH_TTL = 10 * 60_000
@@ -75,7 +78,7 @@ function equalHash(left, right) {
 function isPayload(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   try {
-    return encoder.encode(JSON.stringify(value)).byteLength <= MAX_PAYLOAD_BYTES
+    return encoder.encode(JSON.stringify(value)).byteLength <= MAX_PROFILE_PAYLOAD_BYTES
   } catch {
     return false
   }
@@ -256,7 +259,7 @@ export class PotuzhnoState {
     }
   }
 
-  async readBody(request, limit = MAX_PAYLOAD_BYTES + 4_096) {
+  async readBody(request, limit = MAX_PROFILE_REQUEST_BYTES) {
     const raw = await request.text()
     if (encoder.encode(raw).byteLength > limit) throw new RangeError('Збереження завелике.')
     return JSON.parse(raw)
@@ -306,6 +309,7 @@ export class PotuzhnoState {
       if (!ID.test(id)) return json({ error: 'Некоректне посилання на профіль.' }, 400)
       const entry = await this.storage.get(`public-profile:${id}`)
       if (!entry?.profile || Date.now() - Number(entry.updatedAt || 0) > PUBLIC_PROFILE_TTL) {
+        if (entry) await this.storage.delete(`public-profile:${id}`)
         return json({ error: 'Профіль не знайдено або посилання більше не активне.' }, 404)
       }
       return json({ profile: publicProfileView(id, entry) }, 200, { 'Cache-Control': 'public, max-age=60, s-maxage=60' })
@@ -354,7 +358,10 @@ export class PotuzhnoState {
     if (!ID.test(id)) return json({ error: 'Некоректне посилання на профіль.' }, 400)
     const entry = await this.storage.get(`public-profile:${id}`)
     const avatar = cleanAvatar(entry?.profile?.avatar)
-    if (!avatar || Date.now() - Number(entry?.updatedAt || 0) > PUBLIC_PROFILE_TTL) return json({ error: 'Аватар не знайдено.' }, 404)
+    if (!avatar || Date.now() - Number(entry?.updatedAt || 0) > PUBLIC_PROFILE_TTL) {
+      if (entry && Date.now() - Number(entry.updatedAt || 0) > PUBLIC_PROFILE_TTL) await this.storage.delete(`public-profile:${id}`)
+      return json({ error: 'Аватар не знайдено.' }, 404)
+    }
     try {
       const response = await timedFetch(avatar, { headers: { Accept: 'image/avif,image/webp,image/*,*/*;q=0.8' } })
       const contentType = response.headers.get('Content-Type') || ''
