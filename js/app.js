@@ -53,7 +53,10 @@ function showPage(id) {
     renderCloudSyncUI();
     renderFairUI();
   }
-  if (id === 'battle') resetCoinVisual();
+  if (id === 'battle') {
+    resetCoinVisual();
+    renderBattleRoom();
+  }
   if (id === 'royale') {
     // Do not replace the participants while an existing spin still owns them.
     if (!royaleInProgress) resetRoyale();
@@ -295,6 +298,9 @@ let lastDropContext = 'case';
 let steamSyncPromise = null;
 let steamConnectionState = 'disconnected';
 let steamConnectionMessage = '';
+let publicProfilePublishTimer = null;
+let publicProfilePublishPromise = null;
+let activePublicProfile = null;
 
 // The Steam community endpoint returns up to 500 assets at a time. Keeping the
 // work bounded gives the UI a responsive, recoverable sync even for huge inventories.
@@ -303,6 +309,7 @@ const STEAM_SYNC_PAGE_LIMIT = 6;
 let battlePlayerItem = null;
 let battleBotItem = null;
 let battleInProgress = false;
+let battleRoom = null;
 
 let contractItems = [null, null, null, null, null];
 let contractActiveSlot = -1;
@@ -935,6 +942,14 @@ function loadAccount() {
   if (account.steamId && !account.steamProfile) {
     account.steamProfile = normalizeSteamProfile(null, account.steamId);
   }
+  if (!isPublicProfileIdentity(account.publicProfile)) {
+    account.publicProfile = {
+      id: makeUuid(),
+      writeKey: makeRandomSecret(32),
+      enabled: false,
+      updatedAt: 0
+    };
+  }
   localStorage.setItem(STORAGE.account, JSON.stringify(account));
 }
 
@@ -985,6 +1000,7 @@ function updateAccountUI() {
   renderFairUI();
   renderSteamProfileCard();
   renderSteamNudge();
+  renderPublicProfileUI();
 }
 
 function setSteamConnectionState(state, message = '') {
@@ -1071,6 +1087,198 @@ function getTodayUtc() {
 
 function isCloudProfile(value) {
   return Boolean(value && UUID_PATTERN.test(String(value.id || '')) && SECRET_PATTERN.test(String(value.recoveryCode || '')));
+}
+
+function isPublicProfileIdentity(value) {
+  return Boolean(value && UUID_PATTERN.test(String(value.id || '')) && SECRET_PATTERN.test(String(value.writeKey || '')));
+}
+
+function buildPublicProfilePayload() {
+  const stats = gameState?.stats || {};
+  return {
+    name: cleanText(account?.nick || currentUser?.name || 'Гравець', 24) || 'Гравець',
+    avatar: cleanImageUrl(currentUser?.avatar || account?.steamProfile?.avatar),
+    level: getPlayerLevel(),
+    prestige: clampNumber(gameState?.prestige, 0, 99, 0),
+    steamConnected: Boolean(currentUser?.steamId),
+    stats: {
+      rounds: clampNumber(stats.rounds, 0, 9_999_999, 0),
+      cases: clampNumber(stats.cases, 0, 9_999_999, 0),
+      battles: clampNumber(stats.battles, 0, 9_999_999, 0),
+      bestValue: clampNumber(stats.bestValue, 0, MAX_STORED_ITEM_VALUE, 0)
+    }
+  };
+}
+
+function publicProfileUrl(profileId = account?.publicProfile?.id) {
+  if (!UUID_PATTERN.test(String(profileId || ''))) return '';
+  const url = new URL(location.href);
+  url.search = '';
+  url.hash = '';
+  url.searchParams.set('profile', profileId);
+  return url.href;
+}
+
+function queuePublicProfilePublish() {
+  if (!account?.publicProfile?.enabled || !isPublicProfileIdentity(account.publicProfile) || !currentUser) return;
+  window.clearTimeout(publicProfilePublishTimer);
+  publicProfilePublishTimer = window.setTimeout(() => { void publishPublicProfile(); }, 900);
+}
+
+async function publishPublicProfile({ announce = false } = {}) {
+  if (!account?.publicProfile?.enabled || !isPublicProfileIdentity(account.publicProfile) || !currentUser) return null;
+  if (publicProfilePublishPromise) return publicProfilePublishPromise;
+  const identity = account.publicProfile;
+  publicProfilePublishPromise = requestJson('/api/public-profile', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'publish', id: identity.id, writeKey: identity.writeKey, profile: buildPublicProfilePayload() })
+  }, 6_000).then(data => {
+    account.publicProfile = { ...identity, enabled: true, updatedAt: Number(data?.profile?.updatedAt) || Date.now() };
+    localStorage.setItem(STORAGE.account, JSON.stringify(account));
+    renderPublicProfileUI();
+    if (announce) showToast('Профіль оновлено та доступний за посиланням.', 'success');
+    return data?.profile || null;
+  }).catch(error => {
+    if (announce) showToast(error?.message || 'Не вдалося опублікувати профіль.', 'error');
+    return null;
+  }).finally(() => {
+    publicProfilePublishPromise = null;
+  });
+  return publicProfilePublishPromise;
+}
+
+async function copyPublicProfileLink() {
+  if (!account || !currentUser) return false;
+  if (!isPublicProfileIdentity(account.publicProfile)) {
+    account.publicProfile = { id: makeUuid(), writeKey: makeRandomSecret(32), enabled: false, updatedAt: 0 };
+  }
+  account.publicProfile.enabled = true;
+  localStorage.setItem(STORAGE.account, JSON.stringify(account));
+  const profile = await publishPublicProfile({ announce: true });
+  if (!profile) return false;
+  const url = publicProfileUrl();
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast('Посилання на профіль скопійовано.', 'success');
+  } catch {
+    showToast('Профіль відкрито. Скопіюй посилання з адресного рядка.', 'info');
+  }
+  renderPublicProfileUI();
+  return true;
+}
+
+async function unpublishPublicProfile() {
+  if (!isPublicProfileIdentity(account?.publicProfile)) return;
+  const identity = account.publicProfile;
+  try {
+    await requestJson('/api/public-profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'unpublish', id: identity.id, writeKey: identity.writeKey })
+    }, 6_000);
+  } catch {
+    // The local toggle still keeps the browser from publishing more data. A later
+    // explicit share can safely replace an expired or unavailable public record.
+  }
+  account.publicProfile = { ...identity, enabled: false, updatedAt: 0 };
+  localStorage.setItem(STORAGE.account, JSON.stringify(account));
+  renderPublicProfileUI();
+  showToast('Публічне посилання вимкнено.', 'info');
+}
+
+function renderPublicProfileUI() {
+  const enabled = Boolean(account?.publicProfile?.enabled && isPublicProfileIdentity(account?.publicProfile));
+  const status = document.getElementById('publicProfileStatus');
+  const share = document.getElementById('profileShareBtn');
+  const hide = document.getElementById('profileHideBtn');
+  if (status) status.textContent = enabled
+    ? 'Профіль доступний друзям: баланс, інвентар і коди не показуються.'
+    : 'Створи посилання, щоб друзі бачили лише нік, рівень та публічну статистику.';
+  if (share) share.innerHTML = enabled
+    ? '<i class="fa-solid fa-copy"></i><span>Скопіювати посилання</span>'
+    : '<i class="fa-solid fa-share-nodes"></i><span>Поділитися профілем</span>';
+  if (hide) hide.classList.toggle('hidden', !enabled);
+}
+
+function profileIdFromInput(value) {
+  const raw = String(value || '').trim();
+  if (UUID_PATTERN.test(raw)) return raw;
+  try {
+    const url = new URL(raw);
+    const id = url.searchParams.get('profile') || '';
+    return UUID_PATTERN.test(id) ? id : '';
+  } catch {
+    return '';
+  }
+}
+
+function getPublicAvatarSource(profile) {
+  return UUID_PATTERN.test(String(profile?.id || '')) && String(profile?.avatarUrl || '').startsWith('/api/public-avatar')
+    ? profile.avatarUrl
+    : createSteamAvatarFallback(profile?.name || 'Гравець');
+}
+
+function renderPublicProfileModal(profile, { demo = false } = {}) {
+  const content = document.getElementById('publicProfileContent');
+  if (!content || !profile) return;
+  const stats = profile.stats || {};
+  const level = clampNumber(profile.level, 1, 9_999, 1);
+  const prestige = clampNumber(profile.prestige, 0, 99, 0);
+  const avatar = getPublicAvatarSource(profile);
+  const safeName = escapeHtml(cleanText(profile.name, 24) || 'Гравець');
+  const isOwnProfile = profile.id && profile.id === account?.publicProfile?.id;
+  content.innerHTML = `
+    <div class="public-profile-hero">
+      <img src="${escapeHtml(avatar)}" alt="Аватар ${safeName}" onerror="handleSteamAvatarError(this)">
+      <div class="min-w-0"><p class="public-profile-kicker">${demo ? 'ДЕМО-АКТИВНІСТЬ' : 'ПРОФІЛЬ ГРАВЦЯ'}</p><h3>${safeName}</h3><p class="public-profile-level">LVL ${level}${prestige ? ` · P${prestige}` : ''}${profile.steamConnected ? ' · <i class="fa-brands fa-steam"></i> Steam' : ''}</p></div>
+    </div>
+    <div class="public-profile-stats">
+      <div><span>Роллів</span><strong>${Math.round(Number(stats.rounds) || 0).toLocaleString('uk-UA')}</strong></div>
+      <div><span>Кейсів</span><strong>${Math.round(Number(stats.cases) || 0).toLocaleString('uk-UA')}</strong></div>
+      <div><span>Боїв</span><strong>${Math.round(Number(stats.battles) || 0).toLocaleString('uk-UA')}</strong></div>
+      <div><span>Рекорд</span><strong>${formatCredits(Number(stats.bestValue) || 0)}</strong></div>
+    </div>
+    <p class="public-profile-note"><i class="fa-solid fa-shield-halved"></i>${demo ? ' Це візуальна демонстрація стрічки: дані не належать реальному користувачу.' : ' Видимі лише публічні дані. Баланс, інвентар і дані Steam приховані.'}</p>
+    ${!demo && !isOwnProfile ? '<button type="button" onclick="joinPublicProfileBattle()" class="public-profile-battle"><i class="fa-solid fa-dice"></i> Приєднатися до 1v1</button>' : ''}
+    ${!demo && isOwnProfile ? '<button type="button" onclick="openOwnBattleRoom()" class="public-profile-battle"><i class="fa-solid fa-dice"></i> Відкрити мою кімнату 1v1</button>' : ''}`;
+  activePublicProfile = { ...profile, demo };
+  openModal('publicProfileModal');
+}
+
+async function openPublicProfile(profileId) {
+  const id = profileIdFromInput(profileId);
+  if (!id) {
+    showToast('Встав коректне посилання на профіль.', 'warn');
+    return null;
+  }
+  const content = document.getElementById('publicProfileContent');
+  if (content) content.innerHTML = '<div class="public-profile-loading"><i class="fa-solid fa-spinner fa-spin"></i> Завантажуємо профіль…</div>';
+  openModal('publicProfileModal');
+  try {
+    const data = await requestJson(`/api/public-profile?id=${encodeURIComponent(id)}`, {}, 6_000);
+    if (!data?.profile) throw new Error('Профіль не знайдено.');
+    renderPublicProfileModal(data.profile);
+    return data.profile;
+  } catch (error) {
+    if (content) content.innerHTML = `<div class="public-profile-loading is-error"><i class="fa-solid fa-link-slash"></i>${escapeHtml(error?.message || 'Профіль не знайдено.')}</div>`;
+    return null;
+  }
+}
+
+function openPublicProfileSearch() {
+  const input = document.getElementById('publicProfileLookupInput');
+  if (input) input.value = '';
+  openModal('publicProfileLookupModal');
+  window.setTimeout(() => input?.focus(), 0);
+}
+
+function submitPublicProfileSearch() {
+  const input = document.getElementById('publicProfileLookupInput');
+  const id = profileIdFromInput(input?.value);
+  if (!id) return showToast('Встав посилання або ID профілю.', 'warn');
+  closeModal('publicProfileLookupModal');
+  void openPublicProfile(id);
 }
 
 function loadFairState() {
@@ -1162,6 +1370,7 @@ function buildPortableSave() {
       steamProfile: account?.steamProfile || null,
       steamImport: account?.steamImport || null,
       steamImports: account?.steamImports || null,
+      publicProfile: isPublicProfileIdentity(account?.publicProfile) ? account.publicProfile : null,
       createdAt: account?.createdAt || Date.now()
     }
   };
@@ -1184,6 +1393,7 @@ function applyPortableSave(data) {
     collectionRewards: data.gameState.collectionRewards || {}
   };
   const savedCloud = isCloudProfile(account?.cloud) ? account.cloud : null;
+  const savedPublicProfile = isPublicProfileIdentity(account?.publicProfile) ? account.publicProfile : null;
   if (data.account && typeof data.account === 'object') {
     const restoredSteamId = /^\d{17}$/.test(String(data.account.steamId || '')) ? String(data.account.steamId) : account?.steamId;
     const restoredProfile = normalizeSteamProfile(data.account.steamProfile, restoredSteamId);
@@ -1198,10 +1408,14 @@ function applyPortableSave(data) {
       steamProfile: restoredProfile || preservedProfile,
       steamImports: mergedImports,
       steamImport: restoredImport,
+      publicProfile: isPublicProfileIdentity(data.account.publicProfile) ? data.account.publicProfile : savedPublicProfile,
       createdAt: clampNumber(data.account.createdAt, 0, Number.MAX_SAFE_INTEGER, account?.createdAt || Date.now())
     };
   }
   if (savedCloud) account.cloud = savedCloud;
+  if (!isPublicProfileIdentity(account?.publicProfile)) {
+    account.publicProfile = savedPublicProfile || { id: makeUuid(), writeKey: makeRandomSecret(32), enabled: false, updatedAt: 0 };
+  }
   if (currentUser) {
     const profile = normalizeSteamProfile(account?.steamProfile, account?.steamId);
     currentUser = {
@@ -1223,6 +1437,7 @@ function applyPortableSave(data) {
   applyLoggedInUI();
   renderGameHub();
   updateAccountUI();
+  renderPublicProfileUI();
 }
 
 async function createCloudProfile() {
@@ -1672,6 +1887,7 @@ function saveState() {
   localStorage.setItem(STORAGE.started, '1');
   if (gameState) localStorage.setItem(STORAGE.game, JSON.stringify(gameState));
   if (account) localStorage.setItem(STORAGE.account, JSON.stringify(account));
+  queuePublicProfilePublish();
 }
 
 function beginPendingWager({ inventory = [], balance = 0 }) {
@@ -2963,13 +3179,15 @@ async function processSteamCallback() {
       : 'Steam не підтвердив вхід. Спробуй ще раз.';
     setSteamConnectionState(currentUser?.steamId ? 'expired' : 'disconnected', message);
     showToast(message, 'error');
-    history.replaceState({}, '', location.pathname);
+    const profileId = params.get('profile');
+    history.replaceState({}, '', `${location.pathname}${UUID_PATTERN.test(String(profileId || '')) ? `?profile=${encodeURIComponent(profileId)}` : ''}${location.hash}`);
     return true;
   }
   const connected = params.get('steam_connected') === '1';
   const sid = params.get('steamid');
   if (!connected && !sid) return false;
-  history.replaceState({}, '', location.pathname);
+  const profileId = params.get('profile');
+  history.replaceState({}, '', `${location.pathname}${UUID_PATTERN.test(String(profileId || '')) ? `?profile=${encodeURIComponent(profileId)}` : ''}${location.hash}`);
   closeModal('steamModal');
   showToast('Steam підтверджено. Підключаємо профіль…', 'success');
   if (/^\d{17}$/.test(String(sid || ''))) applySteamIdentity(sid, fallbackSteamProfile(sid));
@@ -4901,6 +5119,11 @@ function clearBattleOpponent() {
   if (label) label.textContent = 'БОТ';
   if (icon) icon.className = 'fa-solid fa-robot';
   if (emptyIcon) emptyIcon.className = 'fa-solid fa-magnifying-glass text-4xl text-red-500/60 mb-3';
+  const profileButton = document.getElementById('battleOpponentProfileBtn');
+  if (profileButton) {
+    profileButton.classList.add('hidden');
+    profileButton.dataset.profileId = '';
+  }
 }
 
 function toPublicBattleStake(item) {
@@ -4940,6 +5163,62 @@ function setBattleOpponent(item, opponentName, isBot, match = null) {
   if (label) label.textContent = isBot ? 'БОТ' : 'ГРАВЕЦЬ';
   if (icon) icon.className = isBot ? 'fa-solid fa-robot' : 'fa-solid fa-user';
   document.getElementById('battleBotSlot')?.classList.add('filled');
+  const profileButton = document.getElementById('battleOpponentProfileBtn');
+  const profileId = match?.opponentProfileId;
+  if (profileButton) {
+    profileButton.classList.toggle('hidden', !profileId);
+    profileButton.dataset.profileId = profileId || '';
+  }
+}
+
+function renderBattleRoom() {
+  const banner = document.getElementById('battleRoomBanner');
+  const name = document.getElementById('battleRoomName');
+  const leave = document.getElementById('battleRoomLeaveBtn');
+  const hasRoom = Boolean(battleRoom?.id && UUID_PATTERN.test(String(battleRoom.id)));
+  if (banner) banner.classList.toggle('hidden', !hasRoom);
+  if (name) name.textContent = hasRoom ? battleRoom.name || 'Друг' : '';
+  if (leave) leave.classList.toggle('hidden', !hasRoom);
+}
+
+function setBattleRoom(profile) {
+  const id = profileIdFromInput(profile?.id || profile);
+  if (!id) return false;
+  battleRoom = { id, name: cleanText(profile?.name || 'Друг', 24) || 'Друг' };
+  cancelBattleSearch();
+  renderBattleRoom();
+  return true;
+}
+
+function leaveBattleRoom() {
+  if (battleInProgress) return;
+  cancelBattleSearch();
+  battleRoom = null;
+  renderBattleRoom();
+  if (battlePlayerItem) {
+    const outcome = document.getElementById('battleOutcome');
+    if (outcome) outcome.innerHTML = '<span class="text-gray-300">Звичайний пошук суперника увімкнено.</span>';
+  }
+}
+
+async function openOwnBattleRoom() {
+  if (!account?.publicProfile?.enabled) {
+    const shared = await copyPublicProfileLink();
+    if (!shared) return;
+  }
+  if (!await publishPublicProfile()) return;
+  if (!setBattleRoom({ id: account.publicProfile.id, name: currentUser?.name || account?.nick || 'Ти' })) return;
+  closeModal('publicProfileModal');
+  showPage('battle');
+  showToast('Кімнату 1v1 відкрито. Надішли посилання на профіль другу.', 'success');
+}
+
+function joinPublicProfileBattle() {
+  if (!activePublicProfile?.id || activePublicProfile.demo) return;
+  if (!setBattleRoom(activePublicProfile)) return;
+  closeModal('publicProfileModal');
+  showPage('battle');
+  showToast(`Кімната ${activePublicProfile.name}: обери скін і почни пошук.`, 'info');
 }
 
 async function matchmakingRequest(action, ticketId, stake = null) {
@@ -4951,6 +5230,8 @@ async function matchmakingRequest(action, ticketId, stake = null) {
       deviceId: fairState?.deviceId,
       ticketId,
       name: account?.nick || 'Гравець',
+      profileId: account?.publicProfile?.enabled ? account.publicProfile.id : '',
+      roomId: battleRoom?.id || '',
       ...(stake ? { stake } : {}),
     }),
   }, 5_000);
@@ -4966,7 +5247,7 @@ function cancelBattleSearch() {
 function useHumanBattleMatch(match, ticketId) {
   const opponent = match?.players?.find(player => player.ticketId !== ticketId);
   if (!opponent?.stake) return false;
-  setBattleOpponent(opponent.stake, opponent.name, false, { id: match.id, winnerTicketId: match.winnerTicketId, ticketId });
+  setBattleOpponent(opponent.stake, opponent.name, false, { id: match.id, winnerTicketId: match.winnerTicketId, ticketId, opponentProfileId: opponent.profileId || '' });
   const outcome = document.getElementById('battleOutcome');
   if (outcome) outcome.innerHTML = `<span class="text-cyan-200">Знайдено реального суперника: ${escapeHtml(opponent.name)}.</span>`;
   setBattleAction('start');
@@ -4981,7 +5262,7 @@ async function findBattleOpponent() {
   const stake = toPublicBattleStake(battlePlayerItem);
   const outcome = document.getElementById('battleOutcome');
   setBattleAction('waiting', true);
-  if (outcome) outcome.innerHTML = '<span class="text-amber-300 pulse-soft">Шукаємо реального суперника до 8 секунд…</span>';
+  if (outcome) outcome.innerHTML = `<span class="text-amber-300 pulse-soft">${battleRoom ? `Чекаємо гравця в кімнаті ${escapeHtml(battleRoom.name)} до 8 секунд…` : 'Шукаємо реального суперника до 8 секунд…'}</span>`;
 
   let response = null;
   const startedAt = Date.now();
@@ -5003,7 +5284,7 @@ async function findBattleOpponent() {
   }
   battleSearchTicket = null;
   pickBotOpponent(battlePlayerItem.price);
-  if (outcome) outcome.innerHTML = '<span class="text-amber-200">Реального суперника не знайдено — до бою приєднався бот.</span>';
+  if (outcome) outcome.innerHTML = `<span class="text-amber-200">${battleRoom ? 'Друг не приєднався вчасно — до бою приєднався бот.' : 'Реального суперника не знайдено — до бою приєднався бот.'}</span>`;
   setBattleAction('start');
 }
 
@@ -5858,34 +6139,66 @@ function executeContract() {
   displayCaseDropResult([item], false, 'Контракт обміну', 'contract');
 }
 
-/* ===== LIVE FEED & SIMULATION ===== */
-function addActivityEvent({ player, skin, outcome = 'attempt' }) {
+/* ===== LIVE SKIN STRIP ===== */
+const LIVE_FEED_PROFILES = [
+  { id: 'demo-bohdan', name: 'Bohdan_47', level: 37, prestige: 2, steamConnected: true, stats: { rounds: 1840, cases: 330, battles: 77, bestValue: 7120 } },
+  { id: 'demo-voxxa', name: 'Voxxa', level: 24, prestige: 0, steamConnected: true, stats: { rounds: 926, cases: 201, battles: 46, bestValue: 4380 } },
+  { id: 'demo-kitten', name: 'Кіт_у_берцах', level: 51, prestige: 4, steamConnected: true, stats: { rounds: 4215, cases: 821, battles: 126, bestValue: 12600 } },
+  { id: 'demo-morsik', name: 'm0rsik', level: 18, prestige: 0, steamConnected: false, stats: { rounds: 611, cases: 83, battles: 14, bestValue: 2850 } },
+  { id: 'demo-fennec', name: 'Fennec', level: 33, prestige: 1, steamConnected: true, stats: { rounds: 1674, cases: 256, battles: 84, bestValue: 6350 } },
+  { id: 'demo-raven', name: 'Raven_ua', level: 29, prestige: 1, steamConnected: true, stats: { rounds: 1208, cases: 179, battles: 52, bestValue: 5100 } },
+  { id: 'demo-limon', name: 'Limon4ik', level: 12, prestige: 0, steamConnected: false, stats: { rounds: 248, cases: 39, battles: 8, bestValue: 1840 } },
+];
+
+function getLiveFeedProfile(player) {
+  if (account?.publicProfile?.enabled && player === currentUser?.name) {
+    return { id: account.publicProfile.id, ...buildPublicProfilePayload(), avatarUrl: '/api/steam/avatar', demo: false };
+  }
+  return LIVE_FEED_PROFILES.find(profile => profile.name === player) || LIVE_FEED_PROFILES[Math.floor(Math.random() * LIVE_FEED_PROFILES.length)];
+}
+
+function openLiveFeedProfile(event) {
+  const profile = event?.currentTarget?._liveProfile;
+  if (!profile) return;
+  if (profile.demo === false && UUID_PATTERN.test(String(profile.id || ''))) {
+    void openPublicProfile(profile.id);
+  } else {
+    renderPublicProfileModal(profile, { demo: true });
+  }
+}
+
+function addActivityEvent({ player, skin, outcome = 'attempt', profile = null }) {
   const feed = document.getElementById('liveFeed');
   if (!feed || !skin) return;
-  const initial = escapeHtml(String(player || '?').trim().charAt(0).toUpperCase() || '?');
-  const action = outcome === 'win' ? 'покращив' : outcome === 'loss' ? 'зіграв на' : 'обрав ціллю';
-  const accent = outcome === 'win' ? 'text-green-300' : outcome === 'loss' ? 'text-gray-400' : 'text-amber-300';
-  const el = document.createElement('div');
-  el.className = 'live-feed-item flex items-center gap-2 bg-brand-card border border-gray-800 rounded-lg px-2.5 py-1.5 text-xs shrink-0';
-  el.innerHTML = `<span class="activity-avatar flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-extrabold text-black">${initial}</span>
-    <span class="max-w-[74px] truncate text-gray-200 font-semibold">${escapeHtml(player || 'Гість')}</span>
-    <span class="${accent}">${action}</span>
-    <img src="${escapeHtml(skin.img || '')}" alt="" data-skin-id="${escapeHtml(getSkinKey(skin))}" data-skin-name="${escapeHtml(skin.name || 'CS2')}" class="w-6 h-6 object-contain image-skeleton" onerror="handleSkinImageError(this)">
-    <span class="max-w-[105px] truncate font-bold text-amber-400">${escapeHtml(skin.name || 'CS2')}</span>`;
+  const owner = profile || getLiveFeedProfile(player);
+  const safeSkinName = escapeHtml(skin.name || 'CS2 Skin');
+  const accent = outcome === 'win' ? '#38d996' : outcome === 'loss' ? '#76839b' : '#f4bf50';
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.className = 'live-feed-item live-skin-card';
+  el.title = `Показати профіль: ${owner.name}`;
+  el._liveProfile = owner;
+  el.style.setProperty('--live-accent', accent);
+  el.innerHTML = `<span class="live-skin-glow"></span>
+    <img src="${escapeHtml(skin.img || '')}" alt="${safeSkinName}" data-skin-id="${escapeHtml(getSkinKey(skin))}" data-skin-name="${safeSkinName}" loading="lazy" onerror="handleSkinImageError(this)">
+    <span class="live-skin-tooltip" role="tooltip">
+      <span class="live-tooltip-avatar">${escapeHtml((owner.name || '?').slice(0, 1).toUpperCase())}</span>
+      <span><strong>${escapeHtml(owner.name || 'Гравець')}</strong><small>LVL ${clampNumber(owner.level, 1, 9_999, 1)}${owner.prestige ? ` · P${owner.prestige}` : ''} · натисни, щоб відкрити</small></span>
+    </span>`;
+  el.addEventListener('click', openLiveFeedProfile);
   feed.prepend(el);
-  while (feed.children.length > 12) feed.removeChild(feed.lastElementChild);
+  while (feed.children.length > 14) feed.removeChild(feed.lastElementChild);
 }
 
 function startLiveFeedSimulation() {
-  const players = ['Bohdan_47', 'Voxxa', 'Кіт_у_берцах', 'm0rsik', 'Fennec', 'Тато_в_смокінгу', 'Raven_ua', 'Limon4ik'];
   const push = () => {
     const cand = CS2_SKINS.filter(isUsableSkin);
     if (!cand.length) return;
     const s = cand[Math.floor(Math.random() * cand.length)];
-    const outcome = Math.random() > 0.42 ? 'win' : 'attempt';
-    addActivityEvent({ player: players[Math.floor(Math.random() * players.length)], skin: s, outcome });
+    const profile = LIVE_FEED_PROFILES[Math.floor(Math.random() * LIVE_FEED_PROFILES.length)];
+    addActivityEvent({ player: profile.name, profile, skin: s, outcome: Math.random() > 0.42 ? 'win' : 'attempt' });
   };
-  for (let i = 0; i < 5; i++) push();
+  for (let i = 0; i < 7; i++) push();
   setInterval(push, 3500);
 }
 
@@ -6290,6 +6603,8 @@ window.addEventListener('DOMContentLoaded', () => {
   void (async () => {
     const returnedFromSteam = await processSteamCallback();
     if (!returnedFromSteam) await restoreSteamSession();
+    const requestedProfile = new URLSearchParams(location.search).get('profile');
+    if (UUID_PATTERN.test(String(requestedProfile || ''))) void openPublicProfile(requestedProfile);
   })();
   renderCaseButtons();
 
@@ -6417,6 +6732,14 @@ window.toggleSound = toggleSound;
 window.claimDailyBonus = claimDailyBonus;
 window.openModal = openModal;
 window.closeModal = closeModal;
+window.copyPublicProfileLink = copyPublicProfileLink;
+window.unpublishPublicProfile = unpublishPublicProfile;
+window.openPublicProfileSearch = openPublicProfileSearch;
+window.submitPublicProfileSearch = submitPublicProfileSearch;
+window.openPublicProfile = openPublicProfile;
+window.openOwnBattleRoom = openOwnBattleRoom;
+window.joinPublicProfileBattle = joinPublicProfileBattle;
+window.leaveBattleRoom = leaveBattleRoom;
 window.startSteamLogin = startSteamLogin;
 window.continueSteamLogin = continueSteamLogin;
 window.syncSteamInventory = syncSteamInventory;

@@ -30,6 +30,7 @@ const MAX_PAYLOAD_BYTES = 750_000
 const MAX_PRICE = 1_000_000
 const WAIT_TTL = 10_000
 const MATCH_TTL = 10 * 60_000
+const PUBLIC_PROFILE_TTL = 90 * 24 * 60 * 60_000
 const STEAM_PROFILE_TTL = 6 * 60 * 60_000
 const STEAM_SESSION_TTL = 30 * 24 * 60 * 60_000
 const STEAM_SESSION_COOKIE = 'potuzhno_steam_session'
@@ -95,6 +96,36 @@ function cleanAvatar(value) {
     return url.protocol === 'https:' && AVATAR_HOSTS.has(url.hostname) ? url.href : ''
   } catch {
     return ''
+  }
+}
+
+function publicProfilePayload(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const stats = value.stats && typeof value.stats === 'object' && !Array.isArray(value.stats) ? value.stats : {}
+  const name = cleanText(value.name, 24)
+  if (!name) return null
+  return {
+    name,
+    avatar: cleanAvatar(value.avatar),
+    level: Math.round(Math.min(9_999, Math.max(1, Number(value.level) || 1))),
+    prestige: Math.round(Math.min(99, Math.max(0, Number(value.prestige) || 0))),
+    steamConnected: value.steamConnected === true,
+    stats: {
+      rounds: Math.round(Math.min(9_999_999, Math.max(0, Number(stats.rounds) || 0))),
+      cases: Math.round(Math.min(9_999_999, Math.max(0, Number(stats.cases) || 0))),
+      battles: Math.round(Math.min(9_999_999, Math.max(0, Number(stats.battles) || 0))),
+      bestValue: Math.round(Math.min(MAX_PRICE, Math.max(0, Number(stats.bestValue) || 0))),
+    },
+  }
+}
+
+function publicProfileView(id, entry) {
+  const { avatar, ...profile } = entry.profile || {}
+  return {
+    id,
+    ...profile,
+    avatarUrl: avatar ? `/api/public-avatar?id=${encodeURIComponent(id)}` : '',
+    updatedAt: Number(entry.updatedAt) || 0,
   }
 }
 
@@ -175,7 +206,7 @@ function publicMatch(match) {
     id: match.id,
     createdAt: match.createdAt,
     winnerTicketId: match.winnerTicketId,
-    players: match.players.map(player => ({ ticketId: player.ticketId, name: player.name, stake: player.stake })),
+    players: match.players.map(player => ({ ticketId: player.ticketId, name: player.name, profileId: player.profileId || '', stake: player.stake })),
   }
 }
 
@@ -206,6 +237,8 @@ export class PotuzhnoState {
     const path = new URL(request.url).pathname
     try {
       if (path === '/api/profile/sync') return await this.profile(request)
+      if (path === '/api/public-profile') return await this.publicProfile(request)
+      if (path === '/api/public-avatar') return await this.publicAvatar(request)
       if (path === '/api/fair/roll') return await this.fairRoll(request)
       if (path === '/api/fair/verify') return await this.fairVerify(request)
       if (path === '/api/matchmaking') return await this.matchmaking(request)
@@ -264,6 +297,79 @@ export class PotuzhnoState {
     const updatedAt = Date.now()
     await this.storage.put(key, { ...entry, payload: body.payload, updatedAt })
     return json({ updatedAt })
+  }
+
+  async publicProfile(request) {
+    const url = new URL(request.url)
+    if (request.method === 'GET') {
+      const id = url.searchParams.get('id') || ''
+      if (!ID.test(id)) return json({ error: 'Некоректне посилання на профіль.' }, 400)
+      const entry = await this.storage.get(`public-profile:${id}`)
+      if (!entry?.profile || Date.now() - Number(entry.updatedAt || 0) > PUBLIC_PROFILE_TTL) {
+        return json({ error: 'Профіль не знайдено або посилання більше не активне.' }, 404)
+      }
+      return json({ profile: publicProfileView(id, entry) }, 200, { 'Cache-Control': 'public, max-age=60, s-maxage=60' })
+    }
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request, 12_288)
+    } catch {
+      return json({ error: 'Некоректний запит.' }, 400)
+    }
+    const action = cleanText(body?.action || 'publish', 16)
+    const id = cleanText(body?.id, 64)
+    const writeKey = cleanText(body?.writeKey, 192)
+    if (!ID.test(id) || !SEED.test(writeKey)) return json({ error: 'Некоректні дані публічного профілю.' }, 400)
+    const key = `public-profile:${id}`
+    const writeHash = await sha256(writeKey)
+
+    if (action === 'unpublish') {
+      const deleted = await this.storage.transaction(async transaction => {
+        const entry = await transaction.get(key)
+        if (!entry || !equalHash(entry.writeHash, writeHash)) return false
+        await transaction.delete(key)
+        return true
+      })
+      return deleted ? json({ unpublished: true }) : json({ error: 'Профіль не знайдено.' }, 404)
+    }
+    if (action !== 'publish') return json({ error: 'Невідома дія профілю.' }, 400)
+    const profile = publicProfilePayload(body?.profile)
+    if (!profile) return json({ error: 'Некоректні публічні дані профілю.' }, 400)
+    const entry = await this.storage.transaction(async transaction => {
+      const existing = await transaction.get(key)
+      if (existing && !equalHash(existing.writeHash, writeHash)) return null
+      const next = { version: 1, writeHash, profile, updatedAt: Date.now() }
+      await transaction.put(key, next)
+      return next
+    })
+    return entry
+      ? json({ profile: publicProfileView(id, entry) })
+      : json({ error: 'Це посилання вже належить іншому профілю.' }, 409)
+  }
+
+  async publicAvatar(request) {
+    if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
+    const id = new URL(request.url).searchParams.get('id') || ''
+    if (!ID.test(id)) return json({ error: 'Некоректне посилання на профіль.' }, 400)
+    const entry = await this.storage.get(`public-profile:${id}`)
+    const avatar = cleanAvatar(entry?.profile?.avatar)
+    if (!avatar || Date.now() - Number(entry?.updatedAt || 0) > PUBLIC_PROFILE_TTL) return json({ error: 'Аватар не знайдено.' }, 404)
+    try {
+      const response = await timedFetch(avatar, { headers: { Accept: 'image/avif,image/webp,image/*,*/*;q=0.8' } })
+      const contentType = response.headers.get('Content-Type') || ''
+      if (!response.ok || !/^image\//i.test(contentType) || !response.body) throw new Error('Invalid public avatar response')
+      return new Response(response.body, {
+        status: 200,
+        headers: {
+          'Content-Type': contentType,
+          'Cache-Control': 'public, max-age=300, s-maxage=300',
+          'X-Content-Type-Options': 'nosniff',
+        },
+      })
+    } catch {
+      return json({ error: 'Steam тимчасово не віддає аватар.' }, 502)
+    }
   }
 
   async dailySeed(day) {
@@ -372,13 +478,21 @@ export class PotuzhnoState {
     const stake = parseStake(body?.stake)
     if (!stake) return json({ error: 'Некоректна ставка для віртуального бою.' }, 400)
     const name = cleanText(body?.name, 24) || 'Гравець'
+    const roomId = cleanText(body?.roomId, 64)
+    const profileId = cleanText(body?.profileId, 64)
+    if (roomId && !ID.test(roomId)) return json({ error: 'Некоректний код кімнати.' }, 400)
+    if (profileId && !ID.test(profileId)) return json({ error: 'Некоректний профіль гравця.' }, 400)
     return json(await this.updateMatchState((state, now) => {
       const existing = matchmakingResult(state, deviceId, ticketId, now)
       if (existing.status === 'matched') return existing
       state.queue = state.queue.filter(entry => entry.deviceId !== deviceId)
-      state.queue.push({ deviceId, ticketId, name, stake, joinedAt: now })
-      if (state.queue.length >= 2) {
-        const players = state.queue.splice(0, 2)
+      const entrant = { deviceId, ticketId, name, profileId, roomId, stake, joinedAt: now }
+      state.queue.push(entrant)
+      const opponentIndex = state.queue.findIndex(entry => entry.deviceId !== deviceId && entry.ticketId !== ticketId && (entry.roomId || '') === roomId)
+      if (opponentIndex >= 0) {
+        const [opponent] = state.queue.splice(opponentIndex, 1)
+        state.queue = state.queue.filter(entry => entry.ticketId !== ticketId)
+        const players = [opponent, entrant]
         const roll = crypto.getRandomValues(new Uint32Array(1))[0] / 0x1_0000_0000
         state.matches.unshift({ id: randomHex(), createdAt: now, winnerTicketId: players[roll < 0.5 ? 0 : 1].ticketId, players })
       }
