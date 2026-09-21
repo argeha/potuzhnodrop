@@ -290,6 +290,7 @@ let account = null;
 let pendingWager = null;
 let fairState = null;
 let lastCaseFairAudit = [];
+let steamSyncPromise = null;
 
 let battlePlayerItem = null;
 let battleBotItem = null;
@@ -731,8 +732,6 @@ const MOCK_LEADERBOARD = [
   { name: 'Raven_ua', xp: 1980 }
 ];
 
-const AVATAR_URL = 'https://avatars.akamai.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb_full.jpg';
-
 function createSteamAvatarFallback(name = 'Steam') {
   const label = escapeSvgText(cleanText(name, 1).toUpperCase() || 'S');
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#66c0f4"/><stop offset="1" stop-color="#171a21"/></linearGradient></defs><rect width="128" height="128" rx="28" fill="url(#g)"/><circle cx="91" cy="39" r="23" fill="none" stroke="#fff" stroke-width="8" opacity=".9"/><circle cx="91" cy="39" r="7" fill="#fff"/><path d="M78 56 44 82" stroke="#fff" stroke-width="10" stroke-linecap="round"/><circle cx="37" cy="88" r="17" fill="#fff" opacity=".95"/><text x="64" y="119" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif" font-size="20" font-weight="900">${label}</text></svg>`;
@@ -1042,7 +1041,7 @@ async function requestJson(url, options = {}, timeout = 7000) {
 
 function buildPortableSave() {
   return {
-    version: '4.1',
+    version: '4.2',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -1050,6 +1049,8 @@ function buildPortableSave() {
     account: {
       nick: account?.nick || 'Гравець',
       steamId: account?.steamId || null,
+      steamProfile: account?.steamProfile || null,
+      steamImport: account?.steamImport || null,
       createdAt: account?.createdAt || Date.now()
     }
   };
@@ -1073,15 +1074,39 @@ function applyPortableSave(data) {
   };
   const savedCloud = isCloudProfile(account?.cloud) ? account.cloud : null;
   if (data.account && typeof data.account === 'object') {
+    const restoredSteamId = /^\d{17}$/.test(String(data.account.steamId || '')) ? String(data.account.steamId) : account?.steamId;
+    const restoredProfile = normalizeSteamProfile(data.account.steamProfile, restoredSteamId);
+    const rawImport = data.account.steamImport;
+    const restoredImport = rawImport?.steamId === restoredSteamId && Array.isArray(rawImport.assetIds)
+      ? {
+        steamId: restoredSteamId,
+        assetIds: [...new Set(rawImport.assetIds.map(id => cleanText(id, 64)).filter(Boolean))].slice(-5_000),
+        lastSyncAt: clampNumber(rawImport.lastSyncAt, 0, Number.MAX_SAFE_INTEGER, 0)
+      }
+      : null;
+    const preservedProfile = account?.steamProfile?.steamId === restoredSteamId ? account.steamProfile : null;
+    const preservedImport = account?.steamImport?.steamId === restoredSteamId ? account.steamImport : null;
     account = {
       ...account,
       nick: cleanText(data.account.nick || account?.nick || 'Гравець', 24),
-      steamId: /^\d{17}$/.test(String(data.account.steamId || '')) ? String(data.account.steamId) : account?.steamId,
+      steamId: restoredSteamId,
+      steamProfile: restoredProfile || preservedProfile,
+      steamImport: restoredImport || preservedImport,
       createdAt: clampNumber(data.account.createdAt, 0, Number.MAX_SAFE_INTEGER, account?.createdAt || Date.now())
     };
   }
   if (savedCloud) account.cloud = savedCloud;
-  if (currentUser) currentUser.balance = clampNumber(data.balance, 0, MAX_STORED_BALANCE, currentUser.balance);
+  if (currentUser) {
+    const profile = normalizeSteamProfile(account?.steamProfile, account?.steamId);
+    currentUser = {
+      ...currentUser,
+      steamId: profile?.steamId || account?.steamId || null,
+      name: profile?.name || account?.nick || currentUser.name,
+      avatar: profile?.avatar || '',
+      steamProfile: profile,
+      balance: clampNumber(data.balance, 0, MAX_STORED_BALANCE, currentUser.balance)
+    };
+  }
   ensureDailyState();
   ensureWeeklyState();
   saveState();
@@ -1089,6 +1114,7 @@ function applyPortableSave(data) {
   renderInventoryGrid();
   renderProfileInventory();
   updateAvatarBadge();
+  applyLoggedInUI();
   renderGameHub();
   updateAccountUI();
 }
@@ -1602,7 +1628,7 @@ function loadState() {
     steamId: steamProfile?.steamId || sid || null,
     name: steamProfile?.name || account?.nick || 'Гість',
     balance: bal,
-    avatar: steamProfile?.avatar || AVATAR_URL,
+    avatar: steamProfile?.avatar || '',
     steamProfile
   };
 
@@ -1637,10 +1663,18 @@ function applyLoggedInUI() {
       avatar.dataset.steamName = currentUser.name || 'Steam';
       avatar.src = currentUser.avatar || createSteamAvatarFallback(currentUser.name);
     }
+    const dot = document.getElementById('steamConnectionDot');
+    if (dot) {
+      dot.classList.remove('bg-amber-400');
+      dot.classList.add('bg-cyan-300');
+      dot.title = 'Steam підключено';
+    }
   } else {
     sb?.classList.remove('hidden');
     if (sb) sb.style.removeProperty('display');
     ab?.classList.add('hidden');
+    const dot = document.getElementById('steamConnectionDot');
+    if (dot) dot.title = '';
   }
   updateBalanceUI();
   if (gameState) renderProfileProgress();
@@ -2520,7 +2554,15 @@ function startSteamLogin() {
 }
 
 function continueSteamLogin() {
-  window.location.href = '/api/steam/auth';
+  const button = document.getElementById('steamLoginContinueBtn');
+  if (button?.disabled) return;
+  if (button) {
+    button.disabled = true;
+    button.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Відкриваємо Steam…';
+  }
+  const hint = document.getElementById('steamLoginHint');
+  if (hint) hint.textContent = 'Зараз відкриється офіційна сторінка Steam. Після підтвердження ти повернешся сюди автоматично.';
+  window.location.assign('/api/steam/auth');
 }
 
 function getSteamImportRecord(steamId) {
@@ -2546,7 +2588,7 @@ function fallbackSteamProfile(steamId) {
 }
 
 async function fetchSteamProfile() {
-  const response = await fetch('/api/steam/profile');
+  const response = await fetch('/api/steam/profile', { cache: 'no-store' });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(cleanText(data?.error || 'Не вдалося завантажити Steam-профіль.', 180));
   return normalizeSteamProfile(data) || null;
@@ -2567,7 +2609,7 @@ function applySteamIdentity(steamId, rawProfile) {
     ...(currentUser || {}),
     steamId,
     name: profile.name,
-    avatar: profile.avatar || AVATAR_URL,
+    avatar: profile.avatar || '',
     steamProfile: profile,
     balance: clampNumber(currentUser?.balance ?? localStorage.getItem(STORAGE.balance), 0, MAX_STORED_BALANCE, DEMO_STARTING_BALANCE)
   };
@@ -2613,9 +2655,33 @@ function importSteamItems(steamId, items) {
   return imported;
 }
 
-async function syncSteamInventory() {
+function setSteamSyncUI(syncing) {
+  const buttons = [
+    document.getElementById('steamProfileSyncBtn'),
+    document.getElementById('steamInventorySyncBtn')
+  ].filter(Boolean);
+  buttons.forEach(button => {
+    if (!button.dataset.steamLabel) button.dataset.steamLabel = button.innerHTML;
+    button.disabled = syncing;
+    button.classList.toggle('opacity-60', syncing);
+    button.classList.toggle('cursor-wait', syncing);
+    button.setAttribute('aria-busy', syncing ? 'true' : 'false');
+    button.innerHTML = syncing
+      ? '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Синхронізація…'
+      : button.dataset.steamLabel;
+  });
+  const dot = document.getElementById('steamConnectionDot');
+  if (dot && currentUser?.steamId) {
+    dot.classList.toggle('bg-amber-400', syncing);
+    dot.classList.toggle('bg-cyan-300', !syncing);
+    dot.title = syncing ? 'Steam синхронізується' : 'Steam підключено';
+  }
+}
+
+async function performSteamInventorySync() {
   const status = document.getElementById('inventoryStatus');
   if (status) status.textContent = 'Оновлюємо публічний Steam-профіль і перевіряємо нові предмети…';
+  setSteamSyncUI(true);
   try {
     const profile = await fetchSteamProfile();
     const steamId = profile?.steamId;
@@ -2642,6 +2708,21 @@ async function syncSteamInventory() {
     if (status) status.textContent = `${e.message || 'Не вдалося завантажити інвентар'}. Steam-профіль збережено, повтори синхронізацію пізніше.`;
     showToast(e.message || 'Не вдалося завантажити інвентар', 'warn');
     if (/сесі|підтверджено/i.test(String(e.message || ''))) startSteamLogin();
+  } finally {
+    setSteamSyncUI(false);
+  }
+}
+
+async function syncSteamInventory() {
+  if (steamSyncPromise) {
+    showToast('Steam уже синхронізується', 'info');
+    return steamSyncPromise;
+  }
+  steamSyncPromise = performSteamInventorySync();
+  try {
+    return await steamSyncPromise;
+  } finally {
+    steamSyncPromise = null;
   }
 }
 

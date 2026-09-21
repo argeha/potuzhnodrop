@@ -480,7 +480,7 @@ export class PotuzhnoState {
     if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
     const session = await this.getSteamSession(request)
     if (!session) return json({ error: 'Сесія Steam завершилась. Увійди через Steam ще раз.' }, 401)
-    return json(await this.resolveSteamProfile(session.steamId), 200, { 'Cache-Control': 'private, max-age=300' })
+    return json(await this.resolveSteamProfile(session.steamId), 200, { 'Cache-Control': 'private, no-store' })
   }
 
   async steamInventory(request) {
