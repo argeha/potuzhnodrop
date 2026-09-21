@@ -1346,17 +1346,30 @@ async function getVerifiedCaseRoll(caseId, nonce) {
 async function getCaseRolls(caseId, count) {
   const nonces = Array.from({ length: count }, () => fairState.nonce++);
   saveFairState();
-  const attempts = await Promise.all(nonces.map(async nonce => {
-    try { return await getVerifiedCaseRoll(caseId, nonce); } catch { return { roll: Math.random(), wearRoll: Math.random(), audit: null }; }
-  }));
-  const audits = attempts.map(result => result.audit).filter(Boolean);
+  const attempts = await Promise.allSettled(nonces.map(nonce => getVerifiedCaseRoll(caseId, nonce)));
+  const hasFailedRequest = attempts.some(result => result.status === 'rejected');
+  const isLocalDevelopment = ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
+
+  // A production case must never be resolved with an unverifiable browser roll.
+  // Keeping the fallback exclusively for local UI work also makes a Worker outage
+  // recoverable: startCaseReel restores the balance/cooldown before showing an error.
+  if (hasFailedRequest && !isLocalDevelopment) {
+    lastCaseFairAudit = [];
+    renderFairUI();
+    throw new Error('Не вдалося підтвердити серверний раунд.');
+  }
+
+  const rolls = attempts.map(result => result.status === 'fulfilled'
+    ? result.value
+    : { roll: Math.random(), wearRoll: Math.random(), audit: null });
+  const audits = rolls.map(result => result.audit).filter(Boolean);
   lastCaseFairAudit = audits;
   if (audits.length) {
     fairState.audits = [...audits.reverse(), ...(fairState.audits || [])].slice(0, 20);
     saveFairState();
   }
   renderFairUI();
-  return { rolls: attempts, verified: audits.length === count };
+  return { rolls, verified: audits.length === count };
 }
 
 async function calculateHmacRoll(serverSeed, proof) {
@@ -2718,14 +2731,15 @@ async function fetchSteamSession() {
 }
 
 async function restoreSteamSession() {
-  if (!currentUser?.steamId) return false;
   try {
     const session = await fetchSteamSession();
     applySteamIdentity(session.profile.steamId, session.profile);
     setSteamConnectionState('connected');
     return true;
   } catch (error) {
-    setSteamConnectionState('expired', error?.message || 'Сесія Steam завершилась.');
+    // The HttpOnly session cookie may still be valid after localStorage is
+    // cleared or migrated. Only show a reconnect prompt for a known profile.
+    setSteamConnectionState(currentUser?.steamId ? 'expired' : 'disconnected', error?.message || 'Сесія Steam завершилась.');
     return false;
   }
 }
@@ -4519,18 +4533,7 @@ async function startCaseReel() {
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>ОБЕРТАННЯ…';
   }
 
-  const fairStatus = document.getElementById('caseReelStatus');
-  if (fairStatus) fairStatus.textContent = 'Фіксуємо перевірюваний seed…';
-  const fairRolls = await getCaseRolls(currentActiveCaseId, mult);
-
-  // Pick winners. Each skin and its wear now come from one server HMAC result
-  // when the Cloudflare endpoint is available; local development uses the explicit fallback above.
-  const winners = [];
-  for (let i = 0; i < mult; i++) {
-    const w = pickCaseSkin(isFree ? 'free' : 'regular', currentActiveCaseId, fairRolls.rolls[i]?.roll);
-    if (w) winners.push(w);
-  }
-  if (winners.length !== mult) {
+  const restorePendingCaseOpen = () => {
     isCaseOpening = false;
     isFreeCaseOpening = false;
     if (!isFree) {
@@ -4546,6 +4549,29 @@ async function startCaseReel() {
       btn.disabled = false;
       btn.innerHTML = '<i class="fa-solid fa-play mr-2"></i>ВІДКРИТИ КЕЙС';
     }
+  };
+
+  const fairStatus = document.getElementById('caseReelStatus');
+  if (fairStatus) fairStatus.textContent = 'Фіксуємо перевірюваний seed…';
+  let fairRolls;
+  try {
+    fairRolls = await getCaseRolls(currentActiveCaseId, mult);
+  } catch (error) {
+    restorePendingCaseOpen();
+    if (fairStatus) fairStatus.textContent = 'Серверний раунд недоступний — баланс відновлено.';
+    showToast('Не вдалося підтвердити розіграш. Спробуй ще раз — баланс відновлено.', 'warn');
+    return;
+  }
+
+  // Pick winners. Each skin and its wear now come from one server HMAC result
+  // when the Cloudflare endpoint is available; local development uses the explicit fallback above.
+  const winners = [];
+  for (let i = 0; i < mult; i++) {
+    const w = pickCaseSkin(isFree ? 'free' : 'regular', currentActiveCaseId, fairRolls.rolls[i]?.roll);
+    if (w) winners.push(w);
+  }
+  if (winners.length !== mult) {
+    restorePendingCaseOpen();
     showToast('Каталог кейсу ще завантажується. Спробуй ще раз.', 'warn');
     return;
   }

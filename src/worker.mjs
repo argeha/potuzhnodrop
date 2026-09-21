@@ -294,12 +294,15 @@ export class PotuzhnoState {
     }
 
     const day = dayKey()
+    const proof = `${clientSeed}:${deviceId}:${nonce}:${caseId}`
     const nonceKey = `nonce:${day}:${deviceId}:${nonce}`
     const previous = await this.storage.get(nonceKey)
-    if (previous) return json(previous)
+    if (previous) {
+      if (previous.proof !== proof) return json({ error: 'Цей nonce уже використано в іншому раунді.' }, 409)
+      return json(previous)
+    }
 
     const seed = await this.dailySeed(day)
-    const proof = `${clientSeed}:${deviceId}:${nonce}:${caseId}`
     const bytes = await hmacSha256(seed.seed, proof)
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
     const result = {
@@ -594,7 +597,9 @@ export class PotuzhnoState {
     return json({
       items,
       profile: await this.resolveSteamProfile(steamId),
-      page: cursor ? Number(cursor) : 0,
+      // Steam asset IDs may exceed Number.MAX_SAFE_INTEGER. Keep the cursor
+      // opaque so pagination never loses precision for large inventories.
+      cursor: cursor || null,
       hasMore: Boolean(nextCursor),
       nextCursor,
     }, 200, { 'Cache-Control': 'private, no-store' })
