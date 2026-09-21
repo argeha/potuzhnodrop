@@ -477,36 +477,23 @@
 </section>
 
 <!-- PROFILE -->
-<section data-page="profile" class="hidden space-y-5">
+<section data-page="profile" class="profile-page hidden space-y-5">
+<div id="profileLootStrip" class="profile-loot-strip" aria-label="Предмети з інвентарю"></div>
 <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-2">
 <div><span class="text-xs font-extrabold uppercase tracking-[.2em] text-amber-400">Профіль</span><h1 class="font-heading mt-1 text-4xl sm:text-5xl font-extrabold uppercase tracking-wider text-white">Твій профіль</h1></div>
 <p class="max-w-lg text-sm leading-6 text-gray-400">Інвентар, статистика, історія, експорт збереження.</p>
 </div>
 
-<article class="glass-panel rounded-2xl border border-amber-500/25 p-5">
-<div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-<div class="flex items-center gap-3">
-<div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-black font-heading text-3xl font-extrabold shadow-lg">P</div>
-<div>
-<h3 class="text-xl font-extrabold text-white flex items-center gap-2"><span id="profileName">Гість</span><span id="prestigeBadge" class="prestige-badge hidden"><i class="fa-solid fa-crown text-[8px]"></i><span id="prestigeLevelLabel">P1</span></span></h3>
-<p class="text-xs text-gray-500 mt-0.5">Steam ID: <span id="accountSteamId" class="font-mono text-gray-300">не підключено</span></p>
+<article id="profileOverview" class="profile-command-center">
+<div class="profile-command-main">
+<div class="profile-portrait"><img id="profileAvatarLarge" alt="Аватар профілю" onerror="handleSteamAvatarError(this)"><span id="profileConnectionIcon" class="profile-connection-icon" title="Профіль гри"><i class="fa-solid fa-gamepad"></i></span></div>
+<div class="profile-identity"><p id="profileConnectionText" class="profile-kicker">ПРОФІЛЬ ГРИ</p><h3 class="profile-player-name"><span id="profileName">Гість</span><span id="prestigeBadge" class="prestige-badge hidden"><i class="fa-solid fa-crown text-[8px]"></i><span id="prestigeLevelLabel">P1</span></span></h3><p class="profile-steam-id"><i class="fa-brands fa-steam"></i><span id="accountSteamId" class="font-mono">не підключено</span></p><button onclick="openModal('accountModal')" class="profile-edit-button"><i class="fa-solid fa-user-pen"></i>Змінити профіль</button></div>
+<div class="profile-level-panel"><span class="profile-level-label">РІВЕНЬ</span><strong id="profileLevel">LVL 1</strong><button onclick="openModal('prestigeModal')" id="prestigeBtn" class="profile-prestige-button" title="Престиж (LVL 10+)"><i class="fa-solid fa-crown"></i>Престиж</button></div>
+<div class="profile-wallet"><span>ІГРОВИЙ БАЛАНС</span><strong id="profileBalance">0 DC</strong><button onclick="openModal('topupModal')"><i class="fa-solid fa-plus"></i></button></div>
 </div>
-</div>
-<span id="profileLevel" class="rounded-xl bg-amber-500 px-4 py-2 font-heading text-2xl font-extrabold text-black self-start">LVL 1</span>
-</div>
-<div class="mt-5">
-<div class="mb-2 flex items-center justify-between text-xs font-bold"><span class="text-gray-400">Досвід <span id="xpMultiplierLabel" class="text-amber-300"></span></span><span id="xpText" class="text-amber-300">0 / 750 XP</span></div>
-<div class="h-3 overflow-hidden rounded-full bg-black/40"><div id="xpBar" class="h-full rounded-full bg-gradient-to-r from-amber-500 to-yellow-300 transition-all duration-500" style="width:0%"></div></div>
-</div>
-<div class="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-<div class="rounded-xl border border-gray-800 bg-black/20 p-3"><p id="statRounds" class="font-heading text-3xl font-extrabold text-white">0</p><p class="text-[10px] font-bold uppercase tracking-wider text-gray-500">Роллів</p></div>
-<div class="rounded-xl border border-gray-800 bg-black/20 p-3"><p id="statWinRate" class="font-heading text-3xl font-extrabold text-green-400">0%</p><p class="text-[10px] font-bold uppercase tracking-wider text-gray-500">Виграшів</p></div>
-<div class="rounded-xl border border-gray-800 bg-black/20 p-3"><p id="statStreak" class="font-heading text-3xl font-extrabold text-amber-300">0</p><p class="text-[10px] font-bold uppercase tracking-wider text-gray-500">Серія</p></div>
-<div class="rounded-xl border border-gray-800 bg-black/20 p-3"><p id="statBestValue" class="font-heading text-2xl font-extrabold text-cyan-300">0</p><p class="text-[10px] font-bold uppercase tracking-wider text-gray-500">Найкращий DC</p></div>
-</div>
-<div class="mt-4 flex flex-col sm:flex-row gap-2">
-<button onclick="openModal('accountModal')" class="flex-1 py-3 rounded-xl border border-brand-border bg-brand-card hover:bg-gray-800 text-sm font-bold text-gray-200"><i class="fa-solid fa-user-pen mr-2 text-amber-400"></i>Редагувати нікнейм</button>
-<button onclick="openModal('prestigeModal')" id="prestigeBtn" class="flex-1 py-3 rounded-xl border border-violet-500/40 bg-violet-500/10 hover:bg-violet-500/20 text-violet-200 font-extrabold uppercase text-xs tracking-wider transition disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-crown mr-2"></i>Престиж (LVL 10+)</button>
+<div class="profile-command-progress"><div class="profile-progress-title"><span>ДОСВІД <span id="xpMultiplierLabel" class="text-amber-300"></span></span><strong id="xpText">0 / 750 XP</strong></div><div class="profile-progress-track"><div id="xpBar" style="width:0%"></div></div></div>
+<div class="profile-quick-stats">
+<div><p id="statRounds">0</p><span>Роллів</span></div><div><p id="statWinRate">0%</p><span>Виграшів</span></div><div><p id="statStreak">0</p><span>Серія</span></div><div><p id="statBestValue">0</p><span>Найкращий DC</span></div>
 </div>
 </article>
 
@@ -544,35 +531,35 @@
 </div>
 </article>
 
-<article class="glass-panel rounded-2xl border border-amber-500/20 p-5">
-<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+<article id="profileInventoryPanel" class="profile-inventory-panel">
+<div class="profile-inventory-heading">
 <div>
-<p class="text-xs font-bold uppercase tracking-widest text-gray-500">Інвентар</p>
-<h3 class="mt-1 text-xl font-extrabold text-white"><i class="fa-solid fa-boxes-stacked mr-2 text-amber-400"></i>Мої скіни</h3>
+<p>ІНВЕНТАР</p>
+<h3><i class="fa-solid fa-boxes-stacked"></i>Мої скіни</h3>
 </div>
-<div class="flex flex-wrap gap-2">
+<div class="profile-inventory-actions">
 <button onclick="openInventoryModalFromProfile()" class="px-4 py-2 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20 text-xs font-bold transition"><i class="fa-solid fa-up-right-and-down-left-from-center mr-1"></i>Модалкою</button>
 <button onclick="sellAllDuplicates()" class="px-4 py-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20 text-xs font-bold transition"><i class="fa-solid fa-sack-dollar mr-1"></i>Продати дублі</button>
 </div>
 </div>
-<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+<div class="profile-inventory-metrics">
 <div class="inv-stat"><div class="inv-stat-label">Предметів</div><div id="invStatCount" class="inv-stat-value">0</div></div>
 <div class="inv-stat"><div class="inv-stat-label">Сума DC</div><div id="invStatValue" class="inv-stat-value text-amber-300">0</div></div>
 <div class="inv-stat"><div class="inv-stat-label">Найдорожчий</div><div id="invStatBest" class="inv-stat-value text-cyan-300">0</div></div>
 <div class="inv-stat"><div class="inv-stat-label">Унікальних</div><div id="invStatUnique" class="inv-stat-value text-emerald-300">0</div></div>
 </div>
-<div class="flex flex-wrap items-center gap-2 mb-3">
-<div class="flex flex-wrap gap-1.5" id="invCategoryChips"></div>
-<select id="invSortSelect" onchange="setInventorySort(this.value)" class="ml-auto bg-black/30 border border-brand-border rounded-lg px-3 py-1.5 text-xs font-bold text-gray-200 focus:outline-none focus:border-amber-500/60">
+<div class="profile-inventory-toolbar">
+<div class="profile-inventory-filter-group" id="invCategoryChips"></div>
+<div class="profile-inventory-controls"><select id="invSortSelect" onchange="setInventorySort(this.value)">
 <option value="price-desc">Ціна ↓</option>
 <option value="price-asc">Ціна ↑</option>
 <option value="name-asc">Назва A→Я</option>
 <option value="wear-asc">Знос ↑</option>
 <option value="newest">Спочатку нові</option>
 </select>
-<input id="invSearch" type="search" oninput="renderProfileInventory()" placeholder="Пошук…" class="bg-black/30 border border-brand-border rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500/60 w-40 sm:w-56">
+</div><label class="profile-inventory-search"><i class="fa-solid fa-magnifying-glass"></i><input id="invSearch" type="search" oninput="renderProfileInventory()" placeholder="Пошук у інвентарі…"></label>
 </div>
-<div id="profileInventoryGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3"></div>
+<div id="profileInventoryGrid" class="profile-inventory-grid"></div>
 <div id="profileInventoryEmpty" class="hidden rounded-xl border border-dashed border-gray-700 p-12 text-center">
 <i class="fa-solid fa-box-open text-3xl text-gray-600"></i>
 <p class="mt-3 text-sm font-bold text-gray-400">Інвентар порожній</p>

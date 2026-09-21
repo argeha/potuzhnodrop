@@ -946,6 +946,22 @@ function saveAccountNick() {
 function updateAccountUI() {
   const n = document.getElementById('profileName');
   if (n) n.textContent = account?.nick || 'Гість';
+  const avatarLarge = document.getElementById('profileAvatarLarge');
+  if (avatarLarge) {
+    const avatarName = currentUser?.name || account?.nick || 'Гравець';
+    avatarLarge.dataset.steamName = avatarName;
+    avatarLarge.src = currentUser?.avatar || createSteamAvatarFallback(avatarName);
+  }
+  const connectionText = document.getElementById('profileConnectionText');
+  if (connectionText) connectionText.textContent = currentUser?.steamId ? 'STEAM ПРОФІЛЬ ПІДКЛЮЧЕНО' : 'ПРОФІЛЬ ГРИ';
+  const connectionIcon = document.getElementById('profileConnectionIcon');
+  if (connectionIcon) {
+    connectionIcon.classList.toggle('is-steam', Boolean(currentUser?.steamId));
+    connectionIcon.innerHTML = currentUser?.steamId ? '<i class="fa-brands fa-steam"></i>' : '<i class="fa-solid fa-gamepad"></i>';
+    connectionIcon.title = currentUser?.steamId ? 'Steam підключено' : 'Профіль гри';
+  }
+  const profileBalance = document.getElementById('profileBalance');
+  if (profileBalance) profileBalance.textContent = formatCredits(currentUser?.balance ?? 0);
   const i = document.getElementById('accountNickInput');
   if (i && !i.value) i.value = account?.nick || '';
   const s = document.getElementById('accountSteamId');
@@ -1776,6 +1792,8 @@ function updateBalanceUI() {
   if (currentUser) {
     const el = document.getElementById('userBalance');
     if (el) el.textContent = formatCredits(currentUser.balance);
+    const profileBalance = document.getElementById('profileBalance');
+    if (profileBalance) profileBalance.textContent = formatCredits(currentUser.balance);
   }
 }
 
@@ -3192,7 +3210,33 @@ function renderProfileInventoryStats() {
   if (u) u.textContent = String(uniqueNames);
 }
 
+function renderProfileLootStrip() {
+  const strip = document.getElementById('profileLootStrip');
+  if (!strip) return;
+  const source = (userInventory.length ? [...userInventory] : [...CS2_SKINS])
+    .sort((left, right) => (right.addedAt || 0) - (left.addedAt || 0) || (right.price || 0) - (left.price || 0))
+    .slice(0, 20);
+  const inventoryIds = new Set(userInventory.map(item => String(item.id)));
+  strip.innerHTML = `
+    <div class="profile-loot-strip-label"><i class="fa-solid fa-crosshairs"></i><span>АРСЕНАЛ</span><strong>${userInventory.length}</strong></div>
+    <div class="profile-loot-track">
+      ${source.map(item => {
+        const owned = inventoryIds.has(String(item.id));
+        const sourceLabel = item.steamImported ? 'STEAM' : item.exclusive ? 'EXCLUSIVE' : 'DROP';
+        return `<button type="button" class="profile-loot-item ${owned ? 'is-owned' : ''}" ${owned ? `data-profile-strip-inspect="${escapeHtml(String(item.id))}"` : 'disabled'} title="${escapeHtml(item.name)} · ${formatCredits(item.price)}">
+          <span class="profile-loot-origin">${sourceLabel}</span>
+          <img src="${escapeHtml(item.img || '')}" alt="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)">
+          <span class="profile-loot-name">${escapeHtml(item.name)}</span>
+        </button>`;
+      }).join('')}
+    </div>`;
+  strip.querySelectorAll('[data-profile-strip-inspect]').forEach(button => {
+    button.addEventListener('click', () => showItemDetail(button.dataset.profileStripInspect));
+  });
+}
+
 function renderProfileInventory() {
+  renderProfileLootStrip();
   renderProfileInventoryCategoryChips();
   renderProfileInventoryStats();
   const grid = document.getElementById('profileInventoryGrid');
@@ -3222,19 +3266,27 @@ function renderProfileInventory() {
     const k = normalizeSkinName(s.name) + '|' + (wear.code || '');
     const dupes = nameCounts.get(k) || 0;
     const sellPrice = Math.round((s.price || 0) * SELL_RATE);
-    return `<div class="profile-inv-card ${s.exclusive ? 'is-exclusive' : ''}" data-profile-item="${escapeHtml(String(s.id))}">
+    const [weaponPart, ...skinParts] = String(s.name || 'CS2 Skin').split('|');
+    const weapon = cleanText(weaponPart, 48) || 'CS2';
+    const skinName = cleanText(skinParts.join('|'), 110) || weapon;
+    const origin = s.steamImported ? 'STEAM' : s.exclusive ? 'EXCLUSIVE' : 'DROP';
+    return `<article class="profile-inv-card ${s.exclusive ? 'is-exclusive' : ''}">
+      <div class="profile-inv-card-top"><span class="wear-badge wear-${wear.code}">${wear.code}</span><span class="profile-inv-origin">${origin}</span></div>
       ${dupes > 1 ? `<span class="dupe-badge">×${dupes}</span>` : ''}
-      <span class="wear-badge wear-${wear.code} absolute top-2 left-2 z-10">${wear.code}</span>
-      <img src="${escapeHtml(s.img || '')}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" loading="lazy" onerror="handleSkinImageError(this)">
-      <p class="inv-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</p>
-      <p class="inv-price">${formatCredits(s.price)}</p>
-      <div class="inv-actions">
-        <button class="sell-btn" data-profile-sell="${escapeHtml(String(s.id))}" title="Продати за ${formatCredits(sellPrice)}"><i class="fa-solid fa-sack-dollar mr-1"></i>${Math.round(sellPrice)}</button>
+      <button type="button" class="profile-inv-inspect" data-profile-inspect="${escapeHtml(String(s.id))}" title="Відкрити деталі: ${escapeHtml(s.name)}">
+        <img src="${escapeHtml(s.img || '')}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" loading="lazy" onerror="handleSkinImageError(this)">
+        <div class="profile-inv-copy"><span>${escapeHtml(weapon)}</span><p class="inv-name" title="${escapeHtml(s.name)}">${escapeHtml(skinName)}</p></div>
+      </button>
+      <div class="profile-inv-card-footer"><p class="inv-price"><i class="fa-solid fa-coins"></i>${formatCredits(s.price)}</p><div class="inv-actions">
+        <button class="sell-btn" data-profile-sell="${escapeHtml(String(s.id))}" title="Продати за ${formatCredits(sellPrice)}"><i class="fa-solid fa-sack-dollar"></i><span>Продати</span></button>
         <button class="info-btn" data-profile-info="${escapeHtml(String(s.id))}" title="Деталі"><i class="fa-solid fa-circle-info"></i></button>
-      </div>
-    </div>`;
+      </div></div>
+    </article>`;
   }).join('');
 
+  grid.querySelectorAll('[data-profile-inspect]').forEach(button => {
+    button.addEventListener('click', () => showItemDetail(button.dataset.profileInspect));
+  });
   grid.querySelectorAll('[data-profile-sell]').forEach(b => {
     b.addEventListener('click', e => {
       e.stopPropagation();
