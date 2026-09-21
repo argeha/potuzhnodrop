@@ -15,6 +15,10 @@
       {
         "name": "POTUZHNO_STATE",
         "class_name": "PotuzhnoState"
+      },
+      {
+        "name": "POTUZHNO_RATE_LIMIT",
+        "class_name": "RateLimiter"
       }
     ]
   },
@@ -22,6 +26,10 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["PotuzhnoState"]
+    },
+    {
+      "tag": "v2-rate-limiter",
+      "new_sqlite_classes": ["RateLimiter"]
     }
   ]
 }

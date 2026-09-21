@@ -36,9 +36,23 @@ const MATCH_TTL = 10 * 60_000
 const PUBLIC_PROFILE_TTL = 90 * 24 * 60 * 60_000
 const STEAM_PROFILE_TTL = 6 * 60 * 60_000
 const STEAM_SESSION_TTL = 30 * 24 * 60 * 60_000
+const CATALOG_TTL = 6 * 60 * 60_000
+const CATALOG_STALE_TTL = 7 * 24 * 60 * 60_000
 const STEAM_SESSION_COOKIE = 'potuzhno_steam_session'
 const STEAM_AUTH_TTL = 10 * 60_000
 const STEAM_AUTH_COOKIE = 'potuzhno_steam_auth'
+const STEAM_SESSION_VERSION = 'v2'
+const RATE_LIMITS = {
+  profile: { limit: 24, windowMs: 60_000 },
+  publicProfile: { limit: 60, windowMs: 60_000 },
+  fair: { limit: 80, windowMs: 60_000 },
+  matchmaking: { limit: 50, windowMs: 60_000 },
+  steamAuth: { limit: 8, windowMs: 10 * 60_000 },
+  steamInventory: { limit: 16, windowMs: 60_000 },
+  steam: { limit: 60, windowMs: 60_000 },
+  catalog: { limit: 20, windowMs: 60_000 },
+  api: { limit: 120, windowMs: 60_000 },
+}
 const encoder = new TextEncoder()
 
 const json = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), {
@@ -177,6 +191,30 @@ function sessionCookie(name, value, maxAge, secure) {
   return `${name}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`
 }
 
+function steamSessionToken(value) {
+  const session = String(value || '')
+  const match = session.match(new RegExp(`^${STEAM_SESSION_VERSION}_([a-f0-9]{64})$`, 'i'))
+  if (match) return { token: match[1].toLowerCase(), sharded: true }
+  if (/^[a-f0-9]{64}$/i.test(session)) return { token: session.toLowerCase(), sharded: false }
+  return null
+}
+
+function rateLimitGroup(path) {
+  if (path === '/api/profile/sync') return 'profile'
+  if (path === '/api/public-profile' || path === '/api/public-avatar') return 'publicProfile'
+  if (path.startsWith('/api/fair/')) return 'fair'
+  if (path === '/api/matchmaking') return 'matchmaking'
+  if (path === '/api/steam/auth') return 'steamAuth'
+  if (path === '/api/steam/inventory') return 'steamInventory'
+  if (path.startsWith('/api/steam/')) return 'steam'
+  if (path === '/api/catalog/skins') return 'catalog'
+  return 'api'
+}
+
+function hasFairSecret(env) {
+  return typeof env?.FAIR_SEED_SECRET === 'string' && env.FAIR_SEED_SECRET.length >= 32
+}
+
 function parseStake(value) {
   const name = cleanText(value?.name, 160)
   const img = cleanImage(value?.img)
@@ -232,13 +270,19 @@ async function timedFetch(url, options = {}) {
 }
 
 export class PotuzhnoState {
-  constructor(state) {
+  constructor(state, env) {
     this.storage = state.storage
+    this.env = env
   }
 
   async fetch(request) {
     const path = new URL(request.url).pathname
     try {
+      // These routes are reachable only through a Durable Object stub. The public
+      // Worker never dispatches /__internal/* to this class.
+      if (path === '/__internal/steam-session') return await this.internalSteamSession(request)
+      if (path === '/__internal/migrate-profile') return await this.internalProfileMigration(request)
+      if (path === '/__internal/migrate-public-profile') return await this.internalPublicProfileMigration(request)
       if (path === '/api/profile/sync') return await this.profile(request)
       if (path === '/api/public-profile') return await this.publicProfile(request)
       if (path === '/api/public-avatar') return await this.publicAvatar(request)
@@ -265,6 +309,99 @@ export class PotuzhnoState {
     return JSON.parse(raw)
   }
 
+  async internalSteamSession(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let session
+    try {
+      session = await this.readBody(request, 4_096)
+    } catch {
+      return json({ error: 'Некоректна сесія Steam.' }, 400)
+    }
+    if (!/^\d{17}$/.test(String(session?.steamId || '')) || Number(session?.expiresAt || 0) <= Date.now()) {
+      return json({ error: 'Некоректна сесія Steam.' }, 400)
+    }
+    await this.storage.put('steam-session', {
+      steamId: String(session.steamId),
+      createdAt: Number(session.createdAt) || Date.now(),
+      expiresAt: Number(session.expiresAt),
+    })
+    return json({ stored: true })
+  }
+
+  async internalProfileMigration(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request, 4_096)
+    } catch {
+      return json({ error: 'Некоректний запит.' }, 400)
+    }
+    const accountId = String(body?.accountId || '')
+    const recoveryHash = String(body?.recoveryHash || '')
+    if (!ID.test(accountId) || !/^[a-f0-9]{64}$/i.test(recoveryHash)) return json({ migrated: false })
+    const key = `profile:${accountId}`
+    const entry = await this.storage.get(key)
+    if (!entry || !equalHash(entry.recoveryHash, recoveryHash) || !isPayload(entry.payload)) return json({ migrated: false })
+    // Copy rather than move: cross-object writes are not atomic, so keeping the
+    // legacy record until a scheduled cleanup is safer than risking data loss if
+    // the destination shard fails between the read and its first write.
+    return json({ migrated: true, entry })
+  }
+
+  async internalPublicProfileMigration(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request, 4_096)
+    } catch {
+      return json({ error: 'Некоректний запит.' }, 400)
+    }
+    const id = String(body?.id || '')
+    if (!ID.test(id)) return json({ migrated: false })
+    const key = `public-profile:${id}`
+    const entry = await this.storage.get(key)
+    if (!entry?.profile) return json({ migrated: false })
+    // See profile migration above: retain the legacy copy until it is safe to
+    // clean up asynchronously; all new traffic goes to the per-profile shard.
+    return json({ migrated: true, entry })
+  }
+
+  async migrateLegacyProfile(accountId, recoveryHash) {
+    const global = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName('global'))
+    const response = await global.fetch(new Request('https://internal/__internal/migrate-profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountId, recoveryHash }),
+    }))
+    if (!response.ok) return null
+    const data = await response.json()
+    return data?.migrated && data.entry ? data.entry : null
+  }
+
+  async migrateLegacyPublicProfile(id) {
+    const global = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName('global'))
+    const response = await global.fetch(new Request('https://internal/__internal/migrate-public-profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    }))
+    if (!response.ok) return null
+    const data = await response.json()
+    return data?.migrated && data.entry ? data.entry : null
+  }
+
+  async publicProfileEntry(id) {
+    const key = `public-profile:${id}`
+    const local = await this.storage.get(key)
+    if (local?.profile) return local
+    const migrated = await this.migrateLegacyPublicProfile(id)
+    if (migrated?.profile) {
+      await this.storage.put(key, migrated)
+      return migrated
+    }
+    return null
+  }
+
   async profile(request) {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
     let body
@@ -281,6 +418,14 @@ export class PotuzhnoState {
 
     const key = `profile:${accountId}`
     const recoveryHash = await sha256(recoveryCode)
+    let entry = await this.storage.get(key)
+    if (!entry) {
+      const migrated = await this.migrateLegacyProfile(accountId, recoveryHash)
+      if (migrated) {
+        await this.storage.put(key, migrated)
+        entry = migrated
+      }
+    }
     if (action === 'create') {
       if (!isPayload(body.payload)) return json({ error: 'Некоректне збереження.' }, 400)
       const result = await this.storage.transaction(async transaction => {
@@ -292,7 +437,6 @@ export class PotuzhnoState {
       return result ? json({ updatedAt: result.updatedAt }) : json({ error: 'Профіль уже існує.' }, 409)
     }
 
-    const entry = await this.storage.get(key)
     if (!entry || !equalHash(entry.recoveryHash, recoveryHash)) return json({ error: 'Профіль не знайдено або код відновлення неправильний.' }, 403)
     if (action === 'load') return json({ payload: entry.payload, updatedAt: entry.updatedAt })
     if (action !== 'save' || !isPayload(body.payload)) return json({ error: 'Некоректне збереження.' }, 400)
@@ -307,7 +451,7 @@ export class PotuzhnoState {
     if (request.method === 'GET') {
       const id = url.searchParams.get('id') || ''
       if (!ID.test(id)) return json({ error: 'Некоректне посилання на профіль.' }, 400)
-      const entry = await this.storage.get(`public-profile:${id}`)
+      const entry = await this.publicProfileEntry(id)
       if (!entry?.profile || Date.now() - Number(entry.updatedAt || 0) > PUBLIC_PROFILE_TTL) {
         if (entry) await this.storage.delete(`public-profile:${id}`)
         return json({ error: 'Профіль не знайдено або посилання більше не активне.' }, 404)
@@ -327,6 +471,7 @@ export class PotuzhnoState {
     if (!ID.test(id) || !SEED.test(writeKey)) return json({ error: 'Некоректні дані публічного профілю.' }, 400)
     const key = `public-profile:${id}`
     const writeHash = await sha256(writeKey)
+    const existingEntry = await this.publicProfileEntry(id)
 
     if (action === 'unpublish') {
       const deleted = await this.storage.transaction(async transaction => {
@@ -341,7 +486,7 @@ export class PotuzhnoState {
     const profile = publicProfilePayload(body?.profile)
     if (!profile) return json({ error: 'Некоректні публічні дані профілю.' }, 400)
     const entry = await this.storage.transaction(async transaction => {
-      const existing = await transaction.get(key)
+      const existing = await transaction.get(key) || existingEntry
       if (existing && !equalHash(existing.writeHash, writeHash)) return null
       const next = { version: 1, writeHash, profile, updatedAt: Date.now() }
       await transaction.put(key, next)
@@ -356,7 +501,7 @@ export class PotuzhnoState {
     if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
     const id = new URL(request.url).searchParams.get('id') || ''
     if (!ID.test(id)) return json({ error: 'Некоректне посилання на профіль.' }, 400)
-    const entry = await this.storage.get(`public-profile:${id}`)
+    const entry = await this.publicProfileEntry(id)
     const avatar = cleanAvatar(entry?.profile?.avatar)
     if (!avatar || Date.now() - Number(entry?.updatedAt || 0) > PUBLIC_PROFILE_TTL) {
       if (entry && Date.now() - Number(entry.updatedAt || 0) > PUBLIC_PROFILE_TTL) await this.storage.delete(`public-profile:${id}`)
@@ -381,6 +526,17 @@ export class PotuzhnoState {
 
   async dailySeed(day) {
     const key = `seed:${day}`
+    // Preserve seeds created by the earlier global implementation so historical
+    // fairness proofs remain verifiable after the sharded rollout.
+    const stored = await this.storage.get(key)
+    if (stored?.seed && stored.hash) return stored
+    // With FAIR_SEED_SECRET configured, every shard derives the same daily seed
+    // without putting every roll through one global Durable Object. Revealing a
+    // derived seed tomorrow does not reveal the long-lived secret or other days.
+    if (hasFairSecret(this.env)) {
+      const seed = hex(await hmacSha256(this.env.FAIR_SEED_SECRET, `potuzhno-fair:${day}`))
+      return { seed, hash: await sha256(seed) }
+    }
     return await this.storage.transaction(async transaction => {
       const existing = await transaction.get(key)
       if (existing?.seed && existing.hash) return existing
@@ -568,23 +724,34 @@ export class PotuzhnoState {
     }
     const sessionToken = randomHex(32)
     const maxAge = Math.floor(STEAM_SESSION_TTL / 1000)
-    await this.storage.put(`steam-session:${sessionToken}`, { steamId, createdAt: Date.now(), expiresAt: Date.now() + STEAM_SESSION_TTL })
+    const createdAt = Date.now()
+    const sessionState = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(`steam:${sessionToken}`))
+    const sessionResponse = await sessionState.fetch(new Request('https://internal/__internal/steam-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ steamId, createdAt, expiresAt: createdAt + STEAM_SESSION_TTL }),
+    }))
+    if (!sessionResponse.ok) {
+      const headers = new Headers({ Location: `${origin}/?steam_error=session`, 'Cache-Control': 'no-store' })
+      headers.append('Set-Cookie', clearAuth)
+      return new Response(null, { status: 302, headers })
+    }
     const headers = new Headers({
       Location: `${origin}/?steam_connected=1`,
       'Cache-Control': 'no-store',
     })
-    headers.append('Set-Cookie', sessionCookie(STEAM_SESSION_COOKIE, sessionToken, maxAge, url.protocol === 'https:'))
+    headers.append('Set-Cookie', sessionCookie(STEAM_SESSION_COOKIE, `${STEAM_SESSION_VERSION}_${sessionToken}`, maxAge, url.protocol === 'https:'))
     headers.append('Set-Cookie', clearAuth)
     return new Response(null, { status: 302, headers })
   }
 
   async getSteamSession(request) {
-    const token = readCookie(request, STEAM_SESSION_COOKIE)
-    if (!/^[a-f0-9]{64}$/i.test(token)) return null
-    const session = await this.storage.get(`steam-session:${token}`)
+    const parsed = steamSessionToken(readCookie(request, STEAM_SESSION_COOKIE))
+    if (!parsed) return null
+    const session = await this.storage.get(parsed.sharded ? 'steam-session' : `steam-session:${parsed.token}`)
     if (!/^\d{17}$/.test(String(session?.steamId || ''))) return null
     if (Number(session.expiresAt || 0) > Date.now()) return session
-    await this.storage.delete(`steam-session:${token}`)
+    await this.storage.delete(parsed.sharded ? 'steam-session' : `steam-session:${parsed.token}`)
     return null
   }
 
@@ -602,21 +769,45 @@ export class PotuzhnoState {
       updatedAt: Date.now(),
     }
     let profile = { ...fallback }
-    try {
-      const response = await timedFetch(`https://steamcommunity.com/profiles/${steamId}/?xml=1`, {
-        headers: { Accept: 'application/xml,text/xml;q=0.9,*/*;q=0.8' },
-      })
-      if (response.ok) {
-        const xml = await response.text()
-        profile = {
-          ...profile,
-          name: xmlTag(xml, 'steamID') || profile.name,
-          avatar: cleanAvatar(xmlTag(xml, 'avatarFull') || xmlTag(xml, 'avatarMedium') || xmlTag(xml, 'avatarIcon')) || profile.avatar,
-          visibility: cleanText(xmlTag(xml, 'privacyState'), 24).toLowerCase() || profile.visibility,
+    const steamApiKey = cleanText(this.env?.STEAM_WEB_API_KEY, 256)
+    if (steamApiKey) {
+      try {
+        const apiUrl = new URL('https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/')
+        apiUrl.searchParams.set('key', steamApiKey)
+        apiUrl.searchParams.set('steamids', steamId)
+        const response = await timedFetch(apiUrl.href, { headers: { Accept: 'application/json' } })
+        const player = response.ok ? (await response.json())?.response?.players?.[0] : null
+        if (player) {
+          profile = {
+            ...profile,
+            name: cleanText(player.personaname, 48) || profile.name,
+            avatar: cleanAvatar(player.avatarfull || player.avatarmedium || player.avatar) || profile.avatar,
+            profileUrl: /^https:\/\/steamcommunity\.com\//i.test(String(player.profileurl || '')) ? String(player.profileurl) : profile.profileUrl,
+            visibility: Number(player.communityvisibilitystate) === 3 ? 'public' : profile.visibility,
+          }
         }
+      } catch {
+        // Steam's official API is optional. The public profile fallback below keeps
+        // the sign-in usable while the API is temporarily unavailable.
       }
-    } catch {
-      // The public XML feed is not consistently available; use the HTML metadata below.
+    }
+    if (!profile.avatar || profile.name === fallback.name) {
+      try {
+        const response = await timedFetch(`https://steamcommunity.com/profiles/${steamId}/?xml=1`, {
+          headers: { Accept: 'application/xml,text/xml;q=0.9,*/*;q=0.8' },
+        })
+        if (response.ok) {
+          const xml = await response.text()
+          profile = {
+            ...profile,
+            name: xmlTag(xml, 'steamID') || profile.name,
+            avatar: cleanAvatar(xmlTag(xml, 'avatarFull') || xmlTag(xml, 'avatarMedium') || xmlTag(xml, 'avatarIcon')) || profile.avatar,
+            visibility: cleanText(xmlTag(xml, 'privacyState'), 24).toLowerCase() || profile.visibility,
+          }
+        }
+      } catch {
+        // The public XML feed is not consistently available; use the HTML metadata below.
+      }
     }
     if (!profile.avatar || profile.name === fallback.name) {
       try {
@@ -688,8 +879,8 @@ export class PotuzhnoState {
     const url = new URL(request.url)
     const requestOrigin = request.headers.get('Origin')
     if (requestOrigin && requestOrigin !== url.origin) return json({ error: 'Некоректне походження запиту.' }, 403)
-    const token = readCookie(request, STEAM_SESSION_COOKIE)
-    if (/^[a-f0-9]{64}$/i.test(token)) await this.storage.delete(`steam-session:${token}`)
+    const parsed = steamSessionToken(readCookie(request, STEAM_SESSION_COOKIE))
+    if (parsed) await this.storage.delete(parsed.sharded ? 'steam-session' : `steam-session:${parsed.token}`)
     const headers = new Headers(JSON_HEADERS)
     headers.append('Set-Cookie', sessionCookie(STEAM_SESSION_COOKIE, '', 0, url.protocol === 'https:'))
     headers.append('Set-Cookie', sessionCookie(STEAM_AUTH_COOKIE, '', 0, url.protocol === 'https:'))
@@ -753,6 +944,13 @@ export class PotuzhnoState {
 
   async skinCatalog(request) {
     if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
+    const cacheKey = 'catalog:skins:v1'
+    const cached = await this.storage.get(cacheKey)
+    const cachedItems = Array.isArray(cached?.items) ? cached.items : []
+    const cacheAge = Date.now() - Number(cached?.updatedAt || 0)
+    if (cachedItems.length >= 50 && cacheAge >= 0 && cacheAge < CATALOG_TTL) {
+      return json(cachedItems, 200, { 'Cache-Control': 'public, max-age=3600, s-maxage=21600' })
+    }
     for (const source of CATALOG_SOURCES) {
       try {
         const response = await timedFetch(source, { headers: { Accept: 'application/json' } })
@@ -767,21 +965,129 @@ export class PotuzhnoState {
           rarity: { name: cleanText(skin?.rarity?.name || 'Consumer Grade', 48), color: cleanColor(skin?.rarity?.color) },
           image: cleanImage(skin?.image),
         })).filter(skin => skin.name && skin.weapon.name && skin.category.name && skin.image)
-        if (safeCatalog.length >= 50) return json(safeCatalog, 200, { 'Cache-Control': 'public, max-age=86400, s-maxage=86400' })
+        if (safeCatalog.length >= 50) {
+          await this.storage.put(cacheKey, { items: safeCatalog, updatedAt: Date.now() })
+          return json(safeCatalog, 200, { 'Cache-Control': 'public, max-age=3600, s-maxage=21600' })
+        }
       } catch {
         // Try the next public mirror.
       }
+    }
+    if (cachedItems.length >= 50 && cacheAge >= 0 && cacheAge < CATALOG_STALE_TTL) {
+      return json(cachedItems, 200, {
+        'Cache-Control': 'public, max-age=300, s-maxage=300',
+        'Warning': '110 - "Каталог показано з локального кешу"',
+      })
     }
     return json({ error: 'Каталог скінів тимчасово недоступний.' }, 502)
   }
 }
 
+export class RateLimiter {
+  constructor(state) {
+    this.storage = state.storage
+  }
+
+  async fetch(request) {
+    const path = new URL(request.url).pathname
+    const group = cleanText(path.split('/').pop(), 32)
+    const config = RATE_LIMITS[group] || RATE_LIMITS.api
+    const key = cleanText(request.headers.get('X-Potuzhno-Rate-Key'), 128)
+    if (!key) return json({ allowed: false }, 400)
+
+    const now = Date.now()
+    const storageKey = `bucket:${group}:${key}`
+    const current = await this.storage.get(storageKey)
+    const startedAt = Number(current?.startedAt || 0)
+    const fresh = startedAt > 0 && now - startedAt < config.windowMs
+    const count = (fresh ? Number(current?.count || 0) : 0) + 1
+    const resetAt = (fresh ? startedAt : now) + config.windowMs
+    await this.storage.put(storageKey, { startedAt: fresh ? startedAt : now, count })
+    await this.storage.setAlarm(resetAt + 1_000)
+    return json({
+      allowed: count <= config.limit,
+      limit: config.limit,
+      remaining: Math.max(0, config.limit - count),
+      resetAt,
+    }, count <= config.limit ? 200 : 429)
+  }
+
+  async alarm() {
+    await this.storage.deleteAll()
+  }
+}
+
+async function requestBodyForRouting(request) {
+  try {
+    return await request.clone().json()
+  } catch {
+    return null
+  }
+}
+
+async function rateLimitResponse(request, env, path) {
+  const group = rateLimitGroup(path)
+  const address = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() || 'local'
+  const hashedAddress = await sha256(address)
+  // Hash-prefix sharding prevents one global rate-limit object from becoming a
+  // bottleneck while the full hash keeps different visitors isolated inside it.
+  const shard = env.POTUZHNO_RATE_LIMIT.idFromName(`ip:${hashedAddress.slice(0, 6)}`)
+  const response = await env.POTUZHNO_RATE_LIMIT.get(shard).fetch(new Request(`https://internal/limit/${group}`, {
+    headers: { 'X-Potuzhno-Rate-Key': hashedAddress },
+  }))
+  const data = await response.json()
+  if (data?.allowed) return null
+  const retryAfter = Math.max(1, Math.ceil((Number(data?.resetAt || Date.now()) - Date.now()) / 1_000))
+  return json({ error: 'Забагато запитів. Зачекай трохи та повтори спробу.' }, 429, {
+    'Retry-After': String(retryAfter),
+    'X-RateLimit-Limit': String(data?.limit || 0),
+    'X-RateLimit-Remaining': '0',
+  })
+}
+
+async function stateForRequest(request, env, path) {
+  const url = new URL(request.url)
+  let name = 'global'
+
+  if (path === '/api/profile/sync' && request.method === 'POST') {
+    const body = await requestBodyForRouting(request)
+    if (ID.test(String(body?.accountId || ''))) name = `profile:${body.accountId}`
+  } else if ((path === '/api/public-profile' && request.method === 'GET') || path === '/api/public-avatar') {
+    const id = url.searchParams.get('id') || ''
+    if (ID.test(id)) name = `public:${id}`
+  } else if (path === '/api/public-profile' && request.method === 'POST') {
+    const body = await requestBodyForRouting(request)
+    if (ID.test(String(body?.id || ''))) name = `public:${body.id}`
+  } else if (path.startsWith('/api/steam/') && path !== '/api/steam/auth') {
+    const session = steamSessionToken(readCookie(request, STEAM_SESSION_COOKIE))
+    if (session?.sharded) name = `steam:${session.token}`
+  } else if (path === '/api/catalog/skins') {
+    name = 'catalog'
+  } else if (path === '/api/matchmaking' && request.method === 'POST') {
+    const body = await requestBodyForRouting(request)
+    const roomId = String(body?.roomId || '')
+    if (ID.test(roomId)) name = `match-room:${roomId}`
+  } else if (hasFairSecret(env) && path === '/api/fair/roll' && request.method === 'POST') {
+    const body = await requestBodyForRouting(request)
+    const deviceId = String(body?.deviceId || '')
+    if (ID.test(deviceId)) name = `fair:${dayKey()}:${(await sha256(deviceId)).slice(0, 24)}`
+  }
+
+  return env.POTUZHNO_STATE.get(env.POTUZHNO_STATE.idFromName(name))
+}
+
 export default {
   async fetch(request, env) {
-    const path = new URL(request.url).pathname
+    const url = new URL(request.url)
+    const path = url.pathname
     if (path.startsWith('/api/')) {
-      const id = env.POTUZHNO_STATE.idFromName('global')
-      return env.POTUZHNO_STATE.get(id).fetch(request)
+      if (request.method === 'POST') {
+        const origin = request.headers.get('Origin')
+        if (origin && origin !== url.origin) return json({ error: 'Некоректне походження запиту.' }, 403)
+      }
+      const limited = await rateLimitResponse(request, env, path)
+      if (limited) return limited
+      return (await stateForRequest(request, env, path)).fetch(request)
     }
     return env.ASSETS.fetch(request)
   },

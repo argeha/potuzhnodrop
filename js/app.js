@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 5.0 ============ */
+/* ============ ПОТУЖНО DROP 5.3 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
