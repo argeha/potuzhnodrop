@@ -786,8 +786,10 @@ function setSteamAvatarSource(image, steamId, avatar, name = 'Steam') {
   if (!image) return;
   image.dataset.steamName = name || 'Steam';
   // The same-origin endpoint avoids client-side Steam CDN/CSP/hotlink failures.
-  // It validates the active HttpOnly Steam session before proxying an avatar.
-  image.src = /^\d{17}$/.test(String(steamId || '')) && cleanImageUrl(avatar)
+  // It validates the active HttpOnly Steam session before resolving and proxying
+  // an avatar. Do not wait for a locally cached URL: right after OpenID the
+  // server may resolve the photo a moment later than the browser state.
+  image.src = /^\d{17}$/.test(String(steamId || ''))
     ? '/api/steam/avatar'
     : createSteamAvatarFallback(image.dataset.steamName);
 }
