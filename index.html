@@ -29,13 +29,13 @@
 <link rel="preconnect" href="https://community.akamai.steamstatic.com">
 <link rel="preconnect" href="https://avatars.steamstatic.com">
 <!-- Tailwind зібраний локально: інтерфейс не залежить від зовнішнього CDN. -->
-<link rel="stylesheet" href="/css/tailwind.css?v=5.3.0">
+<link rel="stylesheet" href="/css/tailwind.css?v=5.3.1">
 <!-- Font Awesome -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-<link rel="stylesheet" href="/css/style.css?v=5.3.0">
+<link rel="stylesheet" href="/css/style.css?v=5.3.1">
 </head>
 <body class="min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -287,6 +287,11 @@
 <div><span class="text-xs font-extrabold uppercase tracking-[.2em] text-amber-400">1 VS 1 · COIN FLIP</span><h1 class="font-heading mt-1 text-4xl sm:text-5xl font-extrabold uppercase tracking-wider text-white">Потужний бій</h1></div>
 <p class="max-w-lg text-sm leading-6 text-gray-400">Пошук триває до 8 секунд. Якщо реального суперника немає, до бою приєднається позначений бот.</p>
 </div>
+<div class="mb-4 flex flex-wrap gap-2">
+<button type="button" onclick="openOwnBattleRoom()" class="rounded-xl border border-cyan-400/35 bg-cyan-400/10 px-4 py-2.5 text-xs font-extrabold text-cyan-100 hover:bg-cyan-400/20"><i class="fa-solid fa-link mr-1.5"></i>Створити кімнату для друга</button>
+<button type="button" onclick="openPublicProfileSearch()" class="rounded-xl border border-gray-700 bg-black/20 px-4 py-2.5 text-xs font-extrabold text-gray-200 hover:border-cyan-400/35 hover:text-cyan-100"><i class="fa-solid fa-magnifying-glass mr-1.5"></i>Приєднатися за посиланням</button>
+<button type="button" onclick="unpublishPublicProfile()" class="rounded-xl border border-gray-700 bg-black/20 px-4 py-2.5 text-xs font-extrabold text-gray-400 hover:border-red-400/35 hover:text-red-200"><i class="fa-solid fa-eye-slash mr-1.5"></i>Приховати посилання</button>
+</div>
 <div id="battleRoomBanner" class="battle-room-banner hidden mb-4"><div><span><i class="fa-solid fa-link"></i> Кімната друга</span><strong id="battleRoomName">—</strong><p>Пошук знайде лише гравця з цим самим посиланням на профіль.</p></div><button id="battleRoomLeaveBtn" onclick="leaveBattleRoom()" type="button"><i class="fa-solid fa-arrow-right-from-bracket"></i> Загальний пошук</button></div>
 <article class="glass-panel rounded-2xl border border-brand-border p-5 sm:p-7 max-w-5xl mx-auto">
 <div class="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-5 items-center">
@@ -484,12 +489,10 @@
 
 <!-- PROFILE -->
 <section data-page="profile" class="page-view profile-page hidden space-y-5">
-<div id="profileLootStrip" class="profile-loot-strip" aria-label="Предмети з інвентарю"></div>
-
 <article id="profileOverview" class="profile-command-center">
 <div class="profile-command-main">
 <div class="profile-portrait"><img id="profileAvatarLarge" alt="Аватар профілю" onerror="handleSteamAvatarError(this)"><span id="profileConnectionIcon" class="profile-connection-icon" title="Профіль гри"><i class="fa-solid fa-gamepad"></i></span></div>
-<div class="profile-identity"><p id="profileConnectionText" class="profile-kicker">ПРОФІЛЬ ГРИ</p><h3 class="profile-player-name"><span id="profileName">Гість</span><span id="prestigeBadge" class="prestige-badge hidden"><i class="fa-solid fa-crown text-[8px]"></i><span id="prestigeLevelLabel">P1</span></span></h3><p class="profile-steam-id"><i class="fa-brands fa-steam"></i><span id="accountSteamId" class="font-mono">не підключено</span></p><div class="profile-identity-actions"><button onclick="openModal('accountModal')" class="profile-edit-button"><i class="fa-solid fa-sliders"></i>Налаштування</button><button id="profileShareBtn" onclick="copyPublicProfileLink()" class="profile-share-button"><i class="fa-solid fa-share-nodes"></i><span>Поділитися профілем</span></button></div></div>
+<div class="profile-identity"><p id="profileConnectionText" class="profile-kicker">ПРОФІЛЬ ГРИ</p><h3 class="profile-player-name"><span id="profileName">Гість</span><span id="prestigeBadge" class="prestige-badge hidden"><i class="fa-solid fa-crown text-[8px]"></i><span id="prestigeLevelLabel">P1</span></span></h3><p class="profile-steam-id"><i class="fa-brands fa-steam"></i><span id="accountSteamId" class="font-mono">не підключено</span></p><div class="profile-identity-actions"><button onclick="openModal('accountModal')" class="profile-edit-button"><i class="fa-solid fa-sliders"></i>Налаштування</button></div></div>
 <div class="profile-level-panel"><span class="profile-level-label">РІВЕНЬ</span><strong id="profileLevel">LVL 1</strong><button onclick="openModal('prestigeModal')" id="prestigeBtn" class="profile-prestige-button" title="Престиж (LVL 10+)"><i class="fa-solid fa-crown"></i>Престиж</button></div>
 <div class="profile-wallet"><span>ІГРОВИЙ БАЛАНС</span><strong id="profileBalance">0 DC</strong><button onclick="openModal('topupModal')" title="Заробити віртуальні DC" aria-label="Заробити віртуальні DC"><i class="fa-solid fa-plus"></i></button></div>
 </div>
@@ -499,46 +502,10 @@
 </div>
 </article>
 
-<article class="profile-social-deck">
-<div class="profile-social-copy"><span class="profile-social-icon"><i class="fa-solid fa-user-group"></i></span><div><p>ТВІЙ ПУБЛІЧНИЙ ПРОФІЛЬ</p><h3>Друзі можуть знайти тебе та зайти в кімнату 1v1</h3><small id="publicProfileStatus">Створи посилання, щоб друзі бачили лише нік, рівень та публічну статистику.</small></div></div>
-<div class="profile-social-actions"><button type="button" onclick="openPublicProfileSearch()" class="profile-find-button"><i class="fa-solid fa-magnifying-glass"></i> Знайти друга</button><button type="button" onclick="openOwnBattleRoom()" class="profile-room-button"><i class="fa-solid fa-dice"></i> Кімната 1v1</button><button id="profileHideBtn" type="button" onclick="unpublishPublicProfile()" class="profile-hide-button hidden"><i class="fa-solid fa-eye-slash"></i> Приховати</button><button type="button" onclick="copyPublicProfileLink()" class="profile-copy-button"><i class="fa-solid fa-link"></i> Моє посилання</button></div>
-</article>
-
 <article id="steamProfileCard" class="profile-steam-console hidden">
 <div class="profile-steam-console-copy"><span class="profile-steam-console-icon"><i class="fa-brands fa-steam"></i></span><div class="min-w-0"><p>STEAM ПІДКЛЮЧЕНО</p><h3 id="profileSteamName">Steam</h3><span id="profileSteamId" class="sr-only">—</span><small id="profileSteamStatus">Публічний профіль та інвентар доступні для синхронізації</small></div></div>
 <div class="profile-steam-console-actions"><div class="profile-steam-count"><strong id="profileSteamImportedCount">0</strong><span>Steam-копій</span></div><button id="steamProfileSyncBtn" onclick="syncSteamInventory()"><i class="fa-solid fa-rotate"></i><span>Синхронізувати</span></button><button id="steamProfileReconnectBtn" onclick="startSteamLogin()" class="hidden"><i class="fa-solid fa-right-to-bracket"></i><span>Увійти знову</span></button><a id="profileSteamLink" href="#" target="_blank" rel="noopener noreferrer" title="Відкрити профіль у Steam"><i class="fa-solid fa-arrow-up-right-from-square"></i></a><button id="steamDisconnectBtn" onclick="disconnectSteam()" title="Відключити Steam лише від цього сайту"><i class="fa-solid fa-link-slash"></i></button></div>
 </article>
-
-<details class="profile-data-drawer">
-<summary><span><i class="fa-solid fa-chart-simple"></i> Розширена статистика</span><small>досягнення, рекорди й усі показники</small><i class="fa-solid fa-chevron-down"></i></summary>
-<div class="profile-drawer-content">
-<article id="recentAchCard" class="glass-panel rounded-2xl border border-amber-500/20 p-5 hidden">
-<div class="flex items-center justify-between mb-3">
-<div><p class="text-xs font-bold uppercase tracking-widest text-gray-500">Останні досягнення</p><h3 class="mt-1 text-xl font-extrabold text-white"><i class="fa-solid fa-trophy mr-2 text-amber-400"></i>Твої перемоги</h3></div>
-<button onclick="showPage('tasks')" class="rounded-lg border border-amber-500/40 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-500/10">Усі</button>
-</div>
-<div id="recentAchGrid" class="grid gap-3 sm:grid-cols-3"></div>
-</article>
-
-<article class="glass-panel rounded-2xl border border-brand-border p-5">
-<div class="mb-4"><p class="text-xs font-bold uppercase tracking-widest text-gray-500">За весь час</p><h3 class="mt-1 text-xl font-extrabold text-white"><i class="fa-solid fa-chart-simple mr-2 text-amber-400"></i>Загальна статистика</h3></div>
-<div class="alltime-grid">
-<div class="alltime-card"><div class="alltime-label">Всього роллів</div><div id="atRounds" class="alltime-value">0</div></div>
-<div class="alltime-card"><div class="alltime-label">Всього перемог</div><div id="atWins" class="alltime-value text-green-400">0</div></div>
-<div class="alltime-card"><div class="alltime-label">Кейсів</div><div id="atCases" class="alltime-value text-amber-300">0</div></div>
-<div class="alltime-card"><div class="alltime-label">Боїв</div><div id="atBattles" class="alltime-value text-red-300">0</div></div>
-<div class="alltime-card"><div class="alltime-label">Royale перемог</div><div id="atRoyale" class="alltime-value text-violet-300">0</div></div>
-<div class="alltime-card"><div class="alltime-label">Контрактів</div><div id="atContracts" class="alltime-value text-violet-300">0</div></div>
-<div class="alltime-card"><div class="alltime-label">Продажів</div><div id="atSells" class="alltime-value text-cyan-300">0</div></div>
-<div class="alltime-card"><div class="alltime-label">Продано DC</div><div id="atSellValue" class="alltime-value text-cyan-300">0</div></div>
-<div class="alltime-card"><div class="alltime-label">Найбільший виграш</div><div id="atBiggestWin" class="alltime-value text-amber-300">0</div></div>
-<div class="alltime-card"><div class="alltime-label">Легендарних дропів</div><div id="atLegendary" class="alltime-value text-violet-300">0</div></div>
-<div class="alltime-card"><div class="alltime-label">Мульти-апгрейдів</div><div id="atMulti" class="alltime-value text-violet-300">0</div></div>
-<div class="alltime-card"><div class="alltime-label">Кредитних роллів</div><div id="atCredits" class="alltime-value text-amber-300">0</div></div>
-</div>
-</article>
-</div>
-</details>
 
 <article id="profileInventoryPanel" class="profile-inventory-panel">
 <div class="profile-inventory-heading">
@@ -575,88 +542,6 @@
 </div>
 </article>
 
-<details class="profile-data-drawer profile-utilities">
-<summary><span><i class="fa-solid fa-sliders"></i> Дані й налаштування</span><small>резервна копія, Fair play, історія та тема</small><i class="fa-solid fa-chevron-down"></i></summary>
-<div class="profile-drawer-content">
-<article class="glass-panel rounded-2xl border border-cyan-500/25 p-5">
-<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-<div>
-<p class="text-xs font-bold uppercase tracking-widest text-cyan-400">Збереження</p>
-<h3 class="mt-1 text-xl font-extrabold text-white"><i class="fa-solid fa-file-export mr-2 text-cyan-400"></i>Експорт / Імпорт</h3>
-<p class="mt-1 text-xs text-gray-500">Експортуй JSON-файл з усім прогресом. Імпортуй на іншому пристрої.</p>
-</div>
-<div class="flex flex-wrap gap-2">
-<button onclick="exportSave()" class="px-4 py-2 rounded-lg border border-cyan-500/40 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20 text-xs font-bold transition"><i class="fa-solid fa-download mr-1"></i>Експорт</button>
-<label class="px-4 py-2 rounded-lg border border-cyan-500/40 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20 text-xs font-bold transition cursor-pointer">
-<i class="fa-solid fa-upload mr-1"></i>Імпорт
-<input type="file" accept="application/json" onchange="importSave(event)" class="hidden">
-</label>
-</div>
-</div>
-</article>
-
-<div class="grid gap-5 lg:grid-cols-2">
-<article class="glass-panel rounded-2xl border border-emerald-500/25 p-5">
-<div class="flex items-start justify-between gap-4">
-<div>
-<p class="text-xs font-bold uppercase tracking-widest text-emerald-400">Резервна копія</p>
-<h3 class="mt-1 text-xl font-extrabold text-white"><i class="fa-solid fa-cloud-arrow-up mr-2 text-emerald-400"></i>Серверний профіль</h3>
-<p id="cloudSyncStatus" class="mt-2 text-sm font-bold text-emerald-100">Лише локальне збереження</p>
-<p id="cloudSyncDetails" class="mt-1 text-xs leading-5 text-gray-500">Створи профіль, щоб зберегти свій віртуальний прогрес.</p>
-</div>
-<i class="fa-solid fa-shield-halved mt-1 text-xl text-emerald-400/70"></i>
-</div>
-<div class="mt-4 flex flex-wrap gap-2">
-<button id="cloudCreateBtn" onclick="createCloudProfile()" class="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-xs font-bold text-emerald-100 hover:bg-emerald-500/20 disabled:opacity-50"><i class="fa-solid fa-cloud-arrow-up mr-1"></i>Створити профіль</button>
-<button id="cloudSaveBtn" onclick="saveCloudProfile()" class="hidden rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-xs font-bold text-emerald-100 hover:bg-emerald-500/20 disabled:opacity-50"><i class="fa-solid fa-floppy-disk mr-1"></i>Зберегти</button>
-<button id="cloudLoadBtn" onclick="loadCloudProfile()" class="hidden rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-4 py-2 text-xs font-bold text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-50"><i class="fa-solid fa-cloud-arrow-down mr-1"></i>Відновити</button>
-<button id="cloudRecoveryBtn" onclick="openCloudRecoveryModal()" class="hidden rounded-lg border border-gray-700 bg-black/20 px-4 py-2 text-xs font-bold text-gray-300 hover:border-gray-500"><i class="fa-solid fa-key mr-1"></i>Код</button>
-<button onclick="openCloudConnectModal()" class="rounded-lg border border-gray-700 bg-black/20 px-4 py-2 text-xs font-bold text-gray-300 hover:border-gray-500"><i class="fa-solid fa-link mr-1"></i>Підключити</button>
-</div>
-</article>
-
-<article class="glass-panel rounded-2xl border border-violet-500/25 p-5">
-<div class="flex items-start justify-between gap-4">
-<div>
-<p class="text-xs font-bold uppercase tracking-widest text-violet-300">Fair play</p>
-<h3 class="mt-1 text-xl font-extrabold text-white"><i class="fa-solid fa-dice-d20 mr-2 text-violet-300"></i>Перевірка кейсу</h3>
-<p id="fairStatus" class="mt-2 text-sm font-bold text-violet-100">Серверна перевірка з’явиться після відкриття кейсу</p>
-<p id="fairDetails" class="mt-1 text-xs leading-5 text-gray-500">Поточний seed публікується як hash, а наступного дня його можна перевірити.</p>
-</div>
-<i class="fa-solid fa-fingerprint mt-1 text-xl text-violet-300/70"></i>
-</div>
-<button id="fairVerifyBtn" onclick="verifyLastFairRound()" class="mt-4 rounded-lg border border-violet-500/40 bg-violet-500/10 px-4 py-2 text-xs font-bold text-violet-100 hover:bg-violet-500/20 disabled:cursor-not-allowed disabled:opacity-40"><i class="fa-solid fa-shield-check mr-1"></i>Перевірити останній seed</button>
-</article>
-</div>
-
-<div class="grid gap-5 lg:grid-cols-2">
-<article class="glass-panel rounded-2xl border border-brand-border p-5">
-<div class="flex items-center justify-between gap-3"><div><p class="text-xs font-bold uppercase tracking-widest text-gray-500">Останні 20</p><h3 class="mt-1 text-xl font-extrabold text-white"><i class="fa-solid fa-clock-rotate-left mr-2 text-amber-400"></i>Історія</h3></div><button onclick="copyLatestResult()" class="rounded-lg border border-gray-700 px-3 py-2 text-xs font-bold text-gray-300 hover:border-amber-500/50 hover:text-white"><i class="fa-solid fa-share-nodes mr-1"></i>Поділитись</button></div>
-<div id="roundHistory" class="mt-4 max-h-[400px] space-y-2 overflow-y-auto pr-1"></div>
-</article>
-<article class="glass-panel rounded-2xl border border-brand-border p-5">
-<div class="flex items-center justify-between"><div><p class="text-xs font-bold uppercase tracking-widest text-gray-500">Швидкий вибір</p><h3 class="mt-1 text-xl font-extrabold text-white"><i class="fa-solid fa-heart mr-2 text-amber-400"></i>Улюблені</h3></div><button onclick="openModal('shopModal')" class="rounded-lg border border-amber-500/40 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-500/10">Каталог</button></div>
-<div id="favoritesGrid" class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3"></div>
-</article>
-</div>
-
-<article class="glass-panel rounded-2xl border border-brand-border p-5">
-<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p class="text-xs font-bold uppercase tracking-widest text-gray-500">Вигляд</p><h3 class="mt-1 text-xl font-extrabold text-white"><i class="fa-solid fa-palette mr-2 text-amber-400"></i>Тема</h3></div><p class="text-sm text-gray-400">Лише оформлення у браузері.</p></div>
-<div class="mt-4 flex flex-wrap gap-3">
-<button data-theme-choice="amber" onclick="setTheme('amber')" class="theme-choice flex items-center gap-2 rounded-xl border border-amber-400 bg-amber-500/15 px-4 py-3 text-sm font-bold text-amber-100"><span class="h-4 w-4 rounded-full bg-amber-400"></span>Потужне золото</button>
-<button data-theme-choice="neon" onclick="setTheme('neon')" class="theme-choice flex items-center gap-2 rounded-xl border border-gray-700 bg-black/20 px-4 py-3 text-sm font-bold text-gray-300"><span class="h-4 w-4 rounded-full bg-cyan-400"></span>Неон</button>
-<button data-theme-choice="violet" onclick="setTheme('violet')" class="theme-choice flex items-center gap-2 rounded-xl border border-gray-700 bg-black/20 px-4 py-3 text-sm font-bold text-gray-300"><span class="h-4 w-4 rounded-full bg-violet-400"></span>Фіолет</button>
-</div>
-</article>
-
-<article class="glass-panel rounded-2xl border border-red-500/25 p-5">
-<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-<div><p class="text-xs font-bold uppercase tracking-widest text-red-400">Небезпечна зона</p><h3 class="mt-1 text-xl font-extrabold text-white"><i class="fa-solid fa-triangle-exclamation mr-2 text-red-400"></i>Скинути гру</h3><p class="mt-1 text-xs text-gray-500">Поверне стартовий баланс 1200 DC і стартовий інвентар.</p></div>
-<button onclick="resetDemoGame()" class="px-5 py-3 rounded-xl bg-red-500/15 border border-red-500/40 text-red-200 hover:bg-red-500 hover:text-white font-extrabold text-sm transition"><i class="fa-solid fa-rotate-left mr-2"></i>Почати спочатку</button>
-</div>
-</article>
-</div>
-</details>
 </section>
 
 <!-- ABOUT -->
@@ -694,7 +579,7 @@
 
 <div id="shopModal" class="modal-backdrop fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4"><div class="glass-panel rounded-2xl max-w-5xl w-full p-6 border border-brand-border relative max-h-[88vh] flex flex-col"><button onclick="closeModal('shopModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button><div class="pr-10 mb-4"><div class="flex items-end justify-between gap-4"><h3 class="font-heading text-2xl font-bold text-white uppercase">Каталог скінів</h3><span id="shopCount" class="text-xs font-bold text-amber-400">Завантаження…</span></div><p class="text-[11px] text-gray-500 mt-1">DC — умовна цінність. Ринковий індикатор оновлюється кожні 5 хвилин; це не реальні ціни Steam.</p></div><div id="shopTargetFilterBanner" class="hidden mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-100"><i class="fa-solid fa-filter mr-1"></i>Показано тільки скіни, дорожчі за <span id="shopTargetFilterValue" class="font-bold">—</span>.</div><div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3"><label class="relative col-span-2"><i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs"></i><input id="shopSearch" type="search" oninput="debounceFilterShop()" placeholder="Пошук: AK-47, Asiimov…" class="w-full bg-black/30 border border-brand-border rounded-xl py-2.5 pl-9 pr-3 text-sm text-white focus:outline-none focus:border-amber-500/60"></label><select id="shopSort" onchange="filterShop()" class="bg-brand-card border border-brand-border rounded-xl px-3 py-2.5 text-sm text-gray-200 focus:outline-none"><option value="name-asc">Назва A→Я</option><option value="price-asc">Ціна ↑</option><option value="price-desc">Ціна ↓</option></select><select id="shopCategory" onchange="filterShop()" class="bg-brand-card border border-brand-border rounded-xl px-3 py-2.5 text-sm text-gray-200 focus:outline-none"><option value="all">Уся зброя</option></select></div><div class="grid grid-cols-2 sm:grid-cols-[1fr_1fr_auto] gap-2 mb-4"><input id="shopMinPrice" type="number" oninput="debounceFilterShop()" placeholder="Ціна від, DC" class="bg-black/30 border border-brand-border rounded-xl py-2.5 px-3 text-sm text-white focus:outline-none"><input id="shopMaxPrice" type="number" oninput="debounceFilterShop()" placeholder="Ціна до, DC" class="bg-black/30 border border-brand-border rounded-xl py-2.5 px-3 text-sm text-white focus:outline-none"><button onclick="resetShopFilters()" class="rounded-xl border border-gray-700 bg-black/20 px-4 py-2.5 text-xs font-bold text-gray-300 hover:bg-gray-800">Скинути</button></div><div id="shopGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 overflow-y-auto pr-1 flex-1"></div><button id="shopMoreBtn" onclick="showMoreSkins()" class="hidden mt-4 py-2.5 rounded-xl border border-brand-border bg-brand-card hover:bg-gray-800 text-sm font-bold text-amber-400 transition">Показати ще</button></div></div>
 
-<div id="accountModal" class="modal-backdrop fixed inset-0 z-[95] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4"><div class="glass-panel rounded-2xl max-w-md w-full p-6 border border-brand-border relative"><button onclick="closeModal('accountModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button><h3 class="font-heading text-2xl font-bold text-white uppercase mb-3"><i class="fa-solid fa-user text-amber-400 mr-2"></i>Мій акаунт</h3><label class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Нікнейм</label><input id="accountNickInput" type="text" maxlength="24" class="w-full bg-black/40 border border-brand-border rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-amber-500/60" placeholder="Потужний гравець"><button onclick="saveAccountNick()" class="mt-4 w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-extrabold rounded-xl transition text-sm">Зберегти</button><div class="mt-4 rounded-xl border border-gray-700 bg-black/20 p-3 text-[11px] leading-5 text-gray-400">XP: <span id="accountXp" class="font-mono text-gray-200">0</span><br>Рівень: <span id="accountLevel" class="font-mono text-gray-200">1</span></div></div></div>
+<div id="accountModal" class="modal-backdrop fixed inset-0 z-[95] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4"><div class="glass-panel rounded-2xl max-w-md w-full p-6 border border-brand-border relative"><button onclick="closeModal('accountModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button><h3 class="font-heading text-2xl font-bold text-white uppercase mb-3"><i class="fa-solid fa-user text-amber-400 mr-2"></i>Мій акаунт</h3><label class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Нікнейм</label><input id="accountNickInput" type="text" maxlength="24" class="w-full bg-black/40 border border-brand-border rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-amber-500/60" placeholder="Потужний гравець"><button onclick="saveAccountNick()" class="mt-4 w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-extrabold rounded-xl transition text-sm">Зберегти</button><div class="mt-4 rounded-xl border border-gray-700 bg-black/20 p-3 text-[11px] leading-5 text-gray-400">XP: <span id="accountXp" class="font-mono text-gray-200">0</span><br>Рівень: <span id="accountLevel" class="font-mono text-gray-200">1</span></div><details class="mt-4 overflow-hidden rounded-xl border border-emerald-500/25 bg-emerald-500/5"><summary class="cursor-pointer px-3 py-3 text-xs font-extrabold text-emerald-100"><i class="fa-solid fa-cloud-arrow-up mr-1.5 text-emerald-300"></i>Резервна копія прогресу</summary><div class="border-t border-emerald-500/15 px-3 pb-3 pt-2"><p id="cloudSyncStatus" class="text-xs font-bold text-emerald-100">Лише локальне збереження</p><p id="cloudSyncDetails" class="mt-1 text-[11px] leading-5 text-gray-400">Створи профіль, щоб зберегти свій віртуальний прогрес.</p><div class="mt-3 flex flex-wrap gap-2"><button id="cloudCreateBtn" onclick="createCloudProfile()" class="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-[11px] font-bold text-emerald-100 hover:bg-emerald-500/20 disabled:opacity-50">Створити</button><button id="cloudSaveBtn" onclick="saveCloudProfile()" class="hidden rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-[11px] font-bold text-emerald-100 hover:bg-emerald-500/20 disabled:opacity-50">Зберегти</button><button id="cloudLoadBtn" onclick="loadCloudProfile()" class="hidden rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-[11px] font-bold text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-50">Відновити</button><button id="cloudRecoveryBtn" onclick="openCloudRecoveryModal()" class="hidden rounded-lg border border-gray-700 bg-black/20 px-3 py-2 text-[11px] font-bold text-gray-300 hover:border-gray-500">Код</button><button onclick="openCloudConnectModal()" class="rounded-lg border border-gray-700 bg-black/20 px-3 py-2 text-[11px] font-bold text-gray-300 hover:border-gray-500">Підключити</button></div></div></details></div></div>
 
 <div id="publicProfileLookupModal" class="modal-backdrop fixed inset-0 z-[96] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4"><div class="glass-panel public-profile-modal-shell rounded-3xl max-w-md w-full p-6 border border-cyan-400/35 relative"><button onclick="closeModal('publicProfileLookupModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button><div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-400/10 text-cyan-300"><i class="fa-solid fa-user-magnifying text-xl"></i></div><h3 class="font-heading mt-3 text-3xl font-extrabold uppercase text-white">Знайти профіль</h3><p class="mt-2 text-sm leading-6 text-gray-400">Встав посилання друга або ID з його профілю. Тут немає доступу до його інвентарю чи балансу.</p><label class="mt-4 block text-xs font-bold uppercase tracking-wider text-gray-400">Посилання або ID<input id="publicProfileLookupInput" type="text" autocomplete="off" spellcheck="false" onkeydown="if(event.key==='Enter')submitPublicProfileSearch()" class="mt-2 w-full rounded-xl border border-brand-border bg-black/40 px-3 py-3 text-xs text-white focus:border-cyan-500/60 focus:outline-none" placeholder="https://.../?profile=xxxxxxxx…"></label><button onclick="submitPublicProfileSearch()" class="mt-4 w-full rounded-xl bg-cyan-400 py-3 text-sm font-extrabold text-slate-950 hover:bg-cyan-300"><i class="fa-solid fa-arrow-right mr-2"></i>Відкрити профіль</button></div></div>
 
@@ -743,8 +628,9 @@
         <div class="case-reel-pointer"></div>
       </div>
     </div>
-    <div class="flex items-center justify-between mt-4">
+    <div class="flex items-center justify-between gap-3 mt-4">
       <p id="caseReelStatus" class="text-sm font-bold text-amber-300">Готуємось…</p>
+      <button id="fairVerifyBtn" onclick="verifyLastFairRound()" class="shrink-0 text-[10px] font-bold text-violet-200 hover:text-violet-100 disabled:cursor-not-allowed disabled:opacity-40"><i class="fa-solid fa-shield-check mr-1"></i>Fair Play</button>
       <span id="caseReelCostSummary" class="text-xs font-extrabold text-gray-400">Ціна: <strong class="text-amber-300" id="caseReelTotalCost">300 DC</strong></span>
     </div>
     <button id="caseReelBtn" onclick="startCaseReel()" class="mt-4 w-full py-3.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-500 hover:brightness-110 text-black font-extrabold rounded-xl transition text-base uppercase tracking-wider shadow-lg shadow-amber-500/20">

@@ -60,12 +60,9 @@ function showPage(id) {
   }
   if (id === 'tasks') renderGameHub();
   if (id === 'profile') {
-    renderGameHub();
+    renderProfileProgress();
     renderProfileInventory();
-    renderAllTime();
-    renderRecentAch();
-    renderCloudSyncUI();
-    renderFairUI();
+    updateAccountUI();
   }
   if (id === 'battle') {
     resetCoinVisual();
@@ -1029,7 +1026,6 @@ function updateAccountUI() {
   renderFairUI();
   renderSteamProfileCard();
   renderSteamNudge();
-  renderPublicProfileUI();
 }
 
 function setSteamConnectionState(state, message = '') {
@@ -1165,7 +1161,6 @@ async function publishPublicProfile({ announce = false } = {}) {
   }, 6_000).then(data => {
     account.publicProfile = { ...identity, enabled: true, updatedAt: Number(data?.profile?.updatedAt) || Date.now() };
     localStorage.setItem(STORAGE.account, JSON.stringify(account));
-    renderPublicProfileUI();
     if (announce) showToast('Профіль оновлено та доступний за посиланням.', 'success');
     return data?.profile || null;
   }).catch(error => {
@@ -1193,7 +1188,6 @@ async function copyPublicProfileLink() {
   } catch {
     showToast('Профіль відкрито. Скопіюй посилання з адресного рядка.', 'info');
   }
-  renderPublicProfileUI();
   return true;
 }
 
@@ -1216,23 +1210,8 @@ async function unpublishPublicProfile() {
   }
   account.publicProfile = { ...identity, enabled: false, updatedAt: 0 };
   localStorage.setItem(STORAGE.account, JSON.stringify(account));
-  renderPublicProfileUI();
   showToast('Публічне посилання вимкнено.', 'info');
   return true;
-}
-
-function renderPublicProfileUI() {
-  const enabled = Boolean(account?.publicProfile?.enabled && isPublicProfileIdentity(account?.publicProfile));
-  const status = document.getElementById('publicProfileStatus');
-  const share = document.getElementById('profileShareBtn');
-  const hide = document.getElementById('profileHideBtn');
-  if (status) status.textContent = enabled
-    ? 'Профіль доступний друзям: баланс, інвентар і коди не показуються.'
-    : 'Створи посилання, щоб друзі бачили лише нік, рівень та публічну статистику.';
-  if (share) share.innerHTML = enabled
-    ? '<i class="fa-solid fa-copy"></i><span>Скопіювати посилання</span>'
-    : '<i class="fa-solid fa-share-nodes"></i><span>Поділитися профілем</span>';
-  if (hide) hide.classList.toggle('hidden', !enabled);
 }
 
 function profileIdFromInput(value) {
@@ -1526,7 +1505,6 @@ function applyPortableSave(data) {
   applyLoggedInUI();
   renderGameHub();
   updateAccountUI();
-  renderPublicProfileUI();
 }
 
 async function createCloudProfile() {
@@ -2366,31 +2344,6 @@ function renderAchievements() {
   }).join('');
 }
 
-function renderRecentAch() {
-  const card = document.getElementById('recentAchCard');
-  const grid = document.getElementById('recentAchGrid');
-  if (!card || !grid || !gameState) return;
-  const list = Object.entries(gameState.achievements || {})
-    .map(([id, ts]) => ({ id, ts, def: ACHIEVEMENT_DEFINITIONS.find(a => a.id === id) }))
-    .filter(x => x.def)
-    .sort((a, b) => b.ts - a.ts)
-    .slice(0, 3);
-  if (!list.length) {
-    card.classList.add('hidden');
-    return;
-  }
-  card.classList.remove('hidden');
-  grid.innerHTML = list.map(x => `
-    <div class="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-center">
-      <span class="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500 text-black">
-        <i class="fa-solid ${x.def.icon}"></i>
-      </span>
-      <p class="mt-2 text-xs font-extrabold text-amber-100">${escapeHtml(x.def.title)}</p>
-      <p class="text-[10px] text-gray-500 mt-0.5">${new Date(x.ts).toLocaleDateString('uk-UA')}</p>
-    </div>
-  `).join('');
-}
-
 function renderCollections() {
   if (!gameState) return;
   const h = document.getElementById('collectionsGrid');
@@ -2547,89 +2500,12 @@ function doRevealCollectionReward(collId) {
   }, 800);
 }
 
-function renderAllTime() {
-  if (!gameState) return;
-  const a = gameState.allTime || createDefaultAllTime();
-  const set = (id, v) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = v;
-  };
-  set('atRounds', String(a.rounds || 0));
-  set('atWins', String(a.wins || 0));
-  set('atCases', String(a.cases || 0));
-  set('atBattles', String(a.battles || 0));
-  set('atRoyale', String(a.royaleWins || 0));
-  set('atContracts', String(a.contracts || 0));
-  set('atSells', String(a.sells || 0));
-  set('atSellValue', Math.round(a.sellValue || 0).toLocaleString('uk-UA'));
-  set('atBiggestWin', Math.round(a.biggestWin || 0).toLocaleString('uk-UA'));
-  set('atLegendary', String(a.legendaryDrops || 0));
-  set('atMulti', String(a.multiInputs || 0));
-  set('atCredits', String(a.creditInputs || 0));
-}
-
-function renderRoundHistory() {
-  if (!gameState) return;
-  const h = document.getElementById('roundHistory');
-  if (!h) return;
-  if (!gameState.rounds.length) {
-    h.innerHTML = '<div class="rounded-xl border border-dashed border-gray-700 p-6 text-center"><i class="fa-solid fa-dice text-xl text-gray-600"></i><p class="mt-2 text-sm font-bold text-gray-400">Тут з’явиться історія</p></div>';
-    return;
-  }
-  h.innerHTML = gameState.rounds.map(r => {
-    const st = new Date(r.at).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
-    const mode = r.mode === 'under' ? 'Під · захист' : r.mode === 'multi' ? 'Мульти' : r.mode === 'battle' ? 'Бій' : r.mode === 'contract' ? 'Контракт' : 'Понад · бонус';
-    return `<div class="flex items-center gap-3 rounded-xl border ${r.win ? 'border-green-500/25 bg-green-500/5' : 'border-red-500/20 bg-red-500/5'} p-2.5">
-      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${r.win ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'}">
-        <i class="fa-solid ${r.win ? 'fa-check' : 'fa-xmark'}"></i>
-      </span>
-      <div class="min-w-0 flex-1">
-        <p class="truncate text-xs font-extrabold text-gray-200">${escapeHtml(r.targetName)}</p>
-        <p class="mt-0.5 text-[10px] text-gray-500">${mode}${r.chance ? ` · ${Number(r.chance).toFixed(2)}%` : ''}</p>
-      </div>
-      <div class="text-right">
-        <p class="text-xs font-extrabold ${r.win ? 'text-green-300' : 'text-red-300'}">${r.win ? 'Виграш' : 'Невдача'}</p>
-        <p class="mt-0.5 text-[10px] text-gray-500">${st}</p>
-      </div>
-    </div>`;
-  }).join('');
-}
-
 function getSkinByKey(k) {
   return CS2_SKINS.find(s => getSkinKey(s) === String(k));
 }
 
 function isFavorite(s) {
   return Boolean(gameState?.favorites?.includes(getSkinKey(s)));
-}
-
-function renderFavorites() {
-  if (!gameState) return;
-  const h = document.getElementById('favoritesGrid');
-  if (!h) return;
-  const skins = gameState.favorites.map(getSkinByKey).filter(Boolean);
-  if (!skins.length) {
-    h.innerHTML = '<div class="col-span-full rounded-xl border border-dashed border-gray-700 p-6 text-center"><i class="fa-regular fa-heart text-xl text-gray-600"></i><p class="mt-2 text-sm font-bold text-gray-400">Додай скіни з каталогу</p></div>';
-    return;
-  }
-  h.innerHTML = skins.slice(0, 9).map(s => `
-    <article class="relative overflow-hidden rounded-xl border border-gray-800 bg-black/20 p-2">
-      <button type="button" data-favorite-select="${escapeHtml(getSkinKey(s))}" class="w-full text-left">
-        <img src="${escapeHtml(s.img)}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" class="h-16 w-full object-contain image-skeleton" loading="lazy" onerror="handleSkinImageError(this)">
-        <p class="mt-1 truncate text-[10px] font-extrabold text-gray-200">${escapeHtml(s.name)}</p>
-        <p class="text-[10px] font-bold text-amber-300">${formatCredits(s.price)}</p>
-      </button>
-      <button type="button" data-favorite-remove="${escapeHtml(getSkinKey(s))}" title="Прибрати" class="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-md bg-black/65 text-red-300 hover:bg-red-500 hover:text-white">
-        <i class="fa-solid fa-xmark text-[10px]"></i>
-      </button>
-    </article>
-  `).join('');
-
-  h.querySelectorAll('[data-favorite-select]').forEach(b => b.addEventListener('click', () => {
-    const s = getSkinByKey(b.dataset.favoriteSelect);
-    if (s) selectTargetItem(s);
-  }));
-  h.querySelectorAll('[data-favorite-remove]').forEach(b => b.addEventListener('click', () => toggleFavorite(b.dataset.favoriteRemove)));
 }
 
 function toggleFavorite(k) {
@@ -2646,7 +2522,6 @@ function toggleFavorite(k) {
     gameState.favorites.splice(pos, 1);
   }
   saveState();
-  renderFavorites();
   if (document.getElementById('shopModal')?.classList.contains('flex')) filterShop();
 }
 
@@ -2684,11 +2559,7 @@ function renderGameHub() {
   renderWeeklyTasks();
   renderAchievements();
   renderCollections();
-  renderRoundHistory();
-  renderFavorites();
   renderLeaderboard();
-  renderAllTime();
-  renderRecentAch();
   applyTheme();
   updateAccountUI();
   updateThemeMenuState();
@@ -2816,27 +2687,6 @@ function recordRound({ win, target, chance, mode, inputValue, bonus }) {
   checkAchievements();
   saveState();
   renderGameHub();
-}
-
-function copyLatestResult() {
-  const r = gameState?.rounds?.[0];
-  if (!r) {
-    showToast('Спочатку зроби ролл', 'warn');
-    return;
-  }
-  const msg = `ПОТУЖНО DROP 5.0 · ${r.win ? 'Виграш' : 'Невдача'}: ${r.targetName} · ${r.chance ? `шанс ${Number(r.chance).toFixed(2)}% · ` : ''}лише віртуальна гра.`;
-  const done = () => showToast('Результат скопійовано', 'success');
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(msg).then(done).catch(() => showToast('Не вдалося', 'warn'));
-  } else {
-    const ta = document.createElement('textarea');
-    ta.value = msg;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    ta.remove();
-    done();
-  }
 }
 
 function applyTheme() {
@@ -3442,56 +3292,6 @@ function doPrestige() {
   soundWin();
 }
 
-function resetDemoGame() {
-  if (!window.confirm('Почати спочатку? Прогрес, історія, ачівки та престиж скидаються.')) return;
-  cancelPendingWager();
-  isRolling = false;
-  isCaseOpening = false;
-  isFreeCaseOpening = false;
-  battleInProgress = false;
-  battlePlayerItem = null;
-  battleBotItem = null;
-  currentUser.balance = DEMO_STARTING_BALANCE;
-  userInventory = createStarterInventory();
-  const theme = gameState?.theme || 'amber';
-  gameState = createDefaultGameState();
-  gameState.theme = theme;
-  selectedInputSkin = null;
-  selectedTargetSkin = null;
-  selectedInputMode = 'skin';
-  balanceStake = 50;
-  multiInputSkins = [];
-
-  const stakeInput = document.getElementById('balanceStakeInput');
-  if (stakeInput) stakeInput.value = '50';
-
-  document.getElementById('inputSkinState')?.classList.add('hidden');
-  document.getElementById('inputMultiState')?.classList.add('hidden');
-  document.getElementById('inputBalanceState')?.classList.add('hidden');
-  document.getElementById('inputEmptyState')?.classList.remove('hidden');
-  document.getElementById('targetSkinState')?.classList.add('hidden');
-  document.getElementById('targetEmptyState')?.classList.remove('hidden');
-
-  localStorage.removeItem(STORAGE.bonusAt);
-  localStorage.removeItem(STORAGE.freeCase);
-
-  clearContract();
-  resetCoinVisual();
-  resetRoyale(true);
-
-  updateBalanceUI();
-  renderInventoryGrid();
-  renderProfileInventory();
-  updateAvatarBadge();
-  switchInputMode('skin');
-  recalculateUpgrade();
-  saveState();
-  renderGameHub();
-  updateGiftButtonUI();
-  updateFreeCaseBtn();
-  showToast('Нову гру розпочато', 'success');
-}
-
 function estimateInventoryPrice(it, i) {
   const clean = normalizeSkinName(it.name);
   const m = CS2_SKINS.find(s => normalizeSkinName(s.name) === clean);
@@ -3591,33 +3391,7 @@ function renderProfileInventoryStats() {
   if (u) u.textContent = String(uniqueNames);
 }
 
-function renderProfileLootStrip() {
-  const strip = document.getElementById('profileLootStrip');
-  if (!strip) return;
-  const source = (userInventory.length ? [...userInventory] : [...CS2_SKINS])
-    .sort((left, right) => (right.addedAt || 0) - (left.addedAt || 0) || (right.price || 0) - (left.price || 0))
-    .slice(0, 20);
-  const inventoryIds = new Set(userInventory.map(item => String(item.id)));
-  strip.innerHTML = `
-    <div class="profile-loot-strip-label"><i class="fa-solid fa-crosshairs"></i><span>АРСЕНАЛ</span><strong>${userInventory.length}</strong></div>
-    <div class="profile-loot-track">
-      ${source.map(item => {
-        const owned = inventoryIds.has(String(item.id));
-        const sourceLabel = item.steamImported ? 'STEAM' : item.exclusive ? 'EXCLUSIVE' : 'DROP';
-        return `<button type="button" class="profile-loot-item ${owned ? 'is-owned' : ''}" ${owned ? `data-profile-strip-inspect="${escapeHtml(String(item.id))}"` : 'disabled'} title="${escapeHtml(item.name)} · ${formatCredits(item.price)}">
-          <span class="profile-loot-origin">${sourceLabel}</span>
-          <img src="${escapeHtml(item.img || '')}" alt="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)">
-          <span class="profile-loot-name">${escapeHtml(item.name)}</span>
-        </button>`;
-      }).join('')}
-    </div>`;
-  strip.querySelectorAll('[data-profile-strip-inspect]').forEach(button => {
-    button.addEventListener('click', () => showItemDetail(button.dataset.profileStripInspect));
-  });
-}
-
 function renderProfileInventory() {
-  renderProfileLootStrip();
   renderProfileInventoryCategoryChips();
   renderProfileInventoryStats();
   const grid = document.getElementById('profileInventoryGrid');
@@ -6686,43 +6460,6 @@ function renderShopGrid(skins) {
   g.querySelectorAll('[data-favorite-toggle]').forEach(b => b.addEventListener('click', () => toggleFavorite(b.dataset.favoriteToggle)));
 }
 
-/* Export / Import */
-function exportSave() {
-  try {
-    const data = buildPortableSave();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `potuzhno-drop-${Date.now()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    showToast('Збереження експортовано', 'success');
-  } catch {
-    showToast('Помилка експорту', 'error');
-  }
-}
-
-function importSave(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const data = JSON.parse(e.target.result);
-      applyPortableSave(data);
-      showToast('Збереження імпортовано!', 'success');
-      soundWin();
-    } catch {
-      showToast('Не вдалося імпортувати файл', 'error');
-    }
-  };
-  reader.readAsText(file);
-  event.target.value = '';
-}
-
 /* Initialization */
 window.addEventListener('DOMContentLoaded', () => {
   initCanvas();
@@ -6881,11 +6618,7 @@ window.filterShop = filterShop;
 window.resetShopFilters = resetShopFilters;
 window.showMoreSkins = showMoreSkins;
 window.toggleFavorite = toggleFavorite;
-window.exportSave = exportSave;
-window.importSave = importSave;
-window.copyLatestResult = copyLatestResult;
 window.setTheme = setTheme;
-window.resetDemoGame = resetDemoGame;
 window.toggleMobileMenu = toggleMobileMenu;
 window.toggleSound = toggleSound;
 window.claimDailyBonus = claimDailyBonus;
