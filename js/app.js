@@ -12,7 +12,7 @@ const STORAGE = {
   account: 'potuzhno_v6_account',
   topup: 'potuzhno_v5_topup',
   freeCase: 'potuzhno_v5_freecase',
-  catalogCache: 'potuzhno_catalog_cache_v39',
+  catalogCache: 'potuzhno_catalog_cache_v40',
   pendingWager: 'potuzhno_v6_pending_wager',
   fair: 'potuzhno_v9_fair',
   steamNudge: 'potuzhno_v10_steam_nudge'
@@ -367,10 +367,17 @@ function prefersLightweightMotion() {
   return Boolean(reduceMotion || saveData || lowMemory || fewCores);
 }
 
-function getCaseReelConfig() {
-  return prefersLightweightMotion()
-    ? { cards: 24, winnerIndex: 18, duration: 2_350, soundTicks: false }
-    : { cards: 34, winnerIndex: 27, duration: 3_850, soundTicks: true };
+function getCaseReelConfig(soundDurationMs = 0) {
+  const base = prefersLightweightMotion()
+    ? { cards: 24, winnerIndex: 18, duration: 2_350 }
+    : { cards: 34, winnerIndex: 27, duration: 3_850 };
+  const soundtrackDuration = Math.round(Number(soundDurationMs) || 0);
+  return {
+    ...base,
+    // A valid soundtrack duration always wins: the reel reaches its result
+    // exactly when its music ends. The fallback keeps offline playback fluid.
+    duration: soundtrackDuration >= 1_000 ? soundtrackDuration : base.duration
+  };
 }
 
 // The Steam community endpoint returns up to 500 assets at a time. Keeping the
@@ -404,134 +411,151 @@ const CHANCE_MAX = 80;
 const CHANCE_MIN = 0.50;
 
 /* ===== КАТАЛОГ КЕЙСІВ ===== */
+function skinNameIncludes(skin, ...parts) {
+  const name = String(skin?.name || '').toLowerCase();
+  return parts.some(part => name.includes(String(part).toLowerCase()));
+}
+
+function isGloveSkin(skin) {
+  return skin?.category === 'Gloves' || skinNameIncludes(skin, 'Gloves', 'Hand Wraps', 'Hydra Gloves', 'Bloodhound Gloves');
+}
+
+function isKnifeSkin(skin) {
+  return skin?.category === 'Knives' || (/^★\s/.test(String(skin?.name || '')) && !isGloveSkin(skin));
+}
+
+function isWeaponSkin(skin) {
+  return !isKnifeSkin(skin) && !isGloveSkin(skin);
+}
+
 const CASE_TYPES = {
   // HOT & LIMITED
   dragon_lair: {
     id: 'dragon_lair',
     name: "Dragon's Lair",
-    cost: 4800,
+    cost: 3200,
     category: 'hot',
     badge: 'HOT',
     badgeClass: 'badge-hot',
     theme: 'red',
     desc: 'AWP Dragon Lore, Fire Serpent та топові скіни',
-    filter: s => (s.price >= 800 && (s.name.includes('Dragon Lore') || s.name.includes('Fire Serpent') || s.name.includes('Printstream') || s.name.includes('Fade') || s.name.includes('★')))
+    filter: s => isWeaponSkin(s) && s.price >= 800 && skinNameIncludes(s, 'Dragon Lore', 'Fire Serpent', 'Printstream', 'Fade', 'Howl', 'Wild Lotus', 'Gungnir', 'Medusa')
   },
   covert_ops: {
     id: 'covert_ops',
     name: 'Covert Ops',
-    cost: 2200,
+    cost: 1600,
     category: 'hot',
     badge: 'EXCLUSIVE',
     badgeClass: 'badge-exclusive',
     theme: 'purple',
     desc: 'Тільки таємна зброя найвищого рангу',
-    filter: s => (s.rarity === 'Covert' || s.rarity === 'Extraordinary') && s.price >= 300
+    filter: s => isWeaponSkin(s) && ['Covert', 'Contraband'].includes(s.rarity) && s.price >= 300
   },
   beast_mode: {
     id: 'beast_mode',
     name: 'Beast Mode',
-    cost: 1400,
+    cost: 750,
     category: 'hot',
     badge: 'POPULAR',
     badgeClass: 'badge-popular',
     theme: 'pink',
     desc: 'Hyper Beast, Asiimov, Neo-Noir та неонові скіни',
-    filter: s => s.name.includes('Hyper Beast') || s.name.includes('Asiimov') || s.name.includes('Neo-Noir') || s.name.includes('Mecha') || (s.price >= 250 && s.price <= 8000)
+    filter: s => isWeaponSkin(s) && skinNameIncludes(s, 'Hyper Beast', 'Asiimov', 'Neo-Noir', 'Mecha', 'Vaporwave', 'Temukau', 'Legion of Anubis')
   },
 
   // KNIVES
   butterfly_fever: {
     id: 'butterfly_fever',
     name: 'Butterfly Fever',
-    cost: 9500,
+    cost: 2600,
     category: 'knives',
     badge: 'HOT',
     badgeClass: 'badge-hot',
     theme: 'gold',
     desc: 'Шанс на Butterfly Knife: Doppler, Fade, Marble',
-    filter: s => s.name.includes('Butterfly Knife') || (s.name.includes('★') && s.price >= 30000)
+    filter: s => isKnifeSkin(s) && skinNameIncludes(s, 'Butterfly Knife')
   },
   karambit_rush: {
     id: 'karambit_rush',
     name: 'Karambit Rush',
-    cost: 8200,
+    cost: 2400,
     category: 'knives',
     badge: 'EXCLUSIVE',
     badgeClass: 'badge-exclusive',
     theme: 'blue',
     desc: 'Легендарні керамбіти від Fade до Autotronic',
-    filter: s => s.name.includes('Karambit') || (s.name.includes('★') && s.price >= 25000)
+    filter: s => isKnifeSkin(s) && skinNameIncludes(s, 'Karambit')
   },
   knife_club: {
     id: 'knife_club',
     name: 'Knife Club',
-    cost: 3800,
+    cost: 1000,
     category: 'knives',
     badge: 'POPULAR',
     badgeClass: 'badge-popular',
     theme: 'gold',
     desc: 'Ножі різної цінності та рідкісний шанс на топ-дроп',
-    filter: s => s.name.includes('★') && !s.name.includes('Gloves') && !s.name.includes('Wraps')
+    filter: isKnifeSkin
   },
 
   // GLOVES
   sport_gloves: {
     id: 'sport_gloves',
     name: 'Sport Edition',
-    cost: 5900,
+    cost: 1900,
     category: 'gloves',
     badge: 'HOT',
     badgeClass: 'badge-hot',
     theme: 'blue',
     desc: 'Рідкісні Sport Gloves: Vice, Pandora, Amphibious',
-    filter: s => s.name.includes('Sport Gloves') || (s.name.includes('Gloves') && s.price >= 10000)
+    filter: s => isGloveSkin(s) && skinNameIncludes(s, 'Sport Gloves')
   },
   moto_special: {
     id: 'moto_special',
     name: 'Moto & Specialist',
-    cost: 3200,
+    cost: 1000,
     category: 'gloves',
     badge: 'POPULAR',
     badgeClass: 'badge-popular',
     theme: 'purple',
     desc: 'Стильні рукавиці Moto, Specialist та Hand Wraps',
-    filter: s => s.name.includes('Gloves') || s.name.includes('Wraps')
+    filter: s => isGloveSkin(s) && skinNameIncludes(s, 'Moto Gloves', 'Specialist Gloves', 'Hand Wraps')
   },
 
   // WEAPONS
   awp_king: {
     id: 'awp_king',
     name: 'AWP King',
-    cost: 1650,
+    cost: 900,
     category: 'weapons',
     badge: 'HOT',
     badgeClass: 'badge-hot',
     theme: 'purple',
     desc: 'Снайперська еліта: Dragon Lore, Gungnir, Asiimov',
-    filter: s => s.name.includes('AWP')
+    filter: s => isWeaponSkin(s) && (s.weapon === 'AWP' || skinNameIncludes(s, 'AWP |'))
   },
   ak47_master: {
     id: 'ak47_master',
     name: 'AK-47 Master',
-    cost: 1250,
+    cost: 700,
     category: 'weapons',
     badge: 'POPULAR',
     badgeClass: 'badge-popular',
     theme: 'gold',
     desc: 'Wild Lotus, Case Hardened, Vulcan, Fuel Injector',
-    filter: s => s.name.includes('AK-47')
+    filter: s => isWeaponSkin(s) && (s.weapon === 'AK-47' || skinNameIncludes(s, 'AK-47 |'))
   },
   m4_storm: {
     id: 'm4_storm',
     name: 'M4A4 / M4A1-S',
-    cost: 850,
+    cost: 500,
     category: 'weapons',
     badge: 'NEW',
     badgeClass: 'badge-new',
     theme: 'blue',
     desc: 'Howl, Printstream, Player Two, Decimator, Hot Rod',
-    filter: s => s.name.includes('M4A4') || s.name.includes('M4A1-S')
+    filter: s => isWeaponSkin(s) && (s.weapon === 'M4A4' || s.weapon === 'M4A1-S' || skinNameIncludes(s, 'M4A4 |', 'M4A1-S |'))
   },
 
   // BUDGET / FARM
@@ -544,7 +568,7 @@ const CASE_TYPES = {
     badgeClass: 'badge-popular',
     theme: 'gold',
     desc: 'Баланс ціни та високих шансів на окуп',
-    filter: s => s.price >= 80 && s.price <= 2500
+    filter: s => isWeaponSkin(s) && s.price >= 80 && s.price <= 2500
   },
   lucky_strike: {
     id: 'lucky_strike',
@@ -555,7 +579,7 @@ const CASE_TYPES = {
     badgeClass: 'badge-new',
     theme: 'emerald',
     desc: 'Невеликий ризик з шансом на дроп за 5000+ DC',
-    filter: s => s.price >= 30 && s.price <= 6000
+    filter: s => isWeaponSkin(s) && s.price >= 30 && s.price <= 6000
   },
   farm_rush: {
     id: 'farm_rush',
@@ -566,7 +590,7 @@ const CASE_TYPES = {
     badgeClass: 'badge-exclusive',
     theme: 'gray',
     desc: 'Швидкий фарм для щоденних місій та контрактів',
-    filter: s => s.price >= 15 && s.price <= 500
+    filter: s => isWeaponSkin(s) && s.price >= 15 && s.price <= 500
   },
 
   // Backwards compatibility aliases
@@ -2792,29 +2816,83 @@ function showToast(message, type = 'info') {
 }
 
 let audioCtx = null;
-const CASE_REEL_AUDIO_SRC = '/assets/audio/metallic-tension.mp3?v=5.8.4';
+const CASE_REEL_AUDIO_SRC = '/assets/audio/metallic-tension.mp3?v=5.8.5';
 let caseReelAudio = null;
+let caseReelAudioUnlockSerial = 0;
 
 function getCaseReelAudio() {
   if (caseReelAudio || typeof Audio !== 'function') return caseReelAudio;
   caseReelAudio = new Audio(CASE_REEL_AUDIO_SRC);
   caseReelAudio.preload = 'auto';
-  caseReelAudio.loop = true;
+  caseReelAudio.loop = false;
   caseReelAudio.volume = 0.38;
   return caseReelAudio;
 }
 
+function primeCaseReelSound() {
+  const audio = getCaseReelAudio();
+  if (audio && audio.readyState === 0) audio.load();
+  return audio;
+}
+
+function getCaseReelSoundDuration() {
+  if (!soundEnabled) return 0;
+  const duration = Number(primeCaseReelSound()?.duration);
+  return Number.isFinite(duration) && duration >= 1 ? Math.round(duration * 1_000) : 0;
+}
+
+function waitForCaseReelSoundDuration(timeoutMs = 800) {
+  if (!soundEnabled) return Promise.resolve(0);
+  const known = getCaseReelSoundDuration();
+  if (known) return Promise.resolve(known);
+  const audio = primeCaseReelSound();
+  if (!audio) return Promise.resolve(0);
+  return new Promise(resolve => {
+    let timer = null;
+    const finish = () => {
+      audio.removeEventListener('loadedmetadata', finish);
+      audio.removeEventListener('durationchange', finish);
+      if (timer) clearTimeout(timer);
+      resolve(getCaseReelSoundDuration());
+    };
+    audio.addEventListener('loadedmetadata', finish, { once: true });
+    audio.addEventListener('durationchange', finish, { once: true });
+    timer = window.setTimeout(finish, timeoutMs);
+  });
+}
+
+function unlockCaseReelSound() {
+  if (!soundEnabled || document.hidden) return;
+  const audio = primeCaseReelSound();
+  if (!audio) return;
+  // This silent, user-initiated start unlocks later playback after the fair
+  // server result arrives on mobile browsers without consuming the soundtrack.
+  const unlockSerial = ++caseReelAudioUnlockSerial;
+  audio.muted = true;
+  audio.play().then(() => {
+    if (unlockSerial !== caseReelAudioUnlockSerial) return;
+    audio.pause();
+    audio.currentTime = 0;
+    audio.muted = false;
+  }).catch(() => {
+    if (unlockSerial === caseReelAudioUnlockSerial) audio.muted = false;
+  });
+}
+
 function startCaseReelSound() {
   if (!soundEnabled || document.hidden) return;
-  const audio = getCaseReelAudio();
+  const audio = primeCaseReelSound();
   if (!audio) return;
+  caseReelAudioUnlockSerial += 1;
   audio.pause();
   audio.currentTime = 0;
+  audio.muted = false;
   audio.play().catch(() => {});
 }
 
 function stopCaseReelSound() {
   if (!caseReelAudio) return;
+  caseReelAudioUnlockSerial += 1;
   caseReelAudio.pause();
   caseReelAudio.currentTime = 0;
 }
@@ -4325,10 +4403,15 @@ let caseMultiplier = 1;
 let lastWonCaseItems = [];
 let lastOpenedCaseId = 'budget_covert';
 let currentDetailsCaseId = 'budget_covert';
+const _casePoolCache = new Map();
 
 function getCaseSkinPool(caseType) {
   let cfg = CASE_TYPES[caseType] || CASE_TYPES.budget_covert;
   if (cfg.aliasTo) cfg = CASE_TYPES[cfg.aliasTo] || cfg;
+
+  const cacheKey = `${cfg.id}:${CS2_SKINS.length}`;
+  const cached = _casePoolCache.get(cacheKey);
+  if (cached) return cached;
 
   const usable = CS2_SKINS.filter(isUsableSkin);
   if (!usable.length) return [];
@@ -4347,24 +4430,12 @@ function getCaseSkinPool(caseType) {
     themed = usable.filter(cfg.filter);
   }
 
-  // Every paid case intentionally contains affordable filler items. Previously
-  // knife/glove filters could consist entirely of premium skins, making a good
-  // drop almost guaranteed instead of rare.
-  const affordable = usable.filter(s => (s.price || 0) <= Math.max(20, cfg.cost * 0.9));
-  const nearest = [...usable]
-    .sort((a, b) => Math.abs((a.price || 0) - cfg.cost) - Math.abs((b.price || 0) - cfg.cost))
-    .slice(0, 48);
-  const seen = new Set();
-  const pool = [...sampleByPrice(themed, 120), ...sampleByPrice(affordable, 120), ...nearest]
-    .filter(s => {
-      const key = getSkinKey(s);
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 240);
-
-  return pool.sort((a, b) => (b.price || 0) - (a.price || 0));
+  // A case may only contain skins matching its declared theme. Adding the
+  // global cheap pool here was why knives, gloves and weapon cases looked the
+  // same. Price tiers below now provide the loss/win balance inside each pool.
+  const pool = sampleByPrice(themed, 180).sort((a, b) => (b.price || 0) - (a.price || 0));
+  _casePoolCache.set(cacheKey, pool);
+  return pool;
 }
 
 const _dropChanceCache = new Map();
@@ -4379,9 +4450,11 @@ function _buildDropChanceMap(caseType) {
 
   const cfg = CASE_TYPES[caseType] || CASE_TYPES.budget_covert;
   const caseCost = Math.max(1, cfg.aliasTo ? (CASE_TYPES[cfg.aliasTo]?.cost || cfg.cost) : cfg.cost);
-  // 55% low, 32% below-cost, 12% break-even, 0.7% profitable,
-  // 0.25% premium and 0.05% jackpot (before unavailable-tier rollover).
-  const tierWeights = [55, 32, 12, 0.7, 0.25, 0.05];
+  // 58% clear loss, 25% close loss, 12% around break-even, 3.5% profit,
+  // 1% premium and 0.5% jackpot (before unavailable-tier rollover).
+  // Each pool uses these same transparent value bands, so a themed case can
+  // lose, return its cost, or land a genuine rare win without foreign filler.
+  const tierWeights = [58, 25, 12, 3.5, 1, 0.5];
   const buckets = Array.from({ length: tierWeights.length }, () => []);
   const tierFor = price => {
     const ratio = Math.max(0, Number(price) || 0) / caseCost;
@@ -4535,6 +4608,10 @@ function renderCaseCatalog() {
   const grid = document.getElementById('casesCatalogGrid');
   if (!grid) return;
 
+  // The compact starter set renders instantly. Load the rich catalogue only
+  // when the visitor opens the Cases page, then redraw with full themed pools.
+  if (currentPage === 'case' && !completeSkinCatalogReady) void loadCompleteSkinCatalog();
+
   const validEntries = Object.entries(CASE_TYPES).filter(([id, c]) => !c.aliasTo);
   const filtered = validEntries.filter(([id, c]) => {
     if (currentCaseCategory === 'all') return true;
@@ -4618,6 +4695,19 @@ function openPowerCase(caseType = 'budget_covert') {
 
   if (!currentUser || !gameState || isCaseOpening || isFreeCaseOpening || isRolling || pendingWager) return;
 
+  // Never replace a knife or glove pool with unrelated filler while the rich
+  // catalogue is still arriving. This keeps every case true to its theme.
+  const pool = getCaseSkinPool(cfg.id);
+  if (pool.length < 8 && !completeSkinCatalogReady) {
+    void loadCompleteSkinCatalog();
+    showToast('Готуємо повний тематичний склад кейса…', 'info');
+    return;
+  }
+  if (!pool.length) {
+    showToast('Для цього кейса тимчасово немає доступного каталогу.', 'warn');
+    return;
+  }
+
   currentActiveCaseId = cfg.id;
   window.__caseType = 'paid';
   window.__caseName = cfg.name;
@@ -4632,6 +4722,7 @@ function openPowerCase(caseType = 'budget_covert') {
   if (multiBox) multiBox.classList.remove('hidden');
 
   setCaseMultiplier(caseMultiplier || 1);
+  if (soundEnabled) primeCaseReelSound();
   buildSingleReelTrack('caseReelTrack', pickCaseSkin('regular', currentActiveCaseId));
 
   const status = document.getElementById('caseReelStatus');
@@ -4691,6 +4782,7 @@ function openFreeDailyCase() {
   if (multiBox) multiBox.classList.add('hidden');
 
   setCaseMultiplier(1);
+  if (soundEnabled) primeCaseReelSound();
   buildSingleReelTrack('caseReelTrack', pickCaseSkin('free'));
 
   const status = document.getElementById('caseReelStatus');
@@ -4704,9 +4796,20 @@ function openFreeDailyCase() {
   openModal('caseReelModal');
 }
 
-function buildSingleReelTrack(trackId, winner) {
+function pickCaseReelDisplaySkin(pool, caseType) {
+  const chances = pool.map(s => getItemDropChance(s, caseType));
+  const total = chances.reduce((sum, chance) => sum + chance, 0);
+  if (!total) return pool[Math.floor(Math.random() * pool.length)];
+  let roll = Math.random() * total;
+  for (let index = 0; index < pool.length; index++) {
+    if (roll < chances[index]) return pool[index];
+    roll -= chances[index];
+  }
+  return pool[pool.length - 1];
+}
+
+function buildSingleReelTrack(trackId, winner, config = getCaseReelConfig()) {
   const track = document.getElementById(trackId);
-  const config = getCaseReelConfig();
   if (!track) return { ...config, cardWidth: 132, gap: 10 };
 
   const items = [];
@@ -4716,17 +4819,17 @@ function buildSingleReelTrack(trackId, winner) {
 
   for (let i = 0; i < cards; i++) {
     if (i === winnerIndex) {
-      items.push({ ...winner, isWinner: true, wear: winner?.wear || rollWear() });
+      items.push({ ...winner, wear: winner?.wear || rollWear() });
       continue;
     }
-    const s = fallback[Math.floor(Math.random() * fallback.length)];
-    items.push({ ...s, isWinner: false, wear: rollWear() });
+    const s = pickCaseReelDisplaySkin(fallback, currentActiveCaseId);
+    items.push({ ...s, wear: rollWear() });
   }
 
   track.innerHTML = items.map(it => {
     const image = getSkinImageSrc(it);
     return `
-    <div class="case-reel-card ${it.isWinner ? 'is-winner' : ''}">
+    <div class="case-reel-card">
       <img src="${escapeHtml(image)}" alt="" data-skin-name="${escapeHtml(it.name)}" loading="eager" decoding="async" onerror="handleSkinImageError(this)">
       <p>${escapeHtml(it.name.split('|').pop().trim().slice(0, 18))}</p>
       <p class="text-[10px] font-extrabold text-amber-300">${formatCredits(it.price || 0)}</p>
@@ -4747,7 +4850,7 @@ function getCaseReelTarget(track, reelWindow, winnerIndex, fallbackCardWidth = 1
   return Math.round((windowWidth - cardWidth) / 2 - paddingLeft - winnerIndex * (cardWidth + gap));
 }
 
-function playCaseReels(reels, wrapper) {
+function playCaseReels(reels, wrapper, onStart) {
   return new Promise(resolve => {
     if (!reels.length) return resolve();
     // Keep the well-tested CSS transition mechanics, but explicitly protect
@@ -4755,6 +4858,7 @@ function playCaseReels(reels, wrapper) {
     // is released by transitionend, with a timer only as a browser fallback.
     requestAnimationFrame(() => requestAnimationFrame(() => {
       void wrapper?.offsetWidth;
+      onStart?.();
       let pending = reels.length;
       const complete = () => {
         pending -= 1;
@@ -4825,9 +4929,9 @@ async function startCaseReel() {
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>ОБЕРТАННЯ…';
   }
 
-  // Start from the click handler so mobile browsers allow playback after the
-  // server-confirmed roll begins. The track stops if that confirmation fails.
-  if (!isFast) startCaseReelSound();
+  // Unlock the player from the direct click. The actual soundtrack begins in
+  // the same frame as the reel after the server-confirmed roll is ready.
+  if (!isFast) unlockCaseReelSound();
 
   const restorePendingCaseOpen = () => {
     stopCaseReelSound();
@@ -4921,8 +5025,9 @@ async function startCaseReel() {
 
   // Build first, then wait for two paint frames. Measuring before the modal is
   // laid out was the source of the jumpy/off-centre reel on slower devices.
+  const reelConfig = getCaseReelConfig(await waitForCaseReelSoundDuration());
   const reels = wonItems.map((winner, idx) => {
-    const setup = buildSingleReelTrack(`reelTrack_${idx}`, winner);
+    const setup = buildSingleReelTrack(`reelTrack_${idx}`, winner, reelConfig);
     const track = document.getElementById(`reelTrack_${idx}`);
     if (track) {
       track.style.transition = 'none';
@@ -4930,7 +5035,7 @@ async function startCaseReel() {
     }
     return { track, reelWindow: document.getElementById(`reelWindow_${idx}`), ...setup };
   }).filter(reel => reel.track);
-  const reelAnimation = playCaseReels(reels, wrapper);
+  const reelAnimation = playCaseReels(reels, wrapper, startCaseReelSound);
 
   const status = document.getElementById('caseReelStatus');
   if (status) status.textContent = 'Обертається…';
@@ -6291,20 +6396,41 @@ function startLiveFeedSimulation() {
 
 function estimateSkinPrice(skin) {
   const rarity = skin?.rarity?.name || skin?.rarity || 'Consumer Grade';
-  const t = {
+  const idStr = String(skin?.id || skin?.name || 'cs2-skin');
+  let hash = 2166136261;
+  for (const char of idStr) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  const roll = (hash >>> 0) / 4_294_967_295;
+  const name = String(skin?.name || '');
+  const category = String(skin?.category?.name || skin?.category || '');
+  const premiumFinish = /Doppler|Fade|Marble|Gamma|Lore|Slaughter|Crimson|Tiger Tooth|Emerald|Ruby|Sapphire|Pandora|Vice/i.test(name);
+
+  // The source catalogue has no market prices. Give special items a wide,
+  // deterministic virtual range instead of pricing every knife or glove at
+  // the same value — otherwise themed cases cannot have real loss tiers.
+  if (category === 'Knives') {
+    const value = 650 + Math.round(Math.pow(roll, 1.75) * 12_500) + (premiumFinish ? 11_000 : 0);
+    return Math.max(650, Math.min(28_000, value));
+  }
+  if (category === 'Gloves') {
+    const value = 450 + Math.round(Math.pow(roll, 1.6) * 7_000) + (premiumFinish ? 6_000 : 0);
+    return Math.max(450, Math.min(15_000, value));
+  }
+
+  const base = {
     'Consumer Grade': 12,
-    'Industrial Grade': 25,
-    'Mil-Spec Grade': 60,
-    'Restricted': 140,
-    'Classified': 360,
-    'Covert': 900,
-    'Contraband': 6500,
-    'Extraordinary': 5000
-  };
-  const b = t[rarity] || 55;
-  const idStr = String(skin?.id ?? Math.random());
-  const hash = [...idStr].reduce((s, c) => s + c.charCodeAt(0), 0);
-  return Math.min(7200, Math.max(10, Math.round(b * (0.80 + (hash % 41) / 100))));
+    'Industrial Grade': 28,
+    'Mil-Spec Grade': 70,
+    'Restricted': 190,
+    'Classified': 520,
+    'Covert': 1_450,
+    'Contraband': 9_000,
+    'Extraordinary': 5_000
+  }[rarity] || 60;
+  const value = base * (0.7 + roll * 1.35) + (premiumFinish ? base * 0.65 : 0);
+  return Math.min(14_000, Math.max(10, Math.round(value)));
 }
 
 async function fetchSkinCatalog(url) {
@@ -6349,6 +6475,9 @@ function loadCompleteSkinCatalog() {
     if (cachedSkins) {
       CS2_SKINS = cachedSkins.map(applyFeaturedSkinMetadata);
       completeSkinCatalogReady = true;
+      _casePoolCache.clear();
+      _dropChanceCache.clear();
+      _caseMetricsCache.clear();
       populateCategoryFilter();
       filterShop();
       renderGameHub();
@@ -6379,8 +6508,11 @@ function loadCompleteSkinCatalog() {
       price: ex.get(skin.name) || estimateSkinPrice(skin)
     }, index)).filter(Boolean);
     if (normalizedCatalog.length < 50) throw new Error('Catalog validation failed');
-    CS2_SKINS = normalizedCatalog.sort((a, b) => a.weapon.localeCompare(b.weapon) || a.name.localeCompare(b.name));
+    CS2_SKINS = normalizedCatalog
+      .map(applyFeaturedSkinMetadata)
+      .sort((a, b) => a.weapon.localeCompare(b.weapon) || a.name.localeCompare(b.name));
     completeSkinCatalogReady = true;
+    _casePoolCache.clear();
     _dropChanceCache.clear();
     _caseMetricsCache.clear();
 

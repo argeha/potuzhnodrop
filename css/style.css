@@ -41,7 +41,6 @@ body[data-theme="violet"] #xpBar{background:linear-gradient(90deg,#8b5cf6,#ddd6f
 .case-reel-pointer::after{bottom:0;border-bottom:10px solid #fbbf24}
 .case-reel-track{display:flex;gap:10px;width:max-content;padding:14px;contain:layout paint;will-change:transform;transform:translate3d(0,0,0)}
 .case-reel-card{flex:0 0 132px;width:132px;height:140px;contain:layout paint;border:1px solid #253044;border-radius:10px;background:#121722;padding:8px;text-align:center;display:flex;flex-direction:column;justify-content:space-between}
-.case-reel-card.is-winner{border-color:#fbbf24;box-shadow:0 0 22px rgba(251,191,36,.33)}
 .case-reel-card img{height:80px;width:100%;object-fit:contain}
 .case-reel-card p{font-size:9px;font-weight:800;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media (prefers-reduced-motion:reduce){.case-reel-track{will-change:auto}.case-reel-card,.case-reel-pointer{box-shadow:none!important}.case-reel-window::before,.case-reel-window::after{display:none}}
