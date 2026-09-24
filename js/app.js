@@ -313,6 +313,24 @@ let publicProfilePublishTimer = null;
 let publicProfilePublishPromise = null;
 let activePublicProfile = null;
 
+// Case reels are deliberately lighter on entry-level phones and on devices
+// where the visitor explicitly asks the browser to reduce motion. This keeps
+// the result visible and centred instead of dropping frames while dozens of
+// remote skin previews are decoded at once.
+function prefersLightweightMotion() {
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  const saveData = navigator.connection?.saveData === true;
+  const lowMemory = Number(navigator.deviceMemory) > 0 && Number(navigator.deviceMemory) <= 2;
+  const fewCores = Number(navigator.hardwareConcurrency) > 0 && Number(navigator.hardwareConcurrency) <= 2;
+  return Boolean(reduceMotion || saveData || lowMemory || fewCores);
+}
+
+function getCaseReelConfig() {
+  return prefersLightweightMotion()
+    ? { cards: 24, winnerIndex: 18, duration: 2_350, soundTicks: false }
+    : { cards: 34, winnerIndex: 27, duration: 3_850, soundTicks: true };
+}
+
 // The Steam community endpoint returns up to 500 assets at a time. Keeping the
 // work bounded gives the UI a responsive, recoverable sync even for huge inventories.
 const STEAM_SYNC_PAGE_LIMIT = 6;
@@ -2856,12 +2874,21 @@ function openModal(id) {
   if (id === 'inventoryModal') refreshInventoryModal();
   if (id === 'accountModal') updateAccountUI();
   if (id === 'prestigeModal') updatePrestigeUI();
-  if (id === 'shopModal') filterShop();
+  if (id === 'shopModal') {
+    filterShop();
+    // The complete catalog is several thousand records. Load it only when the
+    // visitor actually opens the catalog instead of delaying the game itself.
+    void loadCompleteSkinCatalog();
+  }
   const panel = prepareModalAccessibility(el);
   window.setTimeout(() => (getModalFocusables(el)[0] || panel)?.focus(), 0);
 }
 
 function closeModal(id) {
+  if (id === 'caseReelModal' && (isCaseOpening || isFreeCaseOpening)) {
+    showToast('Дочекайся завершення відкриття кейсу', 'info');
+    return;
+  }
   const el = document.getElementById(id);
   if (!el) return;
   el.classList.add('hidden');
@@ -4607,31 +4634,42 @@ function openFreeDailyCase() {
 
 function buildSingleReelTrack(trackId, winner) {
   const track = document.getElementById(trackId);
-  if (!track) return { winnerIndex: 45, cardWidth: 132, gap: 10 };
+  const config = getCaseReelConfig();
+  if (!track) return { ...config, cardWidth: 132, gap: 10 };
 
   const items = [];
-  const winnerIndex = 45;
+  const { cards, winnerIndex } = config;
   const pool = getCaseSkinPool(currentActiveCaseId);
   const fallback = pool.length ? pool : CS2_SKINS;
 
-  for (let i = 0; i < 50; i++) {
+  for (let i = 0; i < cards; i++) {
     if (i === winnerIndex) {
-      items.push({ ...winner, isWinner: true, wear: rollWear() });
+      items.push({ ...winner, isWinner: true, wear: winner?.wear || rollWear() });
       continue;
     }
     const s = fallback[Math.floor(Math.random() * fallback.length)];
     items.push({ ...s, isWinner: false, wear: rollWear() });
   }
 
-  track.innerHTML = items.map(it => `
+  track.innerHTML = items.map((it, index) => `
     <div class="case-reel-card ${it.isWinner ? 'is-winner' : ''}">
-      <img src="${escapeHtml(it.img || '')}" alt="" data-skin-name="${escapeHtml(it.name)}" onerror="handleSkinImageError(this)">
+      <img src="${escapeHtml(it.img || '')}" alt="" data-skin-name="${escapeHtml(it.name)}" loading="${Math.abs(index - winnerIndex) < 4 ? 'eager' : 'lazy'}" decoding="async" onerror="handleSkinImageError(this)">
       <p>${escapeHtml(it.name.split('|').pop().trim().slice(0, 18))}</p>
       <p class="text-[10px] font-extrabold text-amber-300">${formatCredits(it.price || 0)}</p>
     </div>
   `).join('');
 
-  return { winnerIndex, cardWidth: 132, gap: 10 };
+  return { ...config, cardWidth: 132, gap: 10 };
+}
+
+function getCaseReelTarget(track, reelWindow, winnerIndex, fallbackCardWidth = 132, fallbackGap = 10) {
+  const card = track?.querySelector('.case-reel-card');
+  const trackStyle = track ? getComputedStyle(track) : null;
+  const cardWidth = card?.getBoundingClientRect().width || fallbackCardWidth;
+  const gap = Number.parseFloat(trackStyle?.columnGap || trackStyle?.gap || '') || fallbackGap;
+  const paddingLeft = Number.parseFloat(trackStyle?.paddingLeft || '') || 0;
+  const windowWidth = reelWindow?.getBoundingClientRect().width || Math.max(280, document.documentElement.clientWidth - 48);
+  return Math.round((windowWidth - cardWidth) / 2 - paddingLeft - winnerIndex * (cardWidth + gap));
 }
 
 async function startCaseReel() {
@@ -4768,39 +4806,43 @@ async function startCaseReel() {
     `).join('');
   }
 
-  // Populate and animate each track
-  wonItems.forEach((winner, idx) => {
-    const { winnerIndex, cardWidth, gap } = buildSingleReelTrack(`reelTrack_${idx}`, winner);
-    const winEl = document.getElementById(`reelWindow_${idx}`);
-    const winW = winEl ? winEl.clientWidth : 500;
-    const offsetPer = cardWidth + gap;
-    const targetX = -(winnerIndex * offsetPer) + winW / 2 - cardWidth / 2;
+  // Build first, then wait for two paint frames. Measuring before the modal is
+  // laid out was the source of the jumpy/off-centre reel on slower devices.
+  const reels = wonItems.map((winner, idx) => {
+    const setup = buildSingleReelTrack(`reelTrack_${idx}`, winner);
     const track = document.getElementById(`reelTrack_${idx}`);
-
     if (track) {
       track.style.transition = 'none';
-      track.style.transform = 'translateX(0)';
-      void track.offsetWidth;
-      track.style.transition = 'transform 4.4s cubic-bezier(.1,.75,.15,1)';
-      requestAnimationFrame(() => {
-        track.style.transform = `translateX(${targetX}px)`;
-      });
+      track.style.transform = 'translate3d(0, 0, 0)';
     }
-  });
+    return { track, reelWindow: document.getElementById(`reelWindow_${idx}`), ...setup };
+  }).filter(reel => reel.track);
+  const reelDuration = reels.reduce((duration, reel) => Math.max(duration, reel.duration || 0), 2_350);
+
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    // One layout flush for all reels is much cheaper than flushing every track.
+    void wrapper?.offsetWidth;
+    reels.forEach(reel => {
+      const targetX = getCaseReelTarget(reel.track, reel.reelWindow, reel.winnerIndex, reel.cardWidth, reel.gap);
+      reel.track.style.transition = `transform ${reel.duration}ms cubic-bezier(.12,.72,.16,1)`;
+      reel.track.style.transform = `translate3d(${targetX}px, 0, 0)`;
+    });
+  }));
 
   const status = document.getElementById('caseReelStatus');
   if (status) status.textContent = 'Обертається…';
 
-  const ticks = setInterval(() => beep(600 + Math.random() * 400, 0.03, 'square'), 80);
+  const playTicks = getCaseReelConfig().soundTicks && soundEnabled && !document.hidden;
+  const ticks = playTicks ? setInterval(() => beep(600 + Math.random() * 400, 0.025, 'square'), 105) : null;
 
   setTimeout(() => {
-    clearInterval(ticks);
+    if (ticks) clearInterval(ticks);
     if (status) status.textContent = 'Готово!';
     soundCase();
     isCaseOpening = false;
     isFreeCaseOpening = false;
     displayCaseDropResult(wonItems, isFree, cfg.name);
-  }, 4500);
+  }, reelDuration + 140);
 }
 
 function displayCaseDropResult(items, isFree, caseName, resultKind = 'case') {
@@ -6105,16 +6147,24 @@ function addActivityEvent({ player, skin, outcome = 'attempt', profile = null })
   while (feed.children.length > 14) feed.removeChild(feed.lastElementChild);
 }
 
+let liveFeedStarted = false;
 function startLiveFeedSimulation() {
+  if (liveFeedStarted) return;
+  liveFeedStarted = true;
   const push = () => {
+    if (document.hidden) return;
     const cand = CS2_SKINS.filter(isUsableSkin);
     if (!cand.length) return;
     const s = cand[Math.floor(Math.random() * cand.length)];
     const profile = LIVE_FEED_PROFILES[Math.floor(Math.random() * LIVE_FEED_PROFILES.length)];
     addActivityEvent({ player: profile.name, profile, skin: s, outcome: Math.random() > 0.42 ? 'win' : 'attempt' });
   };
-  for (let i = 0; i < 7; i++) push();
-  setInterval(push, 3500);
+  for (let i = 0; i < (prefersLightweightMotion() ? 3 : 5); i++) push();
+  const schedule = () => {
+    push();
+    window.setTimeout(schedule, prefersLightweightMotion() ? 15_000 : 8_000);
+  };
+  window.setTimeout(schedule, prefersLightweightMotion() ? 15_000 : 8_000);
 }
 
 function estimateSkinPrice(skin) {
@@ -6149,7 +6199,13 @@ async function fetchSkinCatalog(url) {
   }
 }
 
-async function loadCompleteSkinCatalog() {
+let completeSkinCatalogReady = false;
+let completeSkinCatalogPromise = null;
+
+function loadCompleteSkinCatalog() {
+  if (completeSkinCatalogReady) return Promise.resolve();
+  if (completeSkinCatalogPromise) return completeSkinCatalogPromise;
+  completeSkinCatalogPromise = (async () => {
   try {
     const countEl = document.getElementById('shopCount');
     if (countEl) countEl.textContent = 'Оновлюємо…';
@@ -6170,6 +6226,7 @@ async function loadCompleteSkinCatalog() {
 
     if (cachedSkins) {
       CS2_SKINS = cachedSkins;
+      completeSkinCatalogReady = true;
       populateCategoryFilter();
       filterShop();
       renderGameHub();
@@ -6201,6 +6258,7 @@ async function loadCompleteSkinCatalog() {
     }, index)).filter(Boolean);
     if (normalizedCatalog.length < 50) throw new Error('Catalog validation failed');
     CS2_SKINS = normalizedCatalog.sort((a, b) => a.weapon.localeCompare(b.weapon) || a.name.localeCompare(b.name));
+    completeSkinCatalogReady = true;
     _dropChanceCache.clear();
     _caseMetricsCache.clear();
 
@@ -6220,6 +6278,10 @@ async function loadCompleteSkinCatalog() {
     if (countEl) countEl.textContent = `${CS2_SKINS.length} скінів`;
     renderGameHub();
   }
+  })().finally(() => {
+    completeSkinCatalogPromise = null;
+  });
+  return completeSkinCatalogPromise;
 }
 
 function populateCategoryFilter() {
@@ -6486,14 +6548,14 @@ window.addEventListener('DOMContentLoaded', () => {
   })();
   renderCaseButtons();
 
-  loadCompleteSkinCatalog().finally(() => {
-    startMarketTicker();
-    startLiveFeedSimulation();
-    updateTopupUI();
-    renderCaseTopDrops();
-    updateFreeCaseBtn();
-    renderCaseButtons();
-  });
+  // Keep first paint small: the full skin catalog is fetched lazily when its
+  // modal is opened. Cases work from the bundled curated pool immediately.
+  startMarketTicker();
+  startLiveFeedSimulation();
+  updateTopupUI();
+  renderCaseTopDrops();
+  updateFreeCaseBtn();
+  renderCaseButtons();
 
   refreshInventoryModal();
   updateGiftButtonUI();

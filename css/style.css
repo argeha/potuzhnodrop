@@ -39,11 +39,12 @@ body[data-theme="violet"] #xpBar{background:linear-gradient(90deg,#8b5cf6,#ddd6f
 .case-reel-pointer::before,.case-reel-pointer::after{content:'';position:absolute;left:50%;transform:translateX(-50%);border-left:8px solid transparent;border-right:8px solid transparent}
 .case-reel-pointer::before{top:0;border-top:10px solid #fbbf24}
 .case-reel-pointer::after{bottom:0;border-bottom:10px solid #fbbf24}
-.case-reel-track{display:flex;gap:10px;width:max-content;padding:14px;will-change:transform}
-.case-reel-card{flex:0 0 132px;width:132px;height:140px;border:1px solid #253044;border-radius:10px;background:#121722;padding:8px;text-align:center;display:flex;flex-direction:column;justify-content:space-between}
+.case-reel-track{display:flex;gap:10px;width:max-content;padding:14px;contain:layout paint;will-change:transform;transform:translate3d(0,0,0)}
+.case-reel-card{flex:0 0 132px;width:132px;height:140px;contain:layout paint;border:1px solid #253044;border-radius:10px;background:#121722;padding:8px;text-align:center;display:flex;flex-direction:column;justify-content:space-between}
 .case-reel-card.is-winner{border-color:#fbbf24;box-shadow:0 0 22px rgba(251,191,36,.33)}
 .case-reel-card img{height:80px;width:100%;object-fit:contain}
 .case-reel-card p{font-size:9px;font-weight:800;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (prefers-reduced-motion:reduce){.case-reel-track{will-change:auto}.case-reel-card,.case-reel-pointer{box-shadow:none!important}.case-reel-window::before,.case-reel-window::after{display:none}}
 .battle-slot{position:relative;border:2px dashed #1E2638;border-radius:16px;background:rgba(0,0,0,.2);transition:.2s;cursor:pointer;min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px}
 .battle-slot:hover{border-color:rgba(245,158,11,.5)}
 .battle-slot.filled{border-style:solid;border-color:#f59e0b;background:rgba(245,158,11,.05)}
