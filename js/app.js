@@ -400,9 +400,22 @@ const SAFE_MODE_CHANCE_MULTIPLIER = 1.15;
 const BONUS_MODE_RATE = 0.05;
 const POWER_CASE_COST = 300;
 const FREE_CASE_COOLDOWN = 24 * 60 * 60 * 1000;
-const XP_PER_ROUND = 80;
-const XP_WIN_BONUS = 70;
-const XP_PER_CASE = 45;
+// Progression is intentionally long-term: levels and the seasonal pass should
+// represent steady play, not a few quick rounds.
+const PLAYER_LEVEL_XP = 1_200;
+const PRESTIGE_LEVEL_REQUIRED = 30;
+const XP_PER_ROUND = 55;
+const XP_WIN_BONUS = 45;
+const XP_PER_CASE = 30;
+const XP_DAILY_TASK = 25;
+const XP_WEEKLY_TASK = 50;
+const XP_COLLECTION = 130;
+const XP_ACHIEVEMENT = 50;
+const XP_BATTLE_WIN = 100;
+const XP_BATTLE_LOSS = 25;
+const XP_ROYALE_WIN = 330;
+const XP_ROYALE_LOSS = 40;
+const XP_CONTRACT = 80;
 const ROUND_HISTORY_LIMIT = 20;
 const SELL_RATE = 0.9;
 const CHANCE_K = 0.92;
@@ -845,7 +858,7 @@ const BATTLE_PASS_SEASON = Object.freeze({
   name: 'СЕЗОН 01',
   title: 'БОЙОВИЙ ПРОПУСК',
   tiers: 30,
-  tierXp: 350,
+  tierXp: 750,
   price: 3_000,
 });
 
@@ -1074,7 +1087,7 @@ function getXpMultiplier() {
 }
 
 function getPlayerLevel() {
-  return Math.floor((gameState?.xp || 0) / 750) + 1;
+  return Math.floor((gameState?.xp || 0) / PLAYER_LEVEL_XP) + 1;
 }
 
 const PLAYER_RANKS = [
@@ -1109,7 +1122,7 @@ function claimDailyStreak() {
 
 function getLevelProgress() {
   const xp = gameState?.xp || 0;
-  return { current: xp % 750, total: 750, percent: ((xp % 750) / 750) * 100 };
+  return { current: xp % PLAYER_LEVEL_XP, total: PLAYER_LEVEL_XP, percent: ((xp % PLAYER_LEVEL_XP) / PLAYER_LEVEL_XP) * 100 };
 }
 
 function addXp(v) {
@@ -2101,9 +2114,9 @@ function updatePrestigeUI() {
   const cp = document.getElementById('prestigeCurPrestige');
   if (cp) cp.textContent = `P${p}`;
   const btn = document.getElementById('prestigeConfirmBtn');
-  if (btn) btn.disabled = getPlayerLevel() < 10;
+  if (btn) btn.disabled = getPlayerLevel() < PRESTIGE_LEVEL_REQUIRED;
   const pBtn = document.getElementById('prestigeBtn');
-  if (pBtn) pBtn.disabled = getPlayerLevel() < 10;
+  if (pBtn) pBtn.disabled = getPlayerLevel() < PRESTIGE_LEVEL_REQUIRED;
 }
 
 function getSkinPreviewType(name) {
@@ -2643,7 +2656,7 @@ function claimDailyTask(id) {
 
   gameState.daily.claimed.push(t.id);
   currentUser.balance += t.reward;
-  addXp(40);
+  addXp(XP_DAILY_TASK);
   updateBalanceUI();
   saveState();
   renderGameHub();
@@ -2707,7 +2720,7 @@ function claimWeeklyTask(id) {
 
   gameState.weekly.claimed.push(t.id);
   currentUser.balance += t.reward;
-  addXp(80);
+  addXp(XP_WEEKLY_TASK);
   updateBalanceUI();
   saveState();
   renderGameHub();
@@ -2869,7 +2882,7 @@ function doRevealCollectionReward(collId) {
 
     userInventory.push(exclusiveItem);
     currentUser.balance += reward.dc;
-    addXp(200);
+    addXp(XP_COLLECTION);
 
     const reveal = document.getElementById('collectionRewardRevealed');
     if (reveal) {
@@ -3147,7 +3160,7 @@ function checkAchievements() {
     if (!gameState.achievements[a.id] && a.met()) {
       gameState.achievements[a.id] = Date.now();
       currentUser.balance += a.reward;
-      addXp(75);
+      addXp(XP_ACHIEVEMENT);
       changed = true;
       soundWin();
       showToast(`Досягнення «${a.title}»: +${formatCredits(a.reward)}`, 'success');
@@ -3945,8 +3958,8 @@ function updateTopupUI() {
 
 function doPrestige() {
   if (!gameState || !currentUser) return;
-  if (getPlayerLevel() < 10) {
-    showToast('Потрібен LVL 10+', 'warn');
+  if (getPlayerLevel() < PRESTIGE_LEVEL_REQUIRED) {
+    showToast(`Потрібен LVL ${PRESTIGE_LEVEL_REQUIRED}+`, 'warn');
     return;
   }
   if (!window.confirm('Скинути XP та рівень? Отримаєш +10% XP назавжди.')) return;
@@ -6193,12 +6206,12 @@ function startBattle() {
       addActivityEvent({ player: currentUser.name || 'Ти', skin: botItem, outcome: 'win', communityKind: 'battle' });
       gameState.stats.battleWins = (gameState.stats.battleWins || 0) + 1;
       gameState.daily.battleWins = (gameState.daily.battleWins || 0) + 1;
-      addXp(150);
+      addXp(XP_BATTLE_WIN);
     } else {
       if (outcome) outcome.innerHTML = `<span class="text-red-300 text-lg">🪙 Монетка впала на сторону ${escapeHtml(opponentName)}. Твій віртуальний предмет вибуває з раунду.</span>`;
       bSlot?.classList.add('is-winner');
       pSlot?.classList.add('is-loser');
-      addXp(40);
+      addXp(XP_BATTLE_LOSS);
     }
 
     gameState.rounds.unshift({
@@ -6677,7 +6690,7 @@ function royaleSettle(winnerIdx, wagerId) {
     const liveSkin = allPotSkins.reduce((best, skin) => (skin.price || 0) > (best?.price || 0) ? skin : best, null);
     if (liveSkin) addActivityEvent({ player: currentUser.name || 'Ти', skin: liveSkin, outcome: 'win', communityKind: 'royale' });
 
-    addXp(500);
+    addXp(XP_ROYALE_WIN);
     soundWin();
     setTimeout(() => soundWin(), 200);
     setTimeout(() => soundWin(), 420);
@@ -6696,7 +6709,7 @@ function royaleSettle(winnerIdx, wagerId) {
     const playerIds = new Set(royalePlayerSkins.map(s => s.id));
     userInventory = userInventory.filter(s => !playerIds.has(s.id));
 
-    addXp(60);
+    addXp(XP_ROYALE_LOSS);
     soundLose();
 
     const botName = ROYALE_BOT_NAMES[winnerIdx - 1] || 'Бот';
@@ -6855,7 +6868,7 @@ function executeContract() {
   gameState.daily.contracts = (gameState.daily.contracts || 0) + 1;
   gameState.weekly.contracts = (gameState.weekly.contracts || 0) + 1;
   updateAllTimeOnContract();
-  addXp(120);
+  addXp(XP_CONTRACT);
   checkAchievements();
   saveState();
   renderInventoryGrid();
