@@ -859,7 +859,7 @@ const BATTLE_PASS_SEASON = Object.freeze({
   title: 'БОЙОВИЙ ПРОПУСК',
   tiers: 30,
   tierXp: 750,
-  price: 3_000,
+  price: 10_000,
 });
 
 // Battle Pass rewards deliberately reuse the real skins already present in
