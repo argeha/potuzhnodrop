@@ -29,13 +29,13 @@
 <link rel="preconnect" href="https://community.akamai.steamstatic.com">
 <link rel="preconnect" href="https://avatars.steamstatic.com">
 <!-- Tailwind зібраний локально: інтерфейс не залежить від зовнішнього CDN. -->
-<link rel="stylesheet" href="/css/tailwind.css?v=5.8.4">
+<link rel="stylesheet" href="/css/tailwind.css?v=5.8.5">
 <!-- Font Awesome -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-<link rel="stylesheet" href="/css/style.css?v=5.8.5">
+<link rel="stylesheet" href="/css/style.css?v=5.8.6">
 </head>
 <body class="min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -481,7 +481,7 @@
 </div>
 <article class="glass-panel rounded-2xl border border-brand-border p-5">
 <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-<div><p class="text-xs font-bold uppercase tracking-widest text-gray-500">Топ потужних людей</p><h3 class="mt-1 text-xl font-extrabold text-white"><i class="fa-solid fa-ranking-star mr-2 text-amber-400"></i>Рейтинг</h3></div>
+<div><p id="leaderboardSeason" class="text-xs font-bold uppercase tracking-widest text-gray-500">Сезонний топ</p><h3 class="mt-1 text-xl font-extrabold text-white"><i class="fa-solid fa-ranking-star mr-2 text-amber-400"></i>Рейтинг</h3></div>
 <p class="text-[11px] text-gray-500">Ти тут: <span id="myRankLabel" class="font-bold text-amber-300">#—</span></p>
 </div>
 <div id="leaderboardList" class="mt-4 space-y-2"></div>
@@ -493,7 +493,7 @@
 <article id="profileOverview" class="profile-command-center">
 <div class="profile-command-main">
 <div class="profile-portrait"><img id="profileAvatarLarge" alt="Аватар профілю" onerror="handleSteamAvatarError(this)"><span id="profileConnectionIcon" class="profile-connection-icon" title="Профіль гри"><i class="fa-solid fa-gamepad"></i></span></div>
-<div class="profile-identity"><p id="profileConnectionText" class="profile-kicker">ПРОФІЛЬ ГРИ</p><h3 class="profile-player-name"><span id="profileName">Гість</span><span id="prestigeBadge" class="prestige-badge hidden"><i class="fa-solid fa-crown text-[8px]"></i><span id="prestigeLevelLabel">P1</span></span></h3><p class="profile-steam-id"><i class="fa-brands fa-steam"></i><span id="accountSteamId" class="font-mono">не підключено</span></p><div class="profile-identity-actions"><button onclick="openModal('accountModal')" class="profile-edit-button"><i class="fa-solid fa-sliders"></i>Налаштування</button></div></div>
+<div class="profile-identity"><p id="profileConnectionText" class="profile-kicker">ПРОФІЛЬ ГРИ</p><h3 class="profile-player-name"><span id="profileName">Гість</span><span id="prestigeBadge" class="prestige-badge hidden"><i class="fa-solid fa-crown text-[8px]"></i><span id="prestigeLevelLabel">P1</span></span></h3><p class="profile-steam-id"><i class="fa-brands fa-steam"></i><span id="accountSteamId" class="font-mono">не підключено</span></p><div class="profile-identity-actions"><span id="profileRankBadge" class="profile-social-chip">—</span><span id="profileDailyStreak" class="profile-social-chip profile-social-chip-streak">—</span><button onclick="openModal('accountModal')" class="profile-edit-button"><i class="fa-solid fa-sliders"></i>Налаштування</button></div></div>
 <div class="profile-level-panel"><span class="profile-level-label">РІВЕНЬ</span><strong id="profileLevel">LVL 1</strong><button onclick="openModal('prestigeModal')" id="prestigeBtn" class="profile-prestige-button" title="Престиж (LVL 10+)"><i class="fa-solid fa-crown"></i>Престиж</button></div>
 <div class="profile-wallet"><span>ІГРОВИЙ БАЛАНС</span><strong id="profileBalance">0 DC</strong><button onclick="openModal('topupModal')" title="Заробити віртуальні DC" aria-label="Заробити віртуальні DC"><i class="fa-solid fa-plus"></i></button></div>
 </div>
@@ -502,6 +502,11 @@
 <div><p id="statRounds">0</p><span>Роллів</span></div><div><p id="statWinRate">0%</p><span>Виграшів</span></div><div><p id="statStreak">0</p><span>Серія</span></div><div><p id="statBestValue">0</p><span>Найкращий DC</span></div>
 </div>
 </article>
+
+<section class="profile-social-grid" aria-label="Прогрес гравця">
+<article class="profile-social-card"><div class="profile-social-heading"><div><p>ВІТРИНА</p><h3><i class="fa-solid fa-gem"></i> Найкраще з колекції</h3></div><small>до 4 предметів</small></div><div id="profileShowcase" class="profile-showcase-grid"></div></article>
+<article class="profile-social-card"><div class="profile-social-heading"><div><p>ОСТАННІ РАУНДИ</p><h3><i class="fa-solid fa-clock-rotate-left"></i> Історія</h3></div><small id="profileHistorySummary">—</small></div><div id="profileRoundHistory" class="profile-history-list"></div></article>
+</section>
 
 <article id="steamProfileCard" class="profile-steam-console hidden">
 <div class="profile-steam-console-copy"><span class="profile-steam-console-icon"><i class="fa-brands fa-steam"></i></span><div class="min-w-0"><p>STEAM ПІДКЛЮЧЕНО</p><h3 id="profileSteamName">Steam</h3><span id="profileSteamId" class="sr-only">—</span><small id="profileSteamStatus">Публічний профіль та інвентар доступні для синхронізації</small></div></div>
@@ -717,6 +722,6 @@
 
 <div id="toastContainer" class="fixed bottom-6 right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm"></div>
 
-<script src="/js/app.js?v=5.8.6" defer></script>
+<script src="/js/app.js?v=5.8.7" defer></script>
 </body>
 </html>

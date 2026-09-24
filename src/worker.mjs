@@ -44,6 +44,10 @@ const STEAM_AUTH_COOKIE = 'potuzhno_steam_auth'
 const STEAM_SESSION_VERSION = 'v2'
 const PRESENCE_TTL = 70_000
 const MAX_PRESENCE_VISITORS = 5_000
+const COMMUNITY_PLAYER_TTL = 45 * 24 * 60 * 60_000
+const COMMUNITY_EVENT_TTL = 48 * 60 * 60_000
+const COMMUNITY_MAX_PLAYERS = 1_000
+const COMMUNITY_MAX_EVENTS = 24
 const RATE_LIMITS = {
   profile: { limit: 24, windowMs: 60_000 },
   publicProfile: { limit: 60, windowMs: 60_000 },
@@ -54,6 +58,7 @@ const RATE_LIMITS = {
   steam: { limit: 60, windowMs: 60_000 },
   catalog: { limit: 20, windowMs: 60_000 },
   presence: { limit: 12, windowMs: 60_000 },
+  community: { limit: 24, windowMs: 60_000 },
   api: { limit: 120, windowMs: 60_000 },
 }
 const encoder = new TextEncoder()
@@ -252,6 +257,7 @@ function rateLimitGroup(path) {
   if (path.startsWith('/api/steam/')) return 'steam'
   if (path === '/api/catalog/skins') return 'catalog'
   if (path === '/api/presence') return 'presence'
+  if (path === '/api/community') return 'community'
   return 'api'
 }
 
@@ -287,6 +293,96 @@ function normalizePresenceState(value, now) {
     .filter(([visitorHash, seenAt]) => /^[a-f0-9]{64}$/i.test(visitorHash) && Number.isFinite(Number(seenAt)) && Number(seenAt) > now - PRESENCE_TTL && Number(seenAt) <= now + 10_000)
     .sort(([, leftSeenAt], [, rightSeenAt]) => Number(rightSeenAt) - Number(leftSeenAt))
     .slice(0, MAX_PRESENCE_VISITORS))
+}
+
+function boundedInteger(value, min = 0, max = Number.MAX_SAFE_INTEGER, fallback = min) {
+  const number = Math.round(Number(value))
+  return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback
+}
+
+function communitySeasonKey() {
+  return new Date().toISOString().slice(0, 7)
+}
+
+function normalizeCommunityPlayer(value, visitorHash, now) {
+  const name = cleanText(value?.name, 24)
+  if (!name) return null
+  const profileId = cleanText(value?.profileId, 64)
+  return {
+    id: visitorHash,
+    name,
+    profileId: ID.test(profileId) ? profileId : '',
+    xp: boundedInteger(value?.xp, 0, 9_999_999),
+    wins: boundedInteger(value?.wins, 0, 9_999_999),
+    rounds: boundedInteger(value?.rounds, 0, 9_999_999),
+    collectionValue: boundedInteger(value?.collectionValue, 0, MAX_PRICE * 10_000),
+    level: boundedInteger(value?.level, 1, 9_999),
+    prestige: boundedInteger(value?.prestige, 0, 99),
+    updatedAt: now,
+  }
+}
+
+function normalizeCommunityEvent(value, now) {
+  const skin = value?.skin && typeof value.skin === 'object' ? value.skin : null
+  const playerId = cleanText(value?.playerId, 64)
+  const name = cleanText(value?.name, 24)
+  const skinName = cleanText(skin?.name, 160)
+  if (!/^[a-f0-9]{64}$/i.test(playerId) || !name || !skinName) return null
+  const profileId = cleanText(value?.profileId, 64)
+  const kind = ['case', 'upgrade', 'battle', 'royale', 'contract'].includes(value?.kind) ? value.kind : 'drop'
+  return {
+    id: cleanText(value?.id, 48) || randomHex(12),
+    at: boundedInteger(value?.at, now - COMMUNITY_EVENT_TTL, now + 10_000, now),
+    kind,
+    playerId,
+    name,
+    profileId: ID.test(profileId) ? profileId : '',
+    level: boundedInteger(value?.level, 1, 9_999),
+    prestige: boundedInteger(value?.prestige, 0, 99),
+    skin: {
+      name: skinName,
+      img: cleanImage(skin?.img),
+      price: boundedInteger(skin?.price, 0, MAX_PRICE),
+      rarity: cleanText(skin?.rarity, 48) || 'CS2',
+      rarityColor: cleanColor(skin?.rarityColor),
+    },
+  }
+}
+
+function normalizeCommunityState(value, now) {
+  const season = communitySeasonKey()
+  const source = value?.season === season && value && typeof value === 'object' ? value : {}
+  const players = Object.entries(source.players && typeof source.players === 'object' ? source.players : {})
+    .filter(([visitorHash, player]) => /^[a-f0-9]{64}$/i.test(visitorHash) && player && now - Number(player.updatedAt || 0) < COMMUNITY_PLAYER_TTL)
+    .map(([visitorHash, player]) => [visitorHash, normalizeCommunityPlayer(player, visitorHash, boundedInteger(player.updatedAt, now - COMMUNITY_PLAYER_TTL, now, now))])
+    .filter(([, player]) => Boolean(player))
+    .sort(([, left], [, right]) => right.updatedAt - left.updatedAt)
+    .slice(0, COMMUNITY_MAX_PLAYERS)
+  const events = (Array.isArray(source.events) ? source.events : [])
+    .map(event => normalizeCommunityEvent(event, now))
+    .filter(event => event && now - event.at < COMMUNITY_EVENT_TTL)
+    .sort((left, right) => right.at - left.at)
+    .slice(0, COMMUNITY_MAX_EVENTS)
+  return { season, players: Object.fromEntries(players), events }
+}
+
+function communityResponse(state, visitorHash) {
+  const rows = Object.values(state.players)
+    .sort((left, right) => right.xp - left.xp || right.wins - left.wins || right.collectionValue - left.collectionValue || right.updatedAt - left.updatedAt)
+  const leaderboard = rows.slice(0, 12).map((player, index) => ({
+    rank: index + 1,
+    name: player.name,
+    profileId: player.profileId,
+    xp: player.xp,
+    wins: player.wins,
+    rounds: player.rounds,
+    collectionValue: player.collectionValue,
+    level: player.level,
+    prestige: player.prestige,
+    isMe: player.id === visitorHash,
+  }))
+  const ownRank = rows.findIndex(player => player.id === visitorHash) + 1
+  return { season: state.season, leaderboard, rank: ownRank || null, events: state.events }
 }
 
 function cleanMatchState(state, now) {
@@ -342,6 +438,7 @@ export class PotuzhnoState {
       if (path === '/api/fair/verify') return await this.fairVerify(request)
       if (path === '/api/matchmaking') return await this.matchmaking(request)
       if (path === '/api/presence') return await this.presence(request)
+      if (path === '/api/community') return await this.community(request)
       if (path === '/api/steam/auth') return await this.steamAuth(request)
       if (path === '/api/steam/session') return await this.steamSession(request)
       if (path === '/api/steam/logout') return await this.steamLogout(request)
@@ -752,6 +849,35 @@ export class PotuzhnoState {
     return json({ online, activeWithinMs: PRESENCE_TTL })
   }
 
+  async community(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request, 8_192)
+    } catch {
+      return json({ error: 'Некоректний запит спільноти.' }, 400)
+    }
+    const visitorId = cleanText(body?.id, 64)
+    if (!ID.test(visitorId)) return json({ error: 'Некоректний ідентифікатор гравця.' }, 400)
+
+    const now = Date.now()
+    const visitorHash = await sha256(visitorId)
+    const player = normalizeCommunityPlayer(body?.player, visitorHash, now)
+    if (!player) return json({ error: 'Некоректні дані гравця.' }, 400)
+    const rawEvent = body?.event && typeof body.event === 'object'
+      ? { ...body.event, playerId: visitorHash, name: player.name, profileId: player.profileId, level: player.level, prestige: player.prestige, at: now }
+      : null
+    const event = rawEvent ? normalizeCommunityEvent(rawEvent, now) : null
+    const result = await this.storage.transaction(async transaction => {
+      const state = normalizeCommunityState(await transaction.get('community:season'), now)
+      state.players[visitorHash] = player
+      if (event) state.events = [event, ...state.events.filter(entry => entry.id !== event.id)].slice(0, COMMUNITY_MAX_EVENTS)
+      await transaction.put('community:season', state)
+      return communityResponse(state, visitorHash)
+    })
+    return json(result)
+  }
+
   async steamAuth(request) {
     if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
     const url = new URL(request.url)
@@ -1154,6 +1280,8 @@ async function stateForRequest(request, env, path) {
     name = 'catalog'
   } else if (path === '/api/presence') {
     name = 'presence'
+  } else if (path === '/api/community') {
+    name = 'community'
   } else if (path === '/api/matchmaking' && request.method === 'POST') {
     const body = await requestBodyForRouting(request)
     const roomId = String(body?.roomId || '')

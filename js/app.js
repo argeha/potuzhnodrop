@@ -840,17 +840,6 @@ const COLLECTION_DEFINITIONS = [
   }
 ];
 
-const MOCK_LEADERBOARD = [
-  { name: 'sabb_s1', xp: 14250 },
-  { name: 'zheksve1', xp: 11800 },
-  { name: 'argehabeats', xp: 9640 },
-  { name: 'Bohdan_47', xp: 7320 },
-  { name: 'Voxxa', xp: 5810 },
-  { name: 'm0rsik', xp: 4230 },
-  { name: 'Fennec', xp: 3100 },
-  { name: 'Raven_ua', xp: 1980 }
-];
-
 function createSteamAvatarFallback(name = 'Steam') {
   const label = escapeSvgText(cleanText(name, 1).toUpperCase() || 'S');
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#66c0f4"/><stop offset="1" stop-color="#171a21"/></linearGradient></defs><rect width="128" height="128" rx="28" fill="url(#g)"/><circle cx="91" cy="39" r="23" fill="none" stroke="#fff" stroke-width="8" opacity=".9"/><circle cx="91" cy="39" r="7" fill="#fff"/><path d="M78 56 44 82" stroke="#fff" stroke-width="10" stroke-linecap="round"/><circle cx="37" cy="88" r="17" fill="#fff" opacity=".95"/><text x="64" y="119" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif" font-size="20" font-weight="900">${label}</text></svg>`;
@@ -963,6 +952,8 @@ function createDefaultGameState() {
     allTime: createDefaultAllTime(),
     achievements: {},
     favorites: [],
+    showcase: [],
+    dailyStreak: { current: 0, best: 0, lastDay: '' },
     rounds: [],
     collectionRewards: {}
   };
@@ -1003,6 +994,8 @@ function loadGameState() {
       allTime: { ...createDefaultAllTime(), ...(s.allTime || {}) },
       achievements: s.achievements || {},
       favorites: Array.isArray(s.favorites) ? s.favorites.map(String) : [],
+      showcase: Array.isArray(s.showcase) ? s.showcase.map(String).slice(0, 4) : [],
+      dailyStreak: { ...d.dailyStreak, ...(s.dailyStreak || {}) },
       rounds: Array.isArray(s.rounds) ? s.rounds.slice(0, ROUND_HISTORY_LIMIT) : [],
       collectionRewards: s.collectionRewards || {}
     } : d;
@@ -1019,6 +1012,36 @@ function getXpMultiplier() {
 
 function getPlayerLevel() {
   return Math.floor((gameState?.xp || 0) / 750) + 1;
+}
+
+const PLAYER_RANKS = [
+  { min: 1, title: 'Новачок', icon: 'fa-seedling', tone: 'slate' },
+  { min: 6, title: 'Розвідник', icon: 'fa-compass', tone: 'cyan' },
+  { min: 15, title: 'Оператор', icon: 'fa-crosshairs', tone: 'amber' },
+  { min: 30, title: 'Еліта', icon: 'fa-shield-halved', tone: 'violet' },
+  { min: 50, title: 'Легенда', icon: 'fa-crown', tone: 'emerald' }
+];
+
+function getPlayerRank(level = getPlayerLevel()) {
+  return PLAYER_RANKS.reduce((current, candidate) => level >= candidate.min ? candidate : current, PLAYER_RANKS[0]);
+}
+
+function localDayKey(offset = 0) {
+  const date = new Date();
+  date.setDate(date.getDate() + offset);
+  const timezoneOffset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - timezoneOffset).toISOString().slice(0, 10);
+}
+
+function claimDailyStreak() {
+  const streak = gameState.dailyStreak = { current: 0, best: 0, lastDay: '', ...(gameState.dailyStreak || {}) };
+  const today = localDayKey();
+  if (streak.lastDay === today) return { current: streak.current, extra: 0 };
+  streak.current = streak.lastDay === localDayKey(-1) ? Math.max(0, Number(streak.current) || 0) + 1 : 1;
+  streak.best = Math.max(Number(streak.best) || 0, streak.current);
+  streak.lastDay = today;
+  const extra = ({ 3: 150, 7: 400, 14: 900, 30: 2_000 })[streak.current] || 0;
+  return { current: streak.current, extra };
 }
 
 function getLevelProgress() {
@@ -1057,6 +1080,7 @@ function loadAccount() {
     };
   }
   if (!UUID_PATTERN.test(String(account.presenceId || ''))) account.presenceId = makeUuid();
+  if (!UUID_PATTERN.test(String(account.communityId || ''))) account.communityId = makeUuid();
   localStorage.setItem(STORAGE.account, JSON.stringify(account));
 }
 
@@ -2272,6 +2296,9 @@ function updateGiftButtonUI() {
   const timer = document.getElementById('giftTimer');
   const icon = document.getElementById('giftIcon');
   if (!btn || !timer) return;
+  const streakDays = Math.max(0, Number(gameState?.dailyStreak?.current) || 0);
+  btn.title = `Щоденний бонус +500 DC · серія ${streakDays} дн.`;
+  btn.setAttribute('aria-label', btn.title);
   const last = parseInt(localStorage.getItem(STORAGE.bonusAt) || '0', 10);
   const cd = 24 * 60 * 60 * 1000;
   const left = cd - (Date.now() - last);
@@ -2671,31 +2698,205 @@ function toggleFavorite(k) {
   if (document.getElementById('shopModal')?.classList.contains('flex')) filterShop();
 }
 
+let communitySnapshot = { leaderboard: [], events: [], rank: null, season: '' };
+let communitySyncStarted = false;
+let communitySyncInFlight = false;
+let queuedCommunityEvents = [];
+let communityFeedKey = null;
+const COMMUNITY_SYNC_MS = 35_000;
+
+function getCommunityPlayerPayload() {
+  const stats = gameState?.stats || {};
+  const collectionValue = userInventory.reduce((total, item) => total + Math.max(0, Number(item?.price) || 0), 0);
+  return {
+    name: cleanText(account?.nick || currentUser?.name || 'Гравець', 24) || 'Гравець',
+    profileId: account?.publicProfile?.enabled ? account.publicProfile.id : '',
+    xp: clampNumber(gameState?.xp, 0, 9_999_999, 0),
+    wins: clampNumber(stats.wins, 0, 9_999_999, 0),
+    rounds: clampNumber(stats.rounds, 0, 9_999_999, 0),
+    collectionValue: clampNumber(collectionValue, 0, MAX_STORED_ITEM_VALUE * 10_000, 0),
+    level: getPlayerLevel(),
+    prestige: clampNumber(gameState?.prestige, 0, 99, 0)
+  };
+}
+
 function renderLeaderboard() {
-  const h = document.getElementById('leaderboardList');
-  if (!h) return;
-  const meXp = gameState?.xp || 0;
-  const meName = account?.nick || currentUser?.name || 'Ти';
-  const mePrestige = gameState?.prestige || 0;
-  const rows = MOCK_LEADERBOARD.map(r => ({ ...r, isMe: false, prestige: 0 }));
-  rows.push({ name: meName, xp: meXp, isMe: true, prestige: mePrestige });
-  rows.sort((a, b) => b.xp - a.xp);
-  const myIdx = rows.findIndex(r => r.isMe);
-  const lbl = document.getElementById('myRankLabel');
-  if (lbl) lbl.textContent = `#${myIdx + 1}`;
-  h.innerHTML = rows.map((r, i) => {
-    const lvl = Math.floor(r.xp / 750) + 1;
-    const cls = i < 3 ? `lb-rank-${i + 1}` : 'text-gray-500';
-    const pBadge = r.prestige > 0 ? `<span class="prestige-badge ml-1"><i class="fa-solid fa-crown text-[8px]"></i>P${r.prestige}</span>` : '';
-    return `<div class="lb-row ${r.isMe ? 'is-me' : ''}">
-      <div class="lb-rank ${cls}">#${i + 1}</div>
-      <div class="min-w-0">
-        <p class="truncate text-sm font-extrabold ${r.isMe ? 'text-amber-200' : 'text-white'}">${escapeHtml(r.name)}${pBadge}${r.isMe ? ' <span class="text-[10px] font-bold text-amber-400">(ти)</span>' : ''}</p>
-        <p class="text-[11px] font-bold text-gray-500">${r.xp.toLocaleString('uk-UA')} XP · LVL ${lvl}</p>
-      </div>
-      <div class="font-heading text-xl font-extrabold text-amber-300">${r.prestige > 0 ? `P${r.prestige}` : '—'}</div>
-    </div>`;
+  const list = document.getElementById('leaderboardList');
+  if (!list) return;
+  const rows = Array.isArray(communitySnapshot?.leaderboard) ? communitySnapshot.leaderboard : [];
+  const rankLabel = document.getElementById('myRankLabel');
+  if (rankLabel) rankLabel.textContent = communitySnapshot?.rank ? `#${communitySnapshot.rank}` : '#—';
+  const seasonLabel = document.getElementById('leaderboardSeason');
+  if (seasonLabel) seasonLabel.textContent = communitySnapshot?.season ? `Сезон ${communitySnapshot.season}` : 'Сезонний топ';
+
+  if (!rows.length) {
+    list.innerHTML = '<div class="rounded-xl border border-dashed border-gray-700 px-4 py-6 text-center text-xs font-bold text-gray-500">Рейтинг з’явиться після першої синхронізації.</div>';
+    return;
+  }
+  list.innerHTML = rows.map((row, index) => {
+    const rank = Number(row.rank) || index + 1;
+    const level = clampNumber(row.level, 1, 9_999, 1);
+    const cls = rank <= 3 ? `lb-rank-${rank}` : 'text-gray-500';
+    const prestige = clampNumber(row.prestige, 0, 99, 0);
+    const pBadge = prestige > 0 ? `<span class="prestige-badge ml-1"><i class="fa-solid fa-crown text-[8px]"></i>P${prestige}</span>` : '';
+    const canOpen = UUID_PATTERN.test(String(row.profileId || ''));
+    return `<button type="button" class="lb-row w-full text-left ${row.isMe ? 'is-me' : ''} ${canOpen ? 'cursor-pointer hover:border-cyan-400/35' : ''}" data-community-profile="${canOpen ? escapeHtml(row.profileId) : ''}" ${canOpen ? `title="Відкрити профіль ${escapeHtml(row.name)}"` : ''}>
+      <div class="lb-rank ${cls}">#${rank}</div>
+      <div class="min-w-0"><p class="truncate text-sm font-extrabold ${row.isMe ? 'text-amber-200' : 'text-white'}">${escapeHtml(row.name)}${pBadge}${row.isMe ? ' <span class="text-[10px] font-bold text-amber-400">(ти)</span>' : ''}</p><p class="text-[11px] font-bold text-gray-500">${Number(row.xp || 0).toLocaleString('uk-UA')} XP · LVL ${level}</p></div>
+      <div class="font-heading text-xl font-extrabold text-amber-300">${prestige > 0 ? `P${prestige}` : '—'}</div>
+    </button>`;
   }).join('');
+  list.querySelectorAll('[data-community-profile]').forEach(button => button.addEventListener('click', () => {
+    const id = button.dataset.communityProfile;
+    if (UUID_PATTERN.test(String(id || ''))) void openPublicProfile(id);
+  }));
+}
+
+function renderCommunityFeed(events) {
+  const feed = document.getElementById('liveFeed');
+  if (!feed || !Array.isArray(events)) return;
+  const key = events.map(event => event?.id || '').join('|');
+  if (key === communityFeedKey) return;
+  communityFeedKey = key;
+  feed.replaceChildren();
+  const validEvents = events.filter(event => event?.skin?.name && event?.name);
+  if (!validEvents.length) {
+    feed.innerHTML = '<p class="px-2 text-[11px] font-bold text-gray-500">Поки тихо — відкрий кейс першим.</p>';
+    return;
+  }
+  [...validEvents].reverse().forEach(event => {
+    addActivityEvent({
+      player: event.name,
+      skin: { ...event.skin, id: event.id },
+      outcome: 'win',
+      activityKind: event.kind,
+      profile: {
+        id: event.profileId || '',
+        name: event.name,
+        level: clampNumber(event.level, 1, 9_999, 1),
+        prestige: clampNumber(event.prestige, 0, 99, 0),
+        stats: {},
+        demo: false
+      }
+    });
+  });
+}
+
+function applyCommunitySnapshot(data) {
+  communitySnapshot = {
+    leaderboard: Array.isArray(data?.leaderboard) ? data.leaderboard : [],
+    events: Array.isArray(data?.events) ? data.events : [],
+    rank: Number.isSafeInteger(data?.rank) ? data.rank : null,
+    season: cleanText(data?.season, 16)
+  };
+  renderLeaderboard();
+  renderCommunityFeed(communitySnapshot.events);
+}
+
+async function syncCommunity(event = null) {
+  if (!account?.communityId || !gameState || document.hidden) return;
+  if (communitySyncInFlight) {
+    if (event) queuedCommunityEvents = [...queuedCommunityEvents, event].slice(-8);
+    return;
+  }
+  communitySyncInFlight = true;
+  try {
+    const data = await requestJson('/api/community', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: account.communityId, player: getCommunityPlayerPayload(), ...(event ? { event } : {}) })
+    }, 6_000);
+    applyCommunitySnapshot(data);
+  } catch {
+    // The rest of the game stays usable while a Worker is redeploying.
+  } finally {
+    communitySyncInFlight = false;
+    const nextEvent = queuedCommunityEvents.shift();
+    if (nextEvent) void syncCommunity(nextEvent);
+  }
+}
+
+function announceCommunityActivity(kind, skin) {
+  if (!skin?.name) return;
+  const image = cleanImageUrl(skin.img || skin.image || '');
+  void syncCommunity({
+    id: makeUuid(),
+    kind,
+    skin: {
+      name: cleanText(skin.name, 160),
+      img: image,
+      price: clampNumber(skin.price ?? skin.basePrice, 0, MAX_STORED_ITEM_VALUE, 0),
+      rarity: cleanText(skin.rarity?.name || skin.rarity, 48) || 'CS2',
+      rarityColor: cleanColor(skin.rarity?.color || skin.rarityColor)
+    }
+  });
+}
+
+function startCommunitySync() {
+  if (communitySyncStarted) return;
+  communitySyncStarted = true;
+  void syncCommunity();
+  window.setInterval(() => void syncCommunity(), COMMUNITY_SYNC_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) void syncCommunity();
+  });
+}
+
+function getShowcaseItems() {
+  const selected = new Set(Array.isArray(gameState?.showcase) ? gameState.showcase : []);
+  const pinned = userInventory.filter(item => selected.has(String(item.id)));
+  const rest = userInventory.filter(item => !selected.has(String(item.id))).sort((left, right) => (right.price || 0) - (left.price || 0));
+  return [...pinned, ...rest].slice(0, 4);
+}
+
+function toggleShowcaseItem(itemId) {
+  if (!gameState || !userInventory.some(item => String(item.id) === String(itemId))) return;
+  const showcase = Array.isArray(gameState.showcase) ? gameState.showcase : [];
+  const key = String(itemId);
+  const index = showcase.indexOf(key);
+  if (index >= 0) {
+    showcase.splice(index, 1);
+    showToast('Предмет прибрано з вітрини.', 'info');
+  } else {
+    if (showcase.length >= 4) {
+      showToast('На вітрині може бути максимум 4 предмети.', 'warn');
+      return;
+    }
+    showcase.push(key);
+    showToast('Предмет додано на вітрину.', 'success');
+  }
+  gameState.showcase = showcase;
+  saveState();
+  renderProfileSocial();
+  renderProfileInventory();
+}
+
+function renderProfileSocial() {
+  const rank = getPlayerRank();
+  const rankBadge = document.getElementById('profileRankBadge');
+  if (rankBadge) rankBadge.innerHTML = `<i class="fa-solid ${rank.icon}"></i>${escapeHtml(rank.title)}`;
+  const streakBadge = document.getElementById('profileDailyStreak');
+  const streak = gameState?.dailyStreak || {};
+  if (streakBadge) streakBadge.innerHTML = `<i class="fa-solid fa-fire"></i>${Math.max(0, Number(streak.current) || 0)} дн.`;
+
+  const showcase = document.getElementById('profileShowcase');
+  if (showcase) {
+    const items = getShowcaseItems();
+    showcase.innerHTML = items.length
+      ? items.map(item => `<button type="button" class="profile-showcase-item" data-showcase-detail="${escapeHtml(String(item.id))}" title="Деталі: ${escapeHtml(item.name)}"><img src="${escapeHtml(getSkinImageSrc(item))}" alt="${escapeHtml(item.name)}" data-skin-id="${escapeHtml(getSkinKey(item))}" data-skin-name="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><strong>${escapeHtml(item.name)}</strong><small>${formatCredits(item.price)}</small></button>`).join('')
+      : '<div class="profile-showcase-empty">Тут з’являться твої найкращі скіни.</div>';
+    showcase.querySelectorAll('[data-showcase-detail]').forEach(button => button.addEventListener('click', () => showItemDetail(button.dataset.showcaseDetail)));
+  }
+
+  const history = document.getElementById('profileRoundHistory');
+  const summary = document.getElementById('profileHistorySummary');
+  const rounds = Array.isArray(gameState?.rounds) ? gameState.rounds.slice(0, 5) : [];
+  if (summary) summary.textContent = `краща серія ${Math.max(0, Number(gameState?.stats?.bestStreak) || 0)}`;
+  if (history) {
+    history.innerHTML = rounds.length
+      ? rounds.map(round => `<div class="profile-history-item ${round.win ? 'is-win' : 'is-loss'}"><i class="fa-solid ${round.win ? 'fa-circle-check' : 'fa-circle-xmark'}"></i><div><strong>${escapeHtml(cleanText(round.targetName, 70) || 'Раунд')}</strong><small>${escapeHtml(cleanText(round.mode, 20) || 'гра')} · ${new Date(round.at || Date.now()).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}</small></div><em>${round.win ? '+' : ''}${formatCredits(round.targetValue || 0)}</em></div>`).join('')
+      : '<div class="profile-showcase-empty">Зіграний раунд з’явиться тут.</div>';
+  }
 }
 
 function renderGameHub() {
@@ -2706,6 +2907,7 @@ function renderGameHub() {
   renderAchievements();
   renderCollections();
   renderLeaderboard();
+  renderProfileSocial();
   applyTheme();
   updateAccountUI();
   updateThemeMenuState();
@@ -2833,6 +3035,7 @@ function recordRound({ win, target, chance, mode, inputValue, bonus }) {
   checkAchievements();
   saveState();
   renderGameHub();
+  void syncCommunity();
 }
 
 function applyTheme() {
@@ -3436,13 +3639,15 @@ function claimDailyBonus() {
     updateGiftButtonUI();
     return;
   }
-  currentUser.balance += 500;
+  const streak = claimDailyStreak();
+  const reward = 500 + streak.extra;
+  currentUser.balance += reward;
   localStorage.setItem(STORAGE.bonusAt, String(now));
   updateBalanceUI();
   saveState();
   updateGiftButtonUI();
   checkAchievements();
-  showToast('+500 DC!', 'success');
+  showToast(`+${formatCredits(reward)} · серія ${streak.current} дн.${streak.extra ? ' Бонус серії!' : ''}`, 'success');
   soundCoin();
 }
 
@@ -3658,6 +3863,7 @@ function renderProfileInventory() {
     const k = normalizeSkinName(s.name) + '|' + (wear.code || '');
     const dupes = nameCounts.get(k) || 0;
     const sellPrice = Math.round((s.price || 0) * SELL_RATE);
+    const isShowcased = gameState?.showcase?.includes(String(s.id));
     const [weaponPart, ...skinParts] = String(s.name || 'CS2 Skin').split('|');
     const weapon = cleanText(weaponPart, 48) || 'CS2';
     const skinName = cleanText(skinParts.join('|'), 110) || weapon;
@@ -3671,6 +3877,7 @@ function renderProfileInventory() {
       </button>
       <div class="profile-inv-card-footer"><p class="inv-price"><i class="fa-solid fa-coins"></i>${formatCredits(s.price)}</p><div class="inv-actions">
         <button class="sell-btn" data-profile-sell="${escapeHtml(String(s.id))}" title="Продати за ${formatCredits(sellPrice)}"><i class="fa-solid fa-sack-dollar"></i><span>Продати</span></button>
+        <button class="info-btn ${isShowcased ? 'text-amber-300 border-amber-400/60' : ''}" data-profile-showcase="${escapeHtml(String(s.id))}" title="${isShowcased ? 'Прибрати з вітрини' : 'Додати на вітрину'}"><i class="${isShowcased ? 'fa-solid' : 'fa-regular'} fa-star"></i></button>
         <button class="info-btn" data-profile-info="${escapeHtml(String(s.id))}" title="Деталі"><i class="fa-solid fa-circle-info"></i></button>
       </div></div>
     </article>`;
@@ -3689,6 +3896,12 @@ function renderProfileInventory() {
     b.addEventListener('click', e => {
       e.stopPropagation();
       showItemDetail(b.dataset.profileInfo);
+    });
+  });
+  grid.querySelectorAll('[data-profile-showcase]').forEach(b => {
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      toggleShowcaseItem(b.dataset.profileShowcase);
     });
   });
 }
@@ -4395,7 +4608,7 @@ function executeUpgrade() {
       renderProfileInventory();
       updateAvatarBadge();
       saveState();
-      addActivityEvent({ player: currentUser.name || 'Ти', skin: ni, outcome: 'win' });
+      addActivityEvent({ player: currentUser.name || 'Ти', skin: ni, outcome: 'win', communityKind: 'upgrade' });
       recordRound({ win: true, target: tgtSkin, chance, mode: selectedInputMode === 'multi' ? 'multi' : rollMode, inputValue: iv, bonus: winBonus });
       const _rua_win = document.getElementById('resultUpgraderActions');
       if (_rua_win) _rua_win.classList.remove('hidden');
@@ -4435,7 +4648,7 @@ function executeUpgrade() {
       userInventory.push(ni);
       if (winBonus) { currentUser.balance += winBonus; updateBalanceUI(); }
       renderInventoryGrid(); renderProfileInventory(); updateAvatarBadge(); saveState();
-      addActivityEvent({ player: currentUser.name || 'Ти', skin: ni, outcome: 'win' });
+      addActivityEvent({ player: currentUser.name || 'Ти', skin: ni, outcome: 'win', communityKind: 'upgrade' });
       recordRound({ win: true, target: tgtSkin, chance, mode: selectedInputMode === 'multi' ? 'multi' : rollMode, inputValue: iv, bonus: winBonus });
       const _rua2 = document.getElementById('resultUpgraderActions');
       if (_rua2) _rua2.classList.remove('hidden');
@@ -5068,7 +5281,7 @@ async function startCaseReel() {
     isCaseOpening = false;
     isFreeCaseOpening = false;
     displayCaseDropResult(wonItems, isFree, cfg.name);
-    wonItems.forEach(it => addActivityEvent({ player: currentUser.name || 'Ти', skin: it, outcome: 'win' }));
+    wonItems.forEach(it => addActivityEvent({ player: currentUser.name || 'Ти', skin: it, outcome: 'win', communityKind: 'case' }));
     return;
   }
 
@@ -5107,7 +5320,7 @@ async function startCaseReel() {
   isCaseOpening = false;
   isFreeCaseOpening = false;
   displayCaseDropResult(wonItems, isFree, cfg.name);
-  wonItems.forEach(it => addActivityEvent({ player: currentUser.name || 'Ти', skin: it, outcome: 'win' }));
+  wonItems.forEach(it => addActivityEvent({ player: currentUser.name || 'Ти', skin: it, outcome: 'win', communityKind: 'case' }));
 }
 
 function displayCaseDropResult(items, isFree, caseName, resultKind = 'case') {
@@ -5698,7 +5911,7 @@ function startBattle() {
       userInventory.push(playerStake);
       const botItem = makeDemoItem(battleBotItem, '-battle');
       userInventory.push(botItem);
-      addActivityEvent({ player: currentUser.name || 'Ти', skin: botItem, outcome: 'win' });
+      addActivityEvent({ player: currentUser.name || 'Ти', skin: botItem, outcome: 'win', communityKind: 'battle' });
       gameState.stats.battleWins = (gameState.stats.battleWins || 0) + 1;
       gameState.daily.battleWins = (gameState.daily.battleWins || 0) + 1;
       addXp(150);
@@ -5727,6 +5940,7 @@ function startBattle() {
     renderProfileInventory();
     updateAvatarBadge();
     renderGameHub();
+    void syncCommunity();
 
     if (startBtn) startBtn.innerHTML = '<i class="fa-solid fa-coins mr-2"></i>КИНУТИ МОНЕТКУ';
     setTimeout(() => {
@@ -6182,7 +6396,7 @@ function royaleSettle(winnerIdx, wagerId) {
       userInventory.push(ni);
     });
     const liveSkin = allPotSkins.reduce((best, skin) => (skin.price || 0) > (best?.price || 0) ? skin : best, null);
-    if (liveSkin) addActivityEvent({ player: currentUser.name || 'Ти', skin: liveSkin, outcome: 'win' });
+    if (liveSkin) addActivityEvent({ player: currentUser.name || 'Ти', skin: liveSkin, outcome: 'win', communityKind: 'royale' });
 
     addXp(500);
     soundWin();
@@ -6226,6 +6440,7 @@ function royaleSettle(winnerIdx, wagerId) {
   renderProfileInventory();
   updateAvatarBadge();
   if (typeof renderGameHub === 'function') renderGameHub();
+  void syncCommunity();
 
   royaleInProgress = false;
   const startBtn = document.getElementById('royaleStartBtn');
@@ -6369,6 +6584,7 @@ function executeContract() {
   updateAvatarBadge();
   renderGameHub();
   clearContract();
+  addActivityEvent({ player: currentUser.name || 'Ти', skin: item, outcome: 'win', communityKind: 'contract' });
   showToast(`Контракт: «${item.name}» за ${formatCredits(item.price)}`, 'success');
   soundWin();
 
@@ -6377,16 +6593,6 @@ function executeContract() {
 }
 
 /* ===== LIVE SKIN STRIP ===== */
-const LIVE_FEED_PROFILES = [
-  { id: 'demo-bohdan', name: 'Bohdan_47', level: 37, prestige: 2, steamConnected: true, stats: { rounds: 1840, cases: 330, battles: 77, bestValue: 7120 } },
-  { id: 'demo-voxxa', name: 'Voxxa', level: 24, prestige: 0, steamConnected: true, stats: { rounds: 926, cases: 201, battles: 46, bestValue: 4380 } },
-  { id: 'demo-kitten', name: 'Кіт_у_берцах', level: 51, prestige: 4, steamConnected: true, stats: { rounds: 4215, cases: 821, battles: 126, bestValue: 12600 } },
-  { id: 'demo-morsik', name: 'm0rsik', level: 18, prestige: 0, steamConnected: false, stats: { rounds: 611, cases: 83, battles: 14, bestValue: 2850 } },
-  { id: 'demo-fennec', name: 'Fennec', level: 33, prestige: 1, steamConnected: true, stats: { rounds: 1674, cases: 256, battles: 84, bestValue: 6350 } },
-  { id: 'demo-raven', name: 'Raven_ua', level: 29, prestige: 1, steamConnected: true, stats: { rounds: 1208, cases: 179, battles: 52, bestValue: 5100 } },
-  { id: 'demo-limon', name: 'Limon4ik', level: 12, prestige: 0, steamConnected: false, stats: { rounds: 248, cases: 39, battles: 8, bestValue: 1840 } },
-];
-
 function getLiveFeedProfile(player) {
   if (player === currentUser?.name) {
     const publicProfileEnabled = Boolean(account?.publicProfile?.enabled);
@@ -6394,29 +6600,30 @@ function getLiveFeedProfile(player) {
       id: publicProfileEnabled ? account.publicProfile.id : '',
       ...buildPublicProfilePayload(),
       avatarUrl: currentUser?.avatar || '',
-      demo: !publicProfileEnabled
+      demo: false
     };
   }
-  return LIVE_FEED_PROFILES.find(profile => profile.name === player) || LIVE_FEED_PROFILES[Math.floor(Math.random() * LIVE_FEED_PROFILES.length)];
+  return { id: '', name: cleanText(player, 24) || 'Гравець', level: 1, prestige: 0, stats: {}, demo: false };
 }
 
 function openLiveFeedProfile(event) {
   const profile = event?.currentTarget?._liveProfile;
   if (!profile) return;
-  if (profile.demo === false && UUID_PATTERN.test(String(profile.id || ''))) {
+  if (UUID_PATTERN.test(String(profile.id || ''))) {
     void openPublicProfile(profile.id);
   } else {
-    renderPublicProfileModal(profile, { demo: true });
+    showToast('Гравець не зробив профіль публічним.', 'info');
   }
 }
 
-function addActivityEvent({ player, skin, outcome = 'attempt', profile = null }) {
+function addActivityEvent({ player, skin, outcome = 'attempt', profile = null, communityKind = '', activityKind = '' }) {
   const feed = document.getElementById('liveFeed');
   if (!feed || !skin) return;
   const owner = profile || getLiveFeedProfile(player);
   const safeSkinName = escapeHtml(skin.name || 'CS2 Skin');
   const skinImage = getSkinImageSrc(skin);
   const accent = outcome === 'win' ? '#38d996' : outcome === 'loss' ? '#76839b' : '#f4bf50';
+  const kindLabel = ({ case: 'кейс', upgrade: 'апгрейд', battle: 'бій', royale: 'royale', contract: 'контракт' })[activityKind || communityKind] || '';
   const el = document.createElement('button');
   el.type = 'button';
   el.className = 'live-feed-item live-skin-card';
@@ -6427,31 +6634,19 @@ function addActivityEvent({ player, skin, outcome = 'attempt', profile = null })
     <img src="${escapeHtml(skinImage)}" alt="${safeSkinName}" data-skin-id="${escapeHtml(getSkinKey(skin))}" data-skin-name="${safeSkinName}" decoding="async" onerror="handleSkinImageError(this)">
     <span class="live-skin-tooltip" role="tooltip">
       <span class="live-tooltip-avatar">${escapeHtml((owner.name || '?').slice(0, 1).toUpperCase())}</span>
-      <span><strong>${escapeHtml(owner.name || 'Гравець')}</strong><small>LVL ${clampNumber(owner.level, 1, 9_999, 1)}${owner.prestige ? ` · P${owner.prestige}` : ''} · натисни, щоб відкрити</small></span>
+      <span><strong>${escapeHtml(owner.name || 'Гравець')}</strong><small>${kindLabel ? `${kindLabel} · ` : ''}LVL ${clampNumber(owner.level, 1, 9_999, 1)}${owner.prestige ? ` · P${owner.prestige}` : ''} · натисни, щоб відкрити</small></span>
     </span>`;
   el.addEventListener('click', openLiveFeedProfile);
   feed.prepend(el);
   while (feed.children.length > 14) feed.removeChild(feed.lastElementChild);
+  if (communityKind && outcome === 'win') announceCommunityActivity(communityKind, skin);
 }
 
 let liveFeedStarted = false;
 function startLiveFeedSimulation() {
   if (liveFeedStarted) return;
   liveFeedStarted = true;
-  const push = () => {
-    if (document.hidden) return;
-    const cand = CS2_SKINS.filter(isUsableSkin);
-    if (!cand.length) return;
-    const s = cand[Math.floor(Math.random() * cand.length)];
-    const profile = LIVE_FEED_PROFILES[Math.floor(Math.random() * LIVE_FEED_PROFILES.length)];
-    addActivityEvent({ player: profile.name, profile, skin: s, outcome: Math.random() > 0.42 ? 'win' : 'attempt' });
-  };
-  for (let i = 0; i < (prefersLightweightMotion() ? 3 : 5); i++) push();
-  const schedule = () => {
-    push();
-    window.setTimeout(schedule, prefersLightweightMotion() ? 15_000 : 8_000);
-  };
-  window.setTimeout(schedule, prefersLightweightMotion() ? 15_000 : 8_000);
+  startCommunitySync();
 }
 
 function estimateSkinPrice(skin) {
