@@ -166,7 +166,7 @@ const CS2_SKINS_APIS = [
   'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/skins.json'
 ];
 
-// These are the prominent demonstration skins. Their DC values are tuned for
+// These are the prominent demonstration skins. Their Potuzhno Coin values are tuned for
 // the game's case and upgrade economy instead of mirroring expensive real-world sales.
 const FEATURED_SKIN_PRICES = Object.freeze({
   '★ Butterfly Knife | Doppler': 8600,
@@ -578,7 +578,7 @@ const CASE_TYPES = {
     badge: 'LUCKY',
     badgeClass: 'badge-new',
     theme: 'emerald',
-    desc: 'Невеликий ризик з шансом на дроп за 5000+ DC',
+    desc: 'Невеликий ризик з шансом на дроп за 5000+ PC',
     filter: s => isWeaponSkin(s) && s.price >= 30 && s.price <= 6000
   },
   farm_rush: {
@@ -694,8 +694,8 @@ const TASK_POOL = [
   { id: 'sell_1', title: 'Продай 1 предмет', goal: 1, reward: 110, icon: 'fa-sack-dollar', value: s => s.sells },
   { id: 'sell_3', title: 'Продай 3 предмети', goal: 3, reward: 260, icon: 'fa-sack-dollar', value: s => s.sells },
   { id: 'sell_5', title: 'Продай 5 предметів', goal: 5, reward: 420, icon: 'fa-sack-dollar', value: s => s.sells },
-  { id: 'sellv_2000', title: 'Продай на 2 000 DC', goal: 2000, reward: 260, icon: 'fa-coins', value: s => s.sellValue },
-  { id: 'sellv_10000', title: 'Продай на 10 000 DC', goal: 10000, reward: 580, icon: 'fa-coins', value: s => s.sellValue },
+  { id: 'sellv_2000', title: 'Продай на 2 000 PC', goal: 2000, reward: 260, icon: 'fa-coins', value: s => s.sellValue },
+  { id: 'sellv_10000', title: 'Продай на 10 000 PC', goal: 10000, reward: 580, icon: 'fa-coins', value: s => s.sellValue },
   { id: 'battle_1', title: 'Зіграй 1 бій', goal: 1, reward: 150, icon: 'fa-swords', value: s => s.battles },
   { id: 'battle_win_1', title: 'Переможи в бою', goal: 1, reward: 320, icon: 'fa-swords', value: s => s.battleWins },
   { id: 'battle_win_3', title: 'Переможи в 3 боях', goal: 3, reward: 650, icon: 'fa-swords', value: s => s.battleWins },
@@ -704,11 +704,11 @@ const TASK_POOL = [
   { id: 'credit_1', title: 'Апгрейд кредитами', goal: 1, reward: 90, icon: 'fa-coins', value: s => s.creditInputs },
   { id: 'multi_1', title: 'Мульти-апгрейд (2+)', goal: 1, reward: 150, icon: 'fa-layer-group', value: s => s.multiInputs },
   { id: 'multi_3', title: 'Мульти-апгрейд 3 рази', goal: 3, reward: 360, icon: 'fa-layer-group', value: s => s.multiInputs },
-  { id: 'bigwin_500', title: 'Виграй предмет від 500 DC', goal: 500, reward: 180, icon: 'fa-gem', value: s => s.bestWinValue },
-  { id: 'bigwin_2000', title: 'Виграй предмет від 2 000 DC', goal: 2000, reward: 420, icon: 'fa-gem', value: s => s.bestWinValue },
-  { id: 'bigwin_10000', title: 'Виграй предмет від 10 000 DC', goal: 10000, reward: 950, icon: 'fa-gem', value: s => s.bestWinValue },
-  { id: 'target_3000', title: 'Сума виграшів 3 000 DC', goal: 3000, reward: 300, icon: 'fa-coins', value: s => s.targetValue },
-  { id: 'target_20000', title: 'Сума виграшів 20 000 DC', goal: 20000, reward: 850, icon: 'fa-coins', value: s => s.targetValue },
+  { id: 'bigwin_500', title: 'Виграй предмет від 500 PC', goal: 500, reward: 180, icon: 'fa-gem', value: s => s.bestWinValue },
+  { id: 'bigwin_2000', title: 'Виграй предмет від 2 000 PC', goal: 2000, reward: 420, icon: 'fa-gem', value: s => s.bestWinValue },
+  { id: 'bigwin_10000', title: 'Виграй предмет від 10 000 PC', goal: 10000, reward: 950, icon: 'fa-gem', value: s => s.bestWinValue },
+  { id: 'target_3000', title: 'Сума виграшів 3 000 PC', goal: 3000, reward: 300, icon: 'fa-coins', value: s => s.targetValue },
+  { id: 'target_20000', title: 'Сума виграшів 20 000 PC', goal: 20000, reward: 850, icon: 'fa-coins', value: s => s.targetValue },
   { id: 'streak_3', title: 'Серія з 3 перемог', goal: 3, reward: 470, icon: 'fa-fire', value: s => s.bestStreak },
   { id: 'streak_5', title: 'Серія з 5 перемог', goal: 5, reward: 950, icon: 'fa-fire', value: s => s.bestStreak }
 ];
@@ -747,7 +747,7 @@ const WEEKLY_TASK_POOL = [
   { id: 'w_battles_5', title: '5 боїв за тиждень', goal: 5, reward: 900, icon: 'fa-swords', value: s => s.battles },
   { id: 'w_contracts_5', title: '5 контрактів за тиждень', goal: 5, reward: 1400, icon: 'fa-boxes-packing', value: s => s.contracts },
   { id: 'w_sells_10', title: '10 продажів за тиждень', goal: 10, reward: 700, icon: 'fa-sack-dollar', value: s => s.sells },
-  { id: 'w_bigwin_5k', title: 'Виграш на 5 000 DC за тиждень', goal: 5000, reward: 1000, icon: 'fa-gem', value: s => s.bestWinValue },
+  { id: 'w_bigwin_5k', title: 'Виграш на 5 000 PC за тиждень', goal: 5000, reward: 1000, icon: 'fa-gem', value: s => s.bestWinValue },
   { id: 'w_streak_5', title: 'Серія з 5 перемог за тиждень', goal: 5, reward: 1300, icon: 'fa-fire', value: s => s.bestStreak }
 ];
 
@@ -779,7 +779,7 @@ const ACHIEVEMENT_DEFINITIONS = [
   { id: 'first-roll', title: 'Перший крок', description: 'Зроби перший ролл', reward: 100, icon: 'fa-flag-checkered', met: () => (gameState?.stats?.rounds || 0) >= 1 },
   { id: 'first-win', title: 'Є контакт', description: 'Здобудь першу перемогу', reward: 180, icon: 'fa-trophy', met: () => (gameState?.stats?.wins || 0) >= 1 },
   { id: 'streak-three', title: 'На потужному ходу', description: '3 перемоги поспіль', reward: 350, icon: 'fa-fire', met: () => (gameState?.stats?.bestStreak || 0) >= 3 },
-  { id: 'high-value', title: 'Велика ціль', description: 'Виграй предмет від 10 000 DC', reward: 500, icon: 'fa-gem', met: () => (gameState?.stats?.bestValue || 0) >= 10000 },
+  { id: 'high-value', title: 'Велика ціль', description: 'Виграй предмет від 10 000 PC', reward: 500, icon: 'fa-gem', met: () => (gameState?.stats?.bestValue || 0) >= 10000 },
   { id: 'case-opener', title: 'Кейсоман', description: 'Відкрий 3 кейси', reward: 250, icon: 'fa-boxes-stacked', met: () => (gameState?.stats?.cases || 0) >= 3 },
   { id: 'seller', title: 'Торговець', description: 'Продай 5 предметів', reward: 300, icon: 'fa-sack-dollar', met: () => (gameState?.stats?.sells || 0) >= 5 },
   { id: 'fighter', title: 'Боєць', description: 'Виграй 3 бої', reward: 400, icon: 'fa-swords', met: () => (gameState?.stats?.battles || 0) >= 3 },
@@ -788,7 +788,7 @@ const ACHIEVEMENT_DEFINITIONS = [
   { id: 'roll-100', title: 'Роллер-легенда', description: '100 роллів за весь час', reward: 800, icon: 'fa-dice', met: () => (gameState?.allTime?.rounds || 0) >= 100 },
   { id: 'roll-500', title: 'Невтомний', description: '500 роллів за весь час', reward: 2500, icon: 'fa-dice', met: () => (gameState?.allTime?.rounds || 0) >= 500 },
   { id: 'streak-7', title: 'Нестримний', description: '7 перемог поспіль', reward: 900, icon: 'fa-fire', met: () => (gameState?.stats?.bestStreak || 0) >= 7 },
-  { id: 'rich-50k', title: 'Багатій', description: 'Баланс 50 000 DC', reward: 1500, icon: 'fa-coins', met: () => currentUser && currentUser.balance >= 50000 },
+  { id: 'rich-50k', title: 'Багатій', description: 'Баланс 50 000 PC', reward: 1500, icon: 'fa-coins', met: () => currentUser && currentUser.balance >= 50000 },
   { id: 'collector-10', title: 'Колекціонер', description: '10 предметів в інвентарі', reward: 500, icon: 'fa-boxes-stacked', met: () => userInventory.length >= 10 },
   { id: 'collector-25', title: 'Скарбничка', description: '25 предметів в інвентарі', reward: 1200, icon: 'fa-boxes-stacked', met: () => userInventory.length >= 25 },
   { id: 'case-10', title: 'Кейсоманія', description: '10 кейсів за весь час', reward: 800, icon: 'fa-box-open', met: () => (gameState?.allTime?.cases || 0) >= 10 },
@@ -917,8 +917,10 @@ function setSteamImportRecord(steamId, record) {
   return normalized;
 }
 
+const CURRENCY_TOKEN = 'PC';
+
 function formatCredits(v) {
-  return `${Math.max(0, Math.round(Number(v) || 0)).toLocaleString('uk-UA')} DC`;
+  return `${Math.max(0, Math.round(Number(v) || 0)).toLocaleString('uk-UA')} ${CURRENCY_TOKEN}`;
 }
 
 function escapeHtml(v) {
@@ -2297,7 +2299,7 @@ function updateGiftButtonUI() {
   const icon = document.getElementById('giftIcon');
   if (!btn || !timer) return;
   const streakDays = Math.max(0, Number(gameState?.dailyStreak?.current) || 0);
-  btn.title = `Щоденний бонус +500 DC · серія ${streakDays} дн.`;
+  btn.title = `Щоденний бонус +500 ${CURRENCY_TOKEN} · серія ${streakDays} дн.`;
   btn.setAttribute('aria-label', btn.title);
   const last = parseInt(localStorage.getItem(STORAGE.bonusAt) || '0', 10);
   const cd = 24 * 60 * 60 * 1000;
@@ -3668,7 +3670,7 @@ function topupWatchAd() {
   updateBalanceUI();
   saveState();
   checkAchievements();
-  showToast('+150 DC', 'success');
+  showToast(`+150 ${CURRENCY_TOKEN}`, 'success');
 }
 
 function topupShareSite() {
@@ -3689,7 +3691,7 @@ function topupShareSite() {
   if (navigator.clipboard?.writeText) {
     navigator.clipboard.writeText(location.origin).catch(() => {});
   }
-  showToast('+250 DC', 'success');
+  showToast(`+250 ${CURRENCY_TOKEN}`, 'success');
 }
 
 function topupLevelReward() {
@@ -3713,7 +3715,7 @@ function topupLevelReward() {
 
 function updateTopupUI() {
   const el = document.getElementById('topupLevelRewardLabel');
-  if (el) el.textContent = `+${100 * getPlayerLevel()} DC`;
+  if (el) el.textContent = `+${100 * getPlayerLevel()} ${CURRENCY_TOKEN}`;
 }
 
 function doPrestige() {
@@ -4140,7 +4142,7 @@ function renderMultiSlots() {
         <span class="wear-badge wear-${wear.code} absolute top-1 left-1">${wear.code}</span>
         <button type="button" class="rm" data-multi-remove-id="${escapeHtml(String(s.id))}" aria-label="Видалити"><i class="fa-solid fa-xmark"></i></button>
         <img src="${escapeHtml(getSkinImageSrc(s))}" alt="" data-skin-name="${escapeHtml(s.name)}" onerror="handleSkinImageError(this)">
-        <div class="price">${formatCredits(s.price).replace(' DC', '')}</div>
+        <div class="price">${formatCredits(s.price).replace(` ${CURRENCY_TOKEN}`, '')}</div>
       </div>`;
     }).join('');
     g.querySelectorAll('[data-multi-remove-id]').forEach(button => {
@@ -4227,7 +4229,7 @@ function setRollMode(mode) {
   if (hint) {
     hint.textContent = mode === 'under'
       ? 'Захист: +15% до шансу виграшу (максимум 80%).'
-      : 'Бонус: при виграші +5% вартості цілі у DC.';
+      : 'Бонус: при виграші +5% вартості цілі у PC.';
   }
   recalculateUpgrade();
 }
@@ -4354,7 +4356,7 @@ function renderSmartSuggestions(inputVal) {
     const actualChance = calcChance(inputVal, best.price || targetPrice);
     const sk = getSkinKey ? getSkinKey(best) : '';
     const displayName = best.name.length > 18 ? best.name.slice(0, 16) + '…' : best.name;
-    const priceStr = typeof formatCredits === 'function' ? formatCredits(best.price || 0) : (best.price || 0) + ' DC';
+    const priceStr = typeof formatCredits === 'function' ? formatCredits(best.price || 0) : (best.price || 0) + ` ${CURRENCY_TOKEN}`;
 
     return `<button type="button" class="upg-sugg-card" data-preset="${p.key}" data-suggestion-key="${escapeHtml(sk)}" style="background:${p.bg};border-color:${p.border}">
   <div class="upg-sugg-icon" style="color:${p.accent}">${p.icon}</div>
@@ -4443,7 +4445,7 @@ function quickSellUpgradedSkin() {
   saveState();
   checkAchievements();
   renderGameHub();
-  showToast(`Продано за ${formatCredits(earned)} DC`, 'success');
+  showToast(`Продано за ${formatCredits(earned)}`, 'success');
   soundSell();
 }
 
@@ -5030,7 +5032,7 @@ function updateFreeCaseBtn() {
   } else {
     btn.disabled = false;
     btn.textContent = 'Забрати';
-    status.textContent = 'Раз на 24 години · до 300 DC';
+    status.textContent = 'Раз на 24 години · до 300 PC';
   }
 }
 
@@ -5048,7 +5050,7 @@ function openFreeDailyCase() {
   const title = document.getElementById('caseReelTitle');
   if (title) title.textContent = 'Безкоштовний кейс';
   const sub = document.getElementById('caseReelSubtitle');
-  if (sub) sub.textContent = 'Раз на 24 години · до 300 DC';
+  if (sub) sub.textContent = 'Раз на 24 години · до 300 PC';
 
   // Hide multi selector for free daily case
   const multiBox = document.getElementById('caseMultiSelector')?.parentElement;
@@ -6406,8 +6408,8 @@ function royaleSettle(winnerIdx, wagerId) {
     if (banner)   banner.classList.remove('hidden');
     if (winIcon)  winIcon.textContent = '👑';
     if (winTitle) { winTitle.textContent = 'ПЕРЕМОГА!'; winTitle.className = 'font-heading text-3xl font-extrabold uppercase text-emerald-400'; }
-    if (winSub)   winSub.textContent = `Ти забираєш весь банк: ${formatCredits(total)} DC (${allPotSkins.length} скінів)`;
-    showToast(`👑 ROYALE! Ти виграв ${formatCredits(total)} DC банк!`, 'success');
+    if (winSub)   winSub.textContent = `Ти забираєш весь банк: ${formatCredits(total)} (${allPotSkins.length} скінів)`;
+    showToast(`👑 ROYALE! Ти виграв ${formatCredits(total)} банк!`, 'success');
 
     gameState.stats.battleWins   = (gameState.stats.battleWins   || 0) + 1;
     gameState.daily.battleWins   = (gameState.daily.battleWins   || 0) + 1;
@@ -6424,7 +6426,7 @@ function royaleSettle(winnerIdx, wagerId) {
     if (banner)   banner.classList.remove('hidden');
     if (winIcon)  winIcon.textContent = '💀';
     if (winTitle) { winTitle.textContent = 'ПОРАЗКА'; winTitle.className = 'font-heading text-3xl font-extrabold uppercase text-red-400'; }
-    if (winSub)   winSub.textContent = `${botName} виграв банк ${formatCredits(total)} DC. Ти втратив ${royalePlayerSkins.length} скінів.`;
+    if (winSub)   winSub.textContent = `${botName} виграв банк ${formatCredits(total)}. Ти втратив ${royalePlayerSkins.length} скінів.`;
     showToast(`Поразка. ${botName} забрав банк.`, 'warn');
   }
 
@@ -6514,7 +6516,7 @@ function renderContractSlots() {
   if (range) {
     if (total > 0) {
       const lo = Math.round(total * 0.75), hi = Math.round(total * 1.35);
-      range.textContent = `${formatCredits(lo).replace(' DC', '')} — ${formatCredits(hi)}`;
+      range.textContent = `${formatCredits(lo).replace(` ${CURRENCY_TOKEN}`, '')} — ${formatCredits(hi)}`;
     } else {
       range.textContent = '—';
     }
