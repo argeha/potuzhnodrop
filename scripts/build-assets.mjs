@@ -22,6 +22,7 @@ await Promise.all([
   copyFile(join(projectRoot, 'css', 'style.css'), join(outputDir, 'css', 'style.css')),
   copyFile(join(projectRoot, 'css', 'tailwind.css'), join(outputDir, 'css', 'tailwind.css')),
   copyFile(join(projectRoot, 'js', 'app.js'), join(outputDir, 'js', 'app.js')),
+  cp(join(projectRoot, 'assets', 'audio'), join(outputDir, 'assets', 'audio'), { recursive: true }),
   cp(join(projectRoot, 'assets', 'cases'), join(outputDir, 'assets', 'cases'), { recursive: true }),
   cp(join(projectRoot, 'assets', 'partners'), join(outputDir, 'assets', 'partners'), { recursive: true }),
 ])

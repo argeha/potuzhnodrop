@@ -2792,6 +2792,33 @@ function showToast(message, type = 'info') {
 }
 
 let audioCtx = null;
+const CASE_REEL_AUDIO_SRC = '/assets/audio/metallic-tension.mp3?v=5.8.4';
+let caseReelAudio = null;
+
+function getCaseReelAudio() {
+  if (caseReelAudio || typeof Audio !== 'function') return caseReelAudio;
+  caseReelAudio = new Audio(CASE_REEL_AUDIO_SRC);
+  caseReelAudio.preload = 'auto';
+  caseReelAudio.loop = true;
+  caseReelAudio.volume = 0.38;
+  return caseReelAudio;
+}
+
+function startCaseReelSound() {
+  if (!soundEnabled || document.hidden) return;
+  const audio = getCaseReelAudio();
+  if (!audio) return;
+  audio.pause();
+  audio.currentTime = 0;
+  audio.play().catch(() => {});
+}
+
+function stopCaseReelSound() {
+  if (!caseReelAudio) return;
+  caseReelAudio.pause();
+  caseReelAudio.currentTime = 0;
+}
+
 function beep(freq = 440, dur = 0.08, type = 'sine') {
   if (!soundEnabled) return;
   try {
@@ -2831,6 +2858,7 @@ function soundSell() {
 function toggleSound() {
   soundEnabled = !soundEnabled;
   localStorage.setItem(STORAGE.sound, soundEnabled ? 'on' : 'off');
+  if (!soundEnabled) stopCaseReelSound();
   updateSoundUI();
 }
 
@@ -4765,6 +4793,7 @@ async function startCaseReel() {
   const cfg = CASE_TYPES[currentActiveCaseId] || CASE_TYPES.budget_covert;
   const totalCost = isFree ? 0 : (cfg.cost * mult);
   const previousFreeCaseAt = isFree ? getFreeCaseLastAt() : 0;
+  const isFast = document.getElementById('caseFastOpenToggle')?.checked;
 
   if (isFree) {
     if (getFreeCaseLeft() > 0) {
@@ -4796,7 +4825,12 @@ async function startCaseReel() {
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>ОБЕРТАННЯ…';
   }
 
+  // Start from the click handler so mobile browsers allow playback after the
+  // server-confirmed roll begins. The track stops if that confirmation fails.
+  if (!isFast) startCaseReelSound();
+
   const restorePendingCaseOpen = () => {
+    stopCaseReelSound();
     isCaseOpening = false;
     isFreeCaseOpening = false;
     if (!isFree) {
@@ -4865,8 +4899,6 @@ async function startCaseReel() {
   saveState();
   renderGameHub();
 
-  const isFast = document.getElementById('caseFastOpenToggle')?.checked;
-
   if (isFast) {
     soundCase();
     isCaseOpening = false;
@@ -4903,11 +4935,8 @@ async function startCaseReel() {
   const status = document.getElementById('caseReelStatus');
   if (status) status.textContent = 'Обертається…';
 
-  const playTicks = getCaseReelConfig().soundTicks && soundEnabled && !document.hidden;
-  const ticks = playTicks ? setInterval(() => beep(600 + Math.random() * 400, 0.025, 'square'), 105) : null;
-
   await reelAnimation;
-  if (ticks) clearInterval(ticks);
+  stopCaseReelSound();
   if (status) status.textContent = 'Готово!';
   soundCase();
   isCaseOpening = false;
