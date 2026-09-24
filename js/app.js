@@ -1056,6 +1056,7 @@ function loadAccount() {
       updatedAt: 0
     };
   }
+  if (!UUID_PATTERN.test(String(account.presenceId || ''))) account.presenceId = makeUuid();
   localStorage.setItem(STORAGE.account, JSON.stringify(account));
 }
 
@@ -1452,6 +1453,65 @@ async function requestJson(url, options = {}, timeout = 7000) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+const PRESENCE_HEARTBEAT_MS = 25_000;
+let presenceTrackingStarted = false;
+let presenceRequestInFlight = false;
+
+function updateOnlineCounter(online, available = true) {
+  const badge = document.getElementById('onlineCounter');
+  const count = document.getElementById('onlineCount');
+  const dot = document.getElementById('onlineCounterDot');
+  const pulse = document.getElementById('onlineCounterPulse');
+  if (!badge || !count || !dot || !pulse) return;
+
+  const safeOnline = Number(online);
+  const hasCount = available && Number.isSafeInteger(safeOnline) && safeOnline >= 0;
+  count.textContent = hasCount ? String(safeOnline) : '—';
+  badge.setAttribute('aria-label', hasCount ? `${safeOnline} онлайн` : 'Кількість гравців онлайн тимчасово недоступна');
+  badge.title = hasCount
+    ? 'Активні браузери за останню хвилину'
+    : 'Онлайн тимчасово недоступний — повторюємо синхронізацію';
+  badge.classList.toggle('border-emerald-500/30', hasCount);
+  badge.classList.toggle('bg-emerald-500/10', hasCount);
+  badge.classList.toggle('text-emerald-200', hasCount);
+  badge.classList.toggle('border-slate-600/70', !hasCount);
+  badge.classList.toggle('bg-slate-800/60', !hasCount);
+  badge.classList.toggle('text-slate-300', !hasCount);
+  dot.classList.toggle('bg-emerald-400', hasCount);
+  dot.classList.toggle('bg-slate-500', !hasCount);
+  pulse.classList.toggle('bg-emerald-400', hasCount);
+  pulse.classList.toggle('hidden', !hasCount);
+}
+
+async function refreshOnlinePresence() {
+  if (document.hidden || presenceRequestInFlight || !UUID_PATTERN.test(String(account?.presenceId || ''))) return;
+  presenceRequestInFlight = true;
+  try {
+    const response = await requestJson('/api/presence', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: account.presenceId })
+    }, 5_000);
+    if (!Number.isSafeInteger(response?.online) || response.online < 0) throw new Error('Некоректна відповідь онлайну.');
+    updateOnlineCounter(response.online);
+  } catch {
+    updateOnlineCounter(null, false);
+  } finally {
+    presenceRequestInFlight = false;
+  }
+}
+
+function startPresenceTracking() {
+  if (presenceTrackingStarted) return;
+  presenceTrackingStarted = true;
+  void refreshOnlinePresence();
+  window.setInterval(() => void refreshOnlinePresence(), PRESENCE_HEARTBEAT_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) void refreshOnlinePresence();
+  });
+  window.addEventListener('pageshow', () => void refreshOnlinePresence());
 }
 
 const CLOUD_PROFILE_MAX_BYTES = 1_700_000;
@@ -6806,6 +6866,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // modal is opened. Cases work from the bundled curated pool immediately.
   startMarketTicker();
   startLiveFeedSimulation();
+  startPresenceTracking();
   updateTopupUI();
   renderCaseTopDrops();
   updateFreeCaseBtn();

@@ -42,6 +42,8 @@ const STEAM_SESSION_COOKIE = 'potuzhno_steam_session'
 const STEAM_AUTH_TTL = 10 * 60_000
 const STEAM_AUTH_COOKIE = 'potuzhno_steam_auth'
 const STEAM_SESSION_VERSION = 'v2'
+const PRESENCE_TTL = 70_000
+const MAX_PRESENCE_VISITORS = 5_000
 const RATE_LIMITS = {
   profile: { limit: 24, windowMs: 60_000 },
   publicProfile: { limit: 60, windowMs: 60_000 },
@@ -51,6 +53,7 @@ const RATE_LIMITS = {
   steamInventory: { limit: 16, windowMs: 60_000 },
   steam: { limit: 60, windowMs: 60_000 },
   catalog: { limit: 20, windowMs: 60_000 },
+  presence: { limit: 12, windowMs: 60_000 },
   api: { limit: 120, windowMs: 60_000 },
 }
 const encoder = new TextEncoder()
@@ -248,6 +251,7 @@ function rateLimitGroup(path) {
   if (path === '/api/steam/inventory') return 'steamInventory'
   if (path.startsWith('/api/steam/')) return 'steam'
   if (path === '/api/catalog/skins') return 'catalog'
+  if (path === '/api/presence') return 'presence'
   return 'api'
 }
 
@@ -275,6 +279,14 @@ function normalizeMatchState(value) {
     queue: Array.isArray(value?.queue) ? value.queue : [],
     matches: Array.isArray(value?.matches) ? value.matches : [],
   }
+}
+
+function normalizePresenceState(value, now) {
+  const active = value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  return Object.fromEntries(Object.entries(active)
+    .filter(([visitorHash, seenAt]) => /^[a-f0-9]{64}$/i.test(visitorHash) && Number.isFinite(Number(seenAt)) && Number(seenAt) > now - PRESENCE_TTL && Number(seenAt) <= now + 10_000)
+    .sort(([, leftSeenAt], [, rightSeenAt]) => Number(rightSeenAt) - Number(leftSeenAt))
+    .slice(0, MAX_PRESENCE_VISITORS))
 }
 
 function cleanMatchState(state, now) {
@@ -329,6 +341,7 @@ export class PotuzhnoState {
       if (path === '/api/fair/roll') return await this.fairRoll(request)
       if (path === '/api/fair/verify') return await this.fairVerify(request)
       if (path === '/api/matchmaking') return await this.matchmaking(request)
+      if (path === '/api/presence') return await this.presence(request)
       if (path === '/api/steam/auth') return await this.steamAuth(request)
       if (path === '/api/steam/session') return await this.steamSession(request)
       if (path === '/api/steam/logout') return await this.steamLogout(request)
@@ -712,6 +725,31 @@ export class PotuzhnoState {
       }
       return matchmakingResult(state, deviceId, ticketId, now)
     }))
+  }
+
+  async presence(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request, 4_096)
+    } catch {
+      return json({ error: 'Некоректний запит онлайну.' }, 400)
+    }
+    const visitorId = cleanText(body?.id, 64)
+    if (!ID.test(visitorId)) return json({ error: 'Некоректний ідентифікатор онлайну.' }, 400)
+
+    // The Durable Object holds only a one-way hash, never the browser ID,
+    // nickname, Steam account, or IP address. A heartbeat expires naturally.
+    const visitorHash = await sha256(visitorId)
+    const now = Date.now()
+    const online = await this.storage.transaction(async transaction => {
+      const active = normalizePresenceState(await transaction.get('presence:active'), now)
+      active[visitorHash] = now
+      const current = normalizePresenceState(active, now)
+      await transaction.put('presence:active', current)
+      return Object.keys(current).length
+    })
+    return json({ online, activeWithinMs: PRESENCE_TTL })
   }
 
   async steamAuth(request) {
@@ -1114,6 +1152,8 @@ async function stateForRequest(request, env, path) {
     if (session?.sharded) name = `steam:${session.token}`
   } else if (path === '/api/catalog/skins') {
     name = 'catalog'
+  } else if (path === '/api/presence') {
+    name = 'presence'
   } else if (path === '/api/matchmaking' && request.method === 'POST') {
     const body = await requestBodyForRouting(request)
     const roomId = String(body?.roomId || '')
