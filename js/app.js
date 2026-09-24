@@ -840,6 +840,49 @@ const COLLECTION_DEFINITIONS = [
   }
 ];
 
+const BATTLE_PASS_SEASON = Object.freeze({
+  id: 'season-01',
+  name: 'СЕЗОН 01',
+  title: 'БОЙОВИЙ ПРОПУСК',
+  tiers: 30,
+  tierXp: 350,
+  price: 3_000,
+});
+
+const BATTLE_PASS_FREE_SKINS = Object.freeze({
+  10: { id: 'bp-free-mp9', name: 'MP9 | Night Circuit', price: 640, img: '', rarity: 'Restricted', rarityColor: '#4b69ff' },
+  20: { id: 'bp-free-famas', name: 'FAMAS | Pulse Grid', price: 980, img: '', rarity: 'Classified', rarityColor: '#8847ff' },
+  30: { id: 'bp-free-awp', name: 'AWP | First Light', price: 2_300, img: '', rarity: 'Covert', rarityColor: '#eb4b4b' },
+});
+
+const BATTLE_PASS_PREMIUM_SKINS = Object.freeze({
+  5: { id: 'bp-premium-p250', name: 'P250 | Power Grid', price: 900, img: '', rarity: 'Classified', rarityColor: '#8847ff' },
+  10: { id: 'bp-premium-ak', name: 'AK-47 | Potuzhno Core', price: 2_400, img: '', rarity: 'Covert', rarityColor: '#eb4b4b' },
+  15: { id: 'bp-premium-m4', name: 'M4A1-S | Amber Protocol', price: 3_100, img: '', rarity: 'Covert', rarityColor: '#eb4b4b' },
+  20: { id: 'bp-premium-awp', name: 'AWP | Cyan Vector', price: 4_200, img: '', rarity: 'Covert', rarityColor: '#eb4b4b' },
+  25: { id: 'bp-premium-knife', name: '★ Bowie Knife | Voltage', price: 8_400, img: '', rarity: 'Extraordinary', rarityColor: '#e4ae39' },
+  30: { id: 'bp-premium-final', name: '★ Butterfly Knife | Potuzhno Gold', price: 15_000, img: '', rarity: 'Extraordinary', rarityColor: '#e4ae39' },
+});
+
+const BATTLE_PASS_FREE_PC = [90, 110, 130, 150, 170, 190, 210, 230, 260, 0, 290, 320, 350, 380, 410, 440, 470, 500, 540, 0, 580, 620, 660, 700, 750, 800, 860, 920, 1_000, 0];
+const BATTLE_PASS_PREMIUM_PC = [150, 180, 210, 240, 0, 300, 340, 380, 420, 0, 500, 550, 600, 650, 0, 750, 820, 890, 960, 0, 1_050, 1_150, 1_250, 1_350, 0, 1_500, 1_650, 1_800, 2_000, 0];
+
+const BATTLE_PASS_REWARDS = Object.freeze(Array.from({ length: BATTLE_PASS_SEASON.tiers }, (_, index) => {
+  const tier = index + 1;
+  const rewardFor = (skin, amount) => skin
+    ? { type: 'skin', skin }
+    : { type: 'pc', amount };
+  return {
+    tier,
+    free: rewardFor(BATTLE_PASS_FREE_SKINS[tier], BATTLE_PASS_FREE_PC[index]),
+    premium: rewardFor(BATTLE_PASS_PREMIUM_SKINS[tier], BATTLE_PASS_PREMIUM_PC[index]),
+  };
+}));
+
+function createDefaultBattlePass() {
+  return { season: BATTLE_PASS_SEASON.id, xp: 0, premium: false, claimedFree: [], claimedPremium: [] };
+}
+
 function createSteamAvatarFallback(name = 'Steam') {
   const label = escapeSvgText(cleanText(name, 1).toUpperCase() || 'S');
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#66c0f4"/><stop offset="1" stop-color="#171a21"/></linearGradient></defs><rect width="128" height="128" rx="28" fill="url(#g)"/><circle cx="91" cy="39" r="23" fill="none" stroke="#fff" stroke-width="8" opacity=".9"/><circle cx="91" cy="39" r="7" fill="#fff"/><path d="M78 56 44 82" stroke="#fff" stroke-width="10" stroke-linecap="round"/><circle cx="37" cy="88" r="17" fill="#fff" opacity=".95"/><text x="64" y="119" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif" font-size="20" font-weight="900">${label}</text></svg>`;
@@ -956,6 +999,7 @@ function createDefaultGameState() {
     favorites: [],
     showcase: [],
     dailyStreak: { current: 0, best: 0, lastDay: '' },
+    battlePass: createDefaultBattlePass(),
     rounds: [],
     collectionRewards: {}
   };
@@ -998,6 +1042,7 @@ function loadGameState() {
       favorites: Array.isArray(s.favorites) ? s.favorites.map(String) : [],
       showcase: Array.isArray(s.showcase) ? s.showcase.map(String).slice(0, 4) : [],
       dailyStreak: { ...d.dailyStreak, ...(s.dailyStreak || {}) },
+      battlePass: { ...createDefaultBattlePass(), ...(s.battlePass || {}) },
       rounds: Array.isArray(s.rounds) ? s.rounds.slice(0, ROUND_HISTORY_LIMIT) : [],
       collectionRewards: s.collectionRewards || {}
     } : d;
@@ -1053,7 +1098,157 @@ function getLevelProgress() {
 
 function addXp(v) {
   if (!gameState) return;
-  gameState.xp = Math.max(0, gameState.xp + Math.round((v || 0) * getXpMultiplier()));
+  const gained = Math.max(0, Math.round((v || 0) * getXpMultiplier()));
+  gameState.xp = Math.max(0, gameState.xp + gained);
+  addBattlePassXp(gained);
+}
+
+function getBattlePassState() {
+  if (!gameState) return createDefaultBattlePass();
+  const stored = gameState.battlePass && typeof gameState.battlePass === 'object' ? gameState.battlePass : {};
+  const pass = stored.season === BATTLE_PASS_SEASON.id
+    ? { ...createDefaultBattlePass(), ...stored }
+    : createDefaultBattlePass();
+  pass.xp = clampNumber(pass.xp, 0, BATTLE_PASS_SEASON.tiers * BATTLE_PASS_SEASON.tierXp, 0);
+  pass.premium = pass.premium === true;
+  pass.claimedFree = Array.isArray(pass.claimedFree) ? [...new Set(pass.claimedFree.map(Number).filter(tier => Number.isInteger(tier) && tier >= 1 && tier <= BATTLE_PASS_SEASON.tiers))] : [];
+  pass.claimedPremium = Array.isArray(pass.claimedPremium) ? [...new Set(pass.claimedPremium.map(Number).filter(tier => Number.isInteger(tier) && tier >= 1 && tier <= BATTLE_PASS_SEASON.tiers))] : [];
+  gameState.battlePass = pass;
+  return pass;
+}
+
+function addBattlePassXp(amount) {
+  if (!gameState || amount <= 0) return;
+  const pass = getBattlePassState();
+  pass.xp = Math.min(BATTLE_PASS_SEASON.tiers * BATTLE_PASS_SEASON.tierXp, pass.xp + Math.round(amount));
+}
+
+function getBattlePassProgress() {
+  const pass = getBattlePassState();
+  const maxXp = BATTLE_PASS_SEASON.tiers * BATTLE_PASS_SEASON.tierXp;
+  const unlocked = Math.min(BATTLE_PASS_SEASON.tiers, Math.floor(pass.xp / BATTLE_PASS_SEASON.tierXp));
+  const currentTier = Math.min(BATTLE_PASS_SEASON.tiers, unlocked + 1);
+  const inTier = pass.xp >= maxXp ? BATTLE_PASS_SEASON.tierXp : pass.xp % BATTLE_PASS_SEASON.tierXp;
+  return { pass, unlocked, currentTier, inTier, maxXp, percent: Math.round((pass.xp / maxXp) * 100) };
+}
+
+function battlePassRewardCopy(reward) {
+  return reward?.type === 'skin'
+    ? { icon: 'fa-gem', title: reward.skin.name, value: formatCredits(reward.skin.price), skin: true }
+    : { icon: 'fa-coins', title: `+${formatCredits(reward?.amount || 0)}`, value: 'Potuzhno Coin', skin: false };
+}
+
+function renderBattlePass() {
+  const root = document.getElementById('battlePass');
+  if (!root || !gameState) return;
+  const progress = getBattlePassProgress();
+  const { pass, unlocked, currentTier, inTier } = progress;
+  const rewardCell = (lane, entry) => {
+    const reward = entry[lane];
+    const copy = battlePassRewardCopy(reward);
+    const claimed = lane === 'free' ? pass.claimedFree.includes(entry.tier) : pass.claimedPremium.includes(entry.tier);
+    const premiumLocked = lane === 'premium' && !pass.premium;
+    const unlockedTier = entry.tier <= unlocked;
+    const state = claimed ? 'claimed' : premiumLocked ? 'premium-locked' : unlockedTier ? 'ready' : 'locked';
+    const action = claimed
+      ? '<span class="bp-reward-state"><i class="fa-solid fa-check"></i></span>'
+      : premiumLocked
+        ? '<span class="bp-reward-state"><i class="fa-solid fa-lock"></i></span>'
+        : unlockedTier
+          ? '<span class="bp-reward-state">Забрати</span>'
+          : `<span class="bp-reward-state">LVL ${entry.tier}</span>`;
+    const data = premiumLocked
+      ? 'data-bp-locked="premium"'
+      : unlockedTier && !claimed
+        ? `data-bp-claim="${lane}:${entry.tier}"`
+        : '';
+    const disabled = !premiumLocked && (!unlockedTier || claimed) ? 'disabled' : '';
+    return `<button type="button" class="bp-reward bp-${lane} is-${state}" ${data} ${disabled} title="${escapeHtml(copy.title)}">
+      <span class="bp-reward-tier">${entry.tier}</span>
+      <i class="fa-solid ${copy.icon}"></i>
+      <strong>${escapeHtml(copy.skin ? copy.title.replace(/^★\s*/, '').split('|').pop().trim() : copy.title)}</strong>
+      <small>${escapeHtml(copy.value)}</small>
+      ${action}
+    </button>`;
+  };
+  const tierNumbers = BATTLE_PASS_REWARDS.map(entry => `<span class="bp-tier-number ${entry.tier === currentTier ? 'is-current' : entry.tier <= unlocked ? 'is-open' : ''}">${entry.tier}</span>`).join('');
+  root.innerHTML = `<article class="battle-pass-card" aria-label="Бойовий пропуск ${BATTLE_PASS_SEASON.name}">
+    <div class="battle-pass-hero">
+      <div class="bp-coin-mark"><i class="fa-solid fa-coins"></i><b>PC</b></div>
+      <div class="bp-hero-copy"><p>${BATTLE_PASS_SEASON.name} · БЕЗ РЕАЛЬНИХ ОПЛАТ</p><h2>${BATTLE_PASS_SEASON.title}</h2><span>Грай, заробляй XP і забирай сезонні нагороди.</span></div>
+      <div class="bp-progress-box"><div class="bp-progress-label"><span>LVL ${currentTier} / ${BATTLE_PASS_SEASON.tiers}</span><b>${pass.xp.toLocaleString('uk-UA')} XP</b></div><div class="bp-progress-track"><span style="width:${progress.percent}%"></span></div><small>${inTier.toLocaleString('uk-UA')} / ${BATTLE_PASS_SEASON.tierXp.toLocaleString('uk-UA')} XP до наступного рівня</small></div>
+      <button type="button" id="battlePassBuyBtn" class="bp-buy-btn ${pass.premium ? 'is-owned' : ''}"><i class="fa-solid ${pass.premium ? 'fa-circle-check' : 'fa-crown'}"></i>${pass.premium ? 'POTUZHNO PASS АКТИВНИЙ' : `ВІДКРИТИ ЗА ${formatCredits(BATTLE_PASS_SEASON.price)}`}</button>
+    </div>
+    <div class="bp-track-note"><span><i class="fa-solid fa-bolt"></i> Кожен ігровий XP зараховується у пропуск</span><span>Відкрито рівнів: <b>${unlocked} / ${BATTLE_PASS_SEASON.tiers}</b></span></div>
+    <div class="bp-track-viewport"><div class="bp-track">
+      <div class="bp-tier-spacer"></div><div class="bp-tier-numbers">${tierNumbers}</div>
+      <div class="bp-lane-label bp-lane-free"><i class="fa-solid fa-angle-double-down"></i><strong>FREE</strong><small>базові нагороди</small></div><div class="bp-reward-row">${BATTLE_PASS_REWARDS.map(entry => rewardCell('free', entry)).join('')}</div>
+      <div class="bp-lane-label bp-lane-premium"><i class="fa-solid fa-crown"></i><strong>POTUZHNO PASS</strong><small>${pass.premium ? 'преміум активний' : formatCredits(BATTLE_PASS_SEASON.price)}</small></div><div class="bp-reward-row">${BATTLE_PASS_REWARDS.map(entry => rewardCell('premium', entry)).join('')}</div>
+    </div></div>
+  </article>`;
+
+  root.querySelector('#battlePassBuyBtn')?.addEventListener('click', buyBattlePass);
+  root.querySelectorAll('[data-bp-claim]').forEach(button => button.addEventListener('click', () => {
+    const [lane, tier] = String(button.dataset.bpClaim || '').split(':');
+    claimBattlePassReward(lane, Number(tier));
+  }));
+  root.querySelectorAll('[data-bp-locked]').forEach(button => button.addEventListener('click', () => {
+    showToast(`Відкрий Potuzhno Pass за ${formatCredits(BATTLE_PASS_SEASON.price)}.`, 'info');
+  }));
+}
+
+function buyBattlePass() {
+  if (!gameState || !currentUser) return;
+  const pass = getBattlePassState();
+  if (pass.premium) {
+    showToast('Potuzhno Pass уже активний.', 'info');
+    return;
+  }
+  if (currentUser.balance < BATTLE_PASS_SEASON.price) {
+    showToast(`Потрібно ${formatCredits(BATTLE_PASS_SEASON.price)} для Potuzhno Pass.`, 'warn');
+    return;
+  }
+  currentUser.balance -= BATTLE_PASS_SEASON.price;
+  pass.premium = true;
+  saveState();
+  updateBalanceUI();
+  renderGameHub();
+  soundCoin();
+  showToast('Potuzhno Pass активовано. Преміум-нагороди відкриті!', 'success');
+}
+
+function claimBattlePassReward(lane, tier) {
+  if (!gameState || !currentUser || !['free', 'premium'].includes(lane)) return;
+  const entry = BATTLE_PASS_REWARDS.find(item => item.tier === tier);
+  if (!entry) return;
+  const progress = getBattlePassProgress();
+  const pass = progress.pass;
+  const claimedKey = lane === 'free' ? 'claimedFree' : 'claimedPremium';
+  if (lane === 'premium' && !pass.premium) {
+    showToast('Спершу відкрий Potuzhno Pass.', 'warn');
+    return;
+  }
+  if (tier > progress.unlocked || pass[claimedKey].includes(tier)) return;
+  const reward = entry[lane];
+  if (reward.type === 'skin') {
+    const item = makeDemoItem(reward.skin, '-battle-pass');
+    item.exclusive = true;
+    item.battlePassReward = true;
+    userInventory.push(item);
+  } else {
+    currentUser.balance += reward.amount;
+  }
+  pass[claimedKey].push(tier);
+  checkAchievements();
+  saveState();
+  updateBalanceUI();
+  renderInventoryGrid();
+  renderProfileInventory();
+  updateAvatarBadge();
+  renderGameHub();
+  soundWin();
+  const copy = battlePassRewardCopy(reward);
+  showToast(`Нагорода рівня ${tier}: ${copy.title}`, 'success');
 }
 
 function loadAccount() {
@@ -2880,6 +3075,8 @@ function renderProfileSocial() {
   const streakBadge = document.getElementById('profileDailyStreak');
   const streak = gameState?.dailyStreak || {};
   if (streakBadge) streakBadge.innerHTML = `<i class="fa-solid fa-fire"></i>${Math.max(0, Number(streak.current) || 0)} дн.`;
+  const passBadge = document.getElementById('profilePassBadge');
+  if (passBadge) passBadge.classList.toggle('hidden', !getBattlePassState().premium);
 
   const showcase = document.getElementById('profileShowcase');
   if (showcase) {
@@ -2904,6 +3101,7 @@ function renderProfileSocial() {
 function renderGameHub() {
   if (!gameState) return;
   renderProfileProgress();
+  renderBattlePass();
   renderDailyTasks();
   renderWeeklyTasks();
   renderAchievements();
