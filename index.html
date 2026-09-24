@@ -35,7 +35,7 @@
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-<link rel="stylesheet" href="/css/style.css?v=5.8.7">
+<link rel="stylesheet" href="/css/style.css?v=5.8.8">
 </head>
 <body class="min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -613,7 +613,7 @@
         <h3 class="font-heading mt-0.5 text-3xl font-extrabold uppercase text-white" id="caseReelSubtitle">Відкриття кейсу</h3>
       </div>
       <!-- Multi-Open Selector & Fast Open Toggle -->
-      <div class="flex items-center gap-3 bg-black/40 p-2 rounded-xl border border-white/5">
+      <div class="flex flex-wrap items-center gap-3 bg-black/40 p-2 rounded-xl border border-white/5">
         <div class="flex items-center gap-1" id="caseMultiSelector">
           <button type="button" class="case-multi-btn active" data-mult="1" onclick="setCaseMultiplier(1)">1x</button>
           <button type="button" class="case-multi-btn" data-mult="2" onclick="setCaseMultiplier(2)">2x</button>
@@ -622,6 +622,11 @@
           <button type="button" class="case-multi-btn" data-mult="5" onclick="setCaseMultiplier(5)">5x</button>
         </div>
         <div class="h-6 w-px bg-white/10 mx-1"></div>
+        <label id="caseTicketToggleWrap" class="hidden flex items-center gap-1.5 cursor-pointer text-xs font-bold text-cyan-100 hover:text-cyan-50 transition select-none">
+          <input type="checkbox" id="caseTicketToggle" onchange="setCaseTicketMode(this.checked)" class="rounded bg-black/50 border-cyan-600/60 text-cyan-400 focus:ring-0">
+          <span><i class="fa-solid fa-ticket text-cyan-300"></i> Квиток <b id="caseTicketCount">0</b></span>
+        </label>
+        <div id="caseTicketDivider" class="hidden h-6 w-px bg-white/10 mx-1"></div>
         <label class="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-gray-300 hover:text-amber-300 transition select-none">
           <input type="checkbox" id="caseFastOpenToggle" class="rounded bg-black/50 border-gray-600 text-amber-500 focus:ring-0">
           <span>⚡ Швидко</span>
@@ -723,6 +728,6 @@
 
 <div id="toastContainer" class="fixed bottom-6 right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm"></div>
 
-<script src="/js/app.js?v=5.8.9" defer></script>
+<script src="/js/app.js?v=5.8.10" defer></script>
 </body>
 </html>

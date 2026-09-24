@@ -849,33 +849,47 @@ const BATTLE_PASS_SEASON = Object.freeze({
   price: 3_000,
 });
 
+// Battle Pass rewards deliberately reuse the real skins already present in
+// the catalogue. This keeps their artwork, name, rarity and inventory data
+// consistent with the shop and case pools instead of creating fake variants.
+function getBattlePassCatalogSkin(name, fallback) {
+  const catalogSkin = CS2_SKINS.find(skin => skin.name === name);
+  return catalogSkin
+    ? { ...catalogSkin, sourceSkinId: catalogSkin.id }
+    : { ...fallback, id: `battle-pass-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 72)}`, sourceSkinId: '' };
+}
+
 const BATTLE_PASS_FREE_SKINS = Object.freeze({
-  10: { id: 'bp-free-mp9', name: 'MP9 | Night Circuit', price: 640, img: '', rarity: 'Restricted', rarityColor: '#4b69ff' },
-  20: { id: 'bp-free-famas', name: 'FAMAS | Pulse Grid', price: 980, img: '', rarity: 'Classified', rarityColor: '#8847ff' },
-  30: { id: 'bp-free-awp', name: 'AWP | First Light', price: 2_300, img: '', rarity: 'Covert', rarityColor: '#eb4b4b' },
+  10: getBattlePassCatalogSkin('Glock-18 | Water Elemental', { name: 'Glock-18 | Water Elemental', price: 240, img: '', rarity: 'Restricted', rarityColor: '#8847ff' }),
+  20: getBattlePassCatalogSkin('AK-47 | Redline', { name: 'AK-47 | Redline', price: 500, img: '', rarity: 'Classified', rarityColor: '#d32ce6' }),
+  30: getBattlePassCatalogSkin('AWP | Asiimov', { name: 'AWP | Asiimov', price: 1_550, img: '', rarity: 'Covert', rarityColor: '#eb4b4b' }),
 });
 
 const BATTLE_PASS_PREMIUM_SKINS = Object.freeze({
-  5: { id: 'bp-premium-p250', name: 'P250 | Power Grid', price: 900, img: '', rarity: 'Classified', rarityColor: '#8847ff' },
-  10: { id: 'bp-premium-ak', name: 'AK-47 | Potuzhno Core', price: 2_400, img: '', rarity: 'Covert', rarityColor: '#eb4b4b' },
-  15: { id: 'bp-premium-m4', name: 'M4A1-S | Amber Protocol', price: 3_100, img: '', rarity: 'Covert', rarityColor: '#eb4b4b' },
-  20: { id: 'bp-premium-awp', name: 'AWP | Cyan Vector', price: 4_200, img: '', rarity: 'Covert', rarityColor: '#eb4b4b' },
-  25: { id: 'bp-premium-knife', name: '★ Bowie Knife | Voltage', price: 8_400, img: '', rarity: 'Extraordinary', rarityColor: '#e4ae39' },
-  30: { id: 'bp-premium-final', name: '★ Butterfly Knife | Potuzhno Gold', price: 15_000, img: '', rarity: 'Extraordinary', rarityColor: '#e4ae39' },
+  5: getBattlePassCatalogSkin('P250 | See Ya Later', { name: 'P250 | See Ya Later', price: 260, img: '', rarity: 'Restricted', rarityColor: '#8847ff' }),
+  10: getBattlePassCatalogSkin('Desert Eagle | Printstream', { name: 'Desert Eagle | Printstream', price: 1_000, img: '', rarity: 'Classified', rarityColor: '#d32ce6' }),
+  15: getBattlePassCatalogSkin('USP-S | Kill Confirmed', { name: 'USP-S | Kill Confirmed', price: 1_300, img: '', rarity: 'Covert', rarityColor: '#eb4b4b' }),
+  20: getBattlePassCatalogSkin('M4A1-S | Printstream', { name: 'M4A1-S | Printstream', price: 1_800, img: '', rarity: 'Covert', rarityColor: '#eb4b4b' }),
+  25: getBattlePassCatalogSkin('Glock-18 | Fade', { name: 'Glock-18 | Fade', price: 2_600, img: '', rarity: 'Restricted', rarityColor: '#8847ff' }),
+  30: getBattlePassCatalogSkin('★ Butterfly Knife | Doppler', { name: '★ Butterfly Knife | Doppler', price: 8_600, img: '', rarity: 'Extraordinary', rarityColor: '#eb4b4b' }),
 });
 
 const BATTLE_PASS_FREE_PC = [90, 110, 130, 150, 170, 190, 210, 230, 260, 0, 290, 320, 350, 380, 410, 440, 470, 500, 540, 0, 580, 620, 660, 700, 750, 800, 860, 920, 1_000, 0];
 const BATTLE_PASS_PREMIUM_PC = [150, 180, 210, 240, 0, 300, 340, 380, 420, 0, 500, 550, 600, 650, 0, 750, 820, 890, 960, 0, 1_050, 1_150, 1_250, 1_350, 0, 1_500, 1_650, 1_800, 2_000, 0];
+const BATTLE_PASS_FREE_TICKETS = new Set([7, 18]);
+const BATTLE_PASS_PREMIUM_TICKETS = new Set([4, 12, 22]);
 
 const BATTLE_PASS_REWARDS = Object.freeze(Array.from({ length: BATTLE_PASS_SEASON.tiers }, (_, index) => {
   const tier = index + 1;
-  const rewardFor = (skin, amount) => skin
+  const rewardFor = (skin, amount, ticket) => skin
     ? { type: 'skin', skin }
-    : { type: 'pc', amount };
+    : ticket
+      ? { type: 'ticket', amount: 1 }
+      : { type: 'pc', amount };
   return {
     tier,
-    free: rewardFor(BATTLE_PASS_FREE_SKINS[tier], BATTLE_PASS_FREE_PC[index]),
-    premium: rewardFor(BATTLE_PASS_PREMIUM_SKINS[tier], BATTLE_PASS_PREMIUM_PC[index]),
+    free: rewardFor(BATTLE_PASS_FREE_SKINS[tier], BATTLE_PASS_FREE_PC[index], BATTLE_PASS_FREE_TICKETS.has(tier)),
+    premium: rewardFor(BATTLE_PASS_PREMIUM_SKINS[tier], BATTLE_PASS_PREMIUM_PC[index], BATTLE_PASS_PREMIUM_TICKETS.has(tier)),
   };
 }));
 
@@ -1000,6 +1014,7 @@ function createDefaultGameState() {
     showcase: [],
     dailyStreak: { current: 0, best: 0, lastDay: '' },
     battlePass: createDefaultBattlePass(),
+    caseTickets: 0,
     rounds: [],
     collectionRewards: {}
   };
@@ -1043,6 +1058,7 @@ function loadGameState() {
       showcase: Array.isArray(s.showcase) ? s.showcase.map(String).slice(0, 4) : [],
       dailyStreak: { ...d.dailyStreak, ...(s.dailyStreak || {}) },
       battlePass: { ...createDefaultBattlePass(), ...(s.battlePass || {}) },
+      caseTickets: clampNumber(s.caseTickets, 0, 999, 0),
       rounds: Array.isArray(s.rounds) ? s.rounds.slice(0, ROUND_HISTORY_LIMIT) : [],
       collectionRewards: s.collectionRewards || {}
     } : d;
@@ -1123,6 +1139,12 @@ function addBattlePassXp(amount) {
   pass.xp = Math.min(BATTLE_PASS_SEASON.tiers * BATTLE_PASS_SEASON.tierXp, pass.xp + Math.round(amount));
 }
 
+function getCaseTicketCount() {
+  if (!gameState) return 0;
+  gameState.caseTickets = clampNumber(gameState.caseTickets, 0, 999, 0);
+  return gameState.caseTickets;
+}
+
 function getBattlePassProgress() {
   const pass = getBattlePassState();
   const maxXp = BATTLE_PASS_SEASON.tiers * BATTLE_PASS_SEASON.tierXp;
@@ -1133,9 +1155,9 @@ function getBattlePassProgress() {
 }
 
 function battlePassRewardCopy(reward) {
-  return reward?.type === 'skin'
-    ? { icon: 'fa-gem', title: reward.skin.name, value: formatCredits(reward.skin.price), skin: true }
-    : { icon: 'fa-coins', title: `+${formatCredits(reward?.amount || 0)}`, value: 'Potuzhno Coin', skin: false };
+  if (reward?.type === 'skin') return { icon: 'fa-gem', title: reward.skin.name, value: formatCredits(reward.skin.price), skin: true };
+  if (reward?.type === 'ticket') return { icon: 'fa-ticket', title: 'Потужний квиток', value: '1 прокрут кейса', ticket: true };
+  return { icon: 'fa-coins', title: `+${formatCredits(reward?.amount || 0)}`, value: 'Potuzhno Coin' };
 }
 
 function renderBattlePass() {
@@ -1163,9 +1185,12 @@ function renderBattlePass() {
         ? `data-bp-claim="${lane}:${entry.tier}"`
         : '';
     const disabled = !premiumLocked && (!unlockedTier || claimed) ? 'disabled' : '';
-    return `<button type="button" class="bp-reward bp-${lane} is-${state}" ${data} ${disabled} title="${escapeHtml(copy.title)}">
+    const visual = copy.skin
+      ? `<img class="bp-reward-skin" src="${escapeHtml(getSkinImageSrc(reward.skin))}" alt="" data-skin-name="${escapeHtml(reward.skin.name)}" decoding="async" onerror="handleSkinImageError(this)">`
+      : `<i class="fa-solid ${copy.icon}"></i>`;
+    return `<button type="button" class="bp-reward bp-${lane} ${copy.ticket ? 'bp-ticket' : ''} is-${state}" ${data} ${disabled} title="${escapeHtml(copy.title)}">
       <span class="bp-reward-tier">${entry.tier}</span>
-      <i class="fa-solid ${copy.icon}"></i>
+      ${visual}
       <strong>${escapeHtml(copy.skin ? copy.title.replace(/^★\s*/, '').split('|').pop().trim() : copy.title)}</strong>
       <small>${escapeHtml(copy.value)}</small>
       ${action}
@@ -1179,7 +1204,7 @@ function renderBattlePass() {
       <div class="bp-progress-box"><div class="bp-progress-label"><span>LVL ${currentTier} / ${BATTLE_PASS_SEASON.tiers}</span><b>${pass.xp.toLocaleString('uk-UA')} XP</b></div><div class="bp-progress-track"><span style="width:${progress.percent}%"></span></div><small>${inTier.toLocaleString('uk-UA')} / ${BATTLE_PASS_SEASON.tierXp.toLocaleString('uk-UA')} XP до наступного рівня</small></div>
       <button type="button" id="battlePassBuyBtn" class="bp-buy-btn ${pass.premium ? 'is-owned' : ''}"><i class="fa-solid ${pass.premium ? 'fa-circle-check' : 'fa-crown'}"></i>${pass.premium ? 'POTUZHNO PASS АКТИВНИЙ' : `ВІДКРИТИ ЗА ${formatCredits(BATTLE_PASS_SEASON.price)}`}</button>
     </div>
-    <div class="bp-track-note"><span><i class="fa-solid fa-bolt"></i> Кожен ігровий XP зараховується у пропуск</span><span>Відкрито рівнів: <b>${unlocked} / ${BATTLE_PASS_SEASON.tiers}</b></span></div>
+    <div class="bp-track-note"><span><i class="fa-solid fa-bolt"></i> Кожен ігровий XP зараховується у пропуск</span><span><i class="fa-solid fa-ticket"></i> Квитків: <b>${getCaseTicketCount()}</b></span><span>Відкрито рівнів: <b>${unlocked} / ${BATTLE_PASS_SEASON.tiers}</b></span></div>
     <div class="bp-track-viewport"><div class="bp-track">
       <div class="bp-tier-spacer"></div><div class="bp-tier-numbers">${tierNumbers}</div>
       <div class="bp-lane-label bp-lane-free"><i class="fa-solid fa-angle-double-down"></i><strong>FREE</strong><small>базові нагороди</small></div><div class="bp-reward-row">${BATTLE_PASS_REWARDS.map(entry => rewardCell('free', entry)).join('')}</div>
@@ -1235,6 +1260,8 @@ function claimBattlePassReward(lane, tier) {
     item.exclusive = true;
     item.battlePassReward = true;
     userInventory.push(item);
+  } else if (reward.type === 'ticket') {
+    gameState.caseTickets = getCaseTicketCount() + Math.max(1, reward.amount || 1);
   } else {
     currentUser.balance += reward.amount;
   }
@@ -4873,6 +4900,7 @@ function executeUpgrade() {
 let currentCaseCategory = 'all';
 let currentActiveCaseId = 'budget_covert';
 let caseMultiplier = 1;
+let useCaseTicket = false;
 let lastWonCaseItems = [];
 let lastOpenedCaseId = 'budget_covert';
 let currentDetailsCaseId = 'budget_covert';
@@ -5152,12 +5180,42 @@ function setCaseMultiplier(mult) {
   updateCaseCostDisplay();
 }
 
+function setCaseTicketMode(enabled) {
+  const isPaidCase = window.__caseType === 'paid';
+  useCaseTicket = Boolean(enabled) && isPaidCase && getCaseTicketCount() >= caseMultiplier;
+  updateCaseCostDisplay();
+}
+
+function updateCaseTicketOption() {
+  const isPaidCase = window.__caseType === 'paid';
+  const ticketCount = getCaseTicketCount();
+  const requiredTickets = Math.max(1, caseMultiplier);
+  const canUseTickets = isPaidCase && ticketCount >= requiredTickets;
+  const wrap = document.getElementById('caseTicketToggleWrap');
+  const divider = document.getElementById('caseTicketDivider');
+  const toggle = document.getElementById('caseTicketToggle');
+  const count = document.getElementById('caseTicketCount');
+  if (count) count.textContent = ticketCount ? `${ticketCount}/${requiredTickets}` : '0';
+  if (wrap) wrap.classList.toggle('hidden', !isPaidCase || !ticketCount);
+  if (divider) divider.classList.toggle('hidden', !isPaidCase || !ticketCount);
+  if (!canUseTickets) useCaseTicket = false;
+  if (toggle) {
+    toggle.disabled = !canUseTickets;
+    toggle.checked = canUseTickets && useCaseTicket;
+    toggle.title = canUseTickets
+      ? `Використати ${requiredTickets} шт. замість PC`
+      : `Для ${caseMultiplier}x потрібно ${requiredTickets} шт.`;
+  }
+}
+
 function updateCaseCostDisplay() {
   const isFree = window.__caseType === 'free';
   const cfg = CASE_TYPES[currentActiveCaseId] || CASE_TYPES.budget_covert;
-  const cost = isFree ? 0 : (cfg.cost * caseMultiplier);
+  updateCaseTicketOption();
+  const ticketOpen = !isFree && useCaseTicket;
+  const cost = isFree || ticketOpen ? 0 : (cfg.cost * caseMultiplier);
   const totalEl = document.getElementById('caseReelTotalCost');
-  if (totalEl) totalEl.textContent = `${formatCredits(cost)}`;
+  if (totalEl) totalEl.textContent = ticketOpen ? `Потужний квиток ×${caseMultiplier}` : `${formatCredits(cost)}`;
   const costSummary = document.getElementById('caseReelCostSummary');
   if (costSummary) costSummary.classList.toggle('hidden', isFree);
 }
@@ -5184,6 +5242,7 @@ function openPowerCase(caseType = 'budget_covert') {
   currentActiveCaseId = cfg.id;
   window.__caseType = 'paid';
   window.__caseName = cfg.name;
+  useCaseTicket = false;
 
   const title = document.getElementById('caseReelTitle');
   if (title) title.textContent = `${cfg.name}`;
@@ -5244,6 +5303,7 @@ function openFreeDailyCase() {
   currentActiveCaseId = 'free';
   window.__caseType = 'free';
   window.__caseName = 'Безкоштовний щоденний кейс';
+  useCaseTicket = false;
 
   const title = document.getElementById('caseReelTitle');
   if (title) title.textContent = 'Безкоштовний кейс';
@@ -5368,7 +5428,9 @@ async function startCaseReel() {
   const isFree = window.__caseType === 'free';
   const mult = isFree ? 1 : caseMultiplier;
   const cfg = CASE_TYPES[currentActiveCaseId] || CASE_TYPES.budget_covert;
-  const totalCost = isFree ? 0 : (cfg.cost * mult);
+  const ticketOpen = !isFree && useCaseTicket;
+  const ticketsSpent = ticketOpen ? mult : 0;
+  const totalCost = isFree || ticketOpen ? 0 : (cfg.cost * mult);
   const previousFreeCaseAt = isFree ? getFreeCaseLastAt() : 0;
   const isFast = document.getElementById('caseFastOpenToggle')?.checked;
 
@@ -5376,6 +5438,13 @@ async function startCaseReel() {
     if (getFreeCaseLeft() > 0) {
       showToast('Безкоштовний кейс ще недоступний', 'warn');
       closeModal('caseReelModal');
+      return;
+    }
+  } else if (ticketOpen) {
+    if (getCaseTicketCount() < ticketsSpent) {
+      useCaseTicket = false;
+      updateCaseCostDisplay();
+      showToast('Потужних квитків недостатньо для цього прокруту.', 'warn');
       return;
     }
   } else {
@@ -5392,6 +5461,10 @@ async function startCaseReel() {
   if (isFree) {
     localStorage.setItem(STORAGE.freeCase, String(Date.now()));
     updateFreeCaseBtn();
+  } else if (ticketOpen) {
+    gameState.caseTickets = getCaseTicketCount() - ticketsSpent;
+    useCaseTicket = false;
+    updateCaseCostDisplay();
   } else {
     currentUser.balance -= totalCost;
     updateBalanceUI();
@@ -5411,8 +5484,14 @@ async function startCaseReel() {
     isCaseOpening = false;
     isFreeCaseOpening = false;
     if (!isFree) {
-      currentUser.balance += totalCost;
-      updateBalanceUI();
+      if (ticketOpen) {
+        gameState.caseTickets = getCaseTicketCount() + ticketsSpent;
+        useCaseTicket = true;
+        updateCaseCostDisplay();
+      } else {
+        currentUser.balance += totalCost;
+        updateBalanceUI();
+      }
     } else if (previousFreeCaseAt > 0) {
       localStorage.setItem(STORAGE.freeCase, String(previousFreeCaseAt));
     } else {
@@ -5480,7 +5559,7 @@ async function startCaseReel() {
     soundCase();
     isCaseOpening = false;
     isFreeCaseOpening = false;
-    displayCaseDropResult(wonItems, isFree, cfg.name);
+    displayCaseDropResult(wonItems, isFree, ticketOpen ? `${cfg.name} · Потужний квиток` : cfg.name);
     wonItems.forEach(it => addActivityEvent({ player: currentUser.name || 'Ти', skin: it, outcome: 'win', communityKind: 'case' }));
     return;
   }
@@ -5519,7 +5598,7 @@ async function startCaseReel() {
   soundCase();
   isCaseOpening = false;
   isFreeCaseOpening = false;
-  displayCaseDropResult(wonItems, isFree, cfg.name);
+  displayCaseDropResult(wonItems, isFree, ticketOpen ? `${cfg.name} · Потужний квиток` : cfg.name);
   wonItems.forEach(it => addActivityEvent({ player: currentUser.name || 'Ти', skin: it, outcome: 'win', communityKind: 'case' }));
 }
 
@@ -7364,6 +7443,7 @@ window.showCaseDetails = showCaseDetails;
 window.CASE_TYPES = CASE_TYPES;
 window.setCaseCategory = setCaseCategory;
 window.setCaseMultiplier = setCaseMultiplier;
+window.setCaseTicketMode = setCaseTicketMode;
 window.renderCaseCatalog = renderCaseCatalog;
 window.openCurrentCaseFromDetails = openCurrentCaseFromDetails;
 window.quickSellCaseResult = quickSellCaseResult;
