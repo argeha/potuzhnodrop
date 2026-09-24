@@ -9,7 +9,10 @@ if (dirname(outputDir) !== projectRoot || basename(outputDir) !== 'dist') {
   throw new Error('Refusing to clear an unexpected asset output directory.')
 }
 
-await rm(outputDir, { recursive: true, force: true })
+// OneDrive and a just-stopped local Worker can briefly hold a generated file
+// on Windows. Node retries only this verified dist/ deletion; source files are
+// never touched.
+await rm(outputDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 250 })
 await mkdir(join(outputDir, 'css'), { recursive: true })
 await mkdir(join(outputDir, 'js'), { recursive: true })
 

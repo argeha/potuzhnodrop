@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 5.3 ============ */
+/* ============ ПОТУЖНО DROP 5.8 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -12,7 +12,7 @@ const STORAGE = {
   account: 'potuzhno_v6_account',
   topup: 'potuzhno_v5_topup',
   freeCase: 'potuzhno_v5_freecase',
-  catalogCache: 'potuzhno_catalog_cache_v38',
+  catalogCache: 'potuzhno_catalog_cache_v39',
   pendingWager: 'potuzhno_v6_pending_wager',
   fair: 'potuzhno_v9_fair',
   steamNudge: 'potuzhno_v10_steam_nudge'
@@ -190,10 +190,40 @@ const FEATURED_SKIN_PRICES = Object.freeze({
   'P250 | See Ya Later': 260
 });
 
-CS2_SKINS = CS2_SKINS.map(skin => ({
+// These images are kept locally as URLs for the first painted case catalog.
+// They are current Steam CDN locations; the previous legacy CDN paths return
+// 404 before the full remote catalog has finished loading.
+const FEATURED_SKIN_IMAGES = Object.freeze({
+  '★ Butterfly Knife | Doppler': 'https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1Z-ua6bbZrLOmsD2qvw-J3s-p5SiihmSIqsi-HlorwOy7DAVRPVssnHaMUuhe9xIHlMuvqtgPf2IoTyC383Sod7CY-sr4DVfZ2qKPU3g-TNuE-545DeqjFvb87vg',
+  '★ Karambit | Fade': 'https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1Q7uCvZaZkNM-SD1iWwOpzj-1gSCGn20tztm_UyIn_JHKUbgYlWMcmQ-ZcskSwldS0MOnntAfd3YlMzH35jntXrnE8SOGRGG8',
+  '★ M9 Bayonet | Marble Fade': 'https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1Wts2sab1iLvWHMWad_uN3ouNlSha1lBkijDGMnYftb3OTbVRyD8Z1RrNctkS6kobkZLzi7gTW2NpFxH33hi9Nuno65uxXAqs7uvqA7lyFHH4',
+  '★ Karambit | Doppler': 'https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1Q7uCvZaZkNM-SA1iSze91u_FsTju_qhAmoT-Jn4bjJC_4Ml93UtZuRLQPsBawkNfiMbnl5AKMiopCnin7iCJBv31j4rkBBKEg-6zUjV3GY6p9v8dpLWT3Fg',
+  'AWP | Dragon Lore': 'https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_jdk4veqYaF7IfysCnWRxuF4j-B-Xxa_nBovp3Pdwtj9cC_GaAd0DZdwQu9fuhS4kNy0NePntVTbjYpCyyT_3CgY5i9j_a9cBkcCWUKV',
+  'AWP | Asiimov': 'https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_jdk7uW-V6V-Kf2cGFidxOp_pewnF3nhxEt0sGnSzN76dH3GOg9xC8FyEORftRe-x9PuYurq71bW3d8UnjK-0H0YSTpMGQ',
+  'AWP | Atheris': 'https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_jdk7uW-V7JkMPWBMWuZxuZi_rZsS3zgzU8isW3dnIr6eHKfPVAhDpojEe9YsUW4xta1Nuzm5FDci4NbjXKpmWVQppo',
+  'AK-47 | Case Hardened': 'https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwlcK3wiNK0P2nZKFpH_yaCW-Ej7sk5bE8Sn-2lEpz4zndzoyvdHuUPwFzWZYiE7EK4Bi4k9TlY-y24FbAy9USGSiZd5Q',
+  'AK-47 | Redline': 'https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwlcK3wiFO0POlPPNSI_-RHGavzedxuPUnFniykEtzsWWBzoyuIiifaAchDZUjTOZe4RC_w4buM-6z7wzbgokUyzK-0H08hRGDMA',
+  'M4A1-S | Printstream': 'https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8ypexwjFS4_ega6F_H_OGMWrEwL9lj_F7Rienhgk1tjyIpYPwJiPTcAAoCpsiEO5ZsUbpm9C2Zuni4VHW3o5EzSX62HxP7Sg96-hWVqYi_6TJz1aW0nxrkGs',
+  'M4A4 | Howl': 'https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8ypexwiFO0P_6afVSKP-EAm6extF6ueZhW2exwkl2tmTXwt39eCiUPQR2DMN4TOVetUK8xoLgM-K341eM2otDnC6okGoXufBz_TAB',
+  'Desert Eagle | Printstream': 'https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL1m5fn8Sdk7OeRbKFsJ8-DHG6e1f1iouRoQha_nBovp3OGmdeqInyVP1V0XsYlRbEI50a5wNyzZr605AyI3t5MmCSohylAuC89_a9cBoMY9UkV',
+  'USP-S | Kill Confirmed': 'https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLkjYbf7itX6vytbbZSI-WsG3SA_uV_vO1WTCa9kxQ1vjiBpYPwJiPTcFB2Xpp5TO5cskG9lYCxZu_jsVCL3o4Xnij23ClO5ik9tegFA_It8qHJz1aWe-uc160',
+  'Glock-18 | Water Elemental': 'https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL2kpnj9h1Y-s2pZKtuK72fB3aFxP11te99cCW6khUz_TjVyompc3-QOFR2DJQkFOMJtBbqk9LlY-7n5QLZjtkTxCWqhixPv311o7FVIf8eASQ',
+  'AWP | Neo-Noir': 'https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_jdk7uW-V6poL_6cB3WvzedxuPUnHirrxR4l423SyI39I3KXPwdxWZclQeNZ5EXskYfnNeyw71OMi9lNzDK-0H3r66pOTw',
+  'AWP | Wildfire': 'https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_jdk7uW-V7NkLPSVB3WV_uJ_t-l9AX7rxhl-tmzSwomtdC6TPwQnW5UkR-YD5kK-ltCzP-Ox4FfXiNoQyyrgznQeu9L0PzQ',
+  'AK-47 | Asiimov': 'https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwlcK3wiFO0POlPPNSIeOaB2qf19F6ueZhW2e2wEt-t2jcytf6dymSO1JxA5oiRecLsRa5kIfkYr-241aLgotHz3-rkGoXuUp8oX57',
+  'Glock-18 | Fade': 'https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL2kpnj9h1a7s2oaaBoH_yaCW-Ej-8u5bZvHnq1w0Vz62TUzNj4eCiVblMmXMAkROJeskLpkdXjMrzksVTAy9US8PY25So',
+  'P250 | See Ya Later': 'https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLhzMOwwiFO0OL8PfRSI-mRC3WT0-F1j-1gSCGn2x9ytmzWnN6pInjGOwMlDZp0EORe5BHsx93lP7zr5wzbiI5AyXr_jS9XrnE8gQrIgng'
+});
+
+function applyFeaturedSkinMetadata(skin) {
+  return {
   ...skin,
+  img: FEATURED_SKIN_IMAGES[skin.name] || skin.img,
   price: FEATURED_SKIN_PRICES[skin.name] ?? skin.price
-}));
+  };
+}
+
+CS2_SKINS = CS2_SKINS.map(applyFeaturedSkinMetadata);
 
 const MAX_STORED_ITEM_VALUE = 1_000_000;
 const MAX_STORED_BALANCE = 10_000_000;
@@ -226,6 +256,18 @@ function cleanImageUrl(value) {
   } catch {
     return '';
   }
+}
+
+// Catalog entries are validated on import. Keep the original URL as a display
+// fallback because some Steam CDN URLs are normalized differently by browsers.
+// Without it, valid skin images can be replaced by the generic SVG before the
+// browser even tries to load them.
+function getSkinImageSrc(skin) {
+  const source = String(skin?.img || '').trim();
+  const safeUrl = cleanImageUrl(source);
+  return safeUrl
+    ? `/api/skin-image?src=${encodeURIComponent(safeUrl)}`
+    : createSkinPreview(skin?.name || 'CS2 SKIN');
 }
 
 function cleanColor(value) {
@@ -1775,7 +1817,9 @@ function setImageSource(image, source, skinName = '', skinId = '') {
   image.classList.remove('image-skeleton', 'fallback-skin');
   image.dataset.skinName = skinName || image.alt || 'CS2 Skin';
   image.dataset.skinId = skinId ? String(skinId) : '';
-  image.src = source || createSkinPreview(image.dataset.skinName);
+  image.src = source
+    ? getSkinImageSrc({ img: source, name: image.dataset.skinName })
+    : createSkinPreview(image.dataset.skinName);
 }
 
 function getSkinKey(s) {
@@ -2379,7 +2423,7 @@ function renderCollections() {
       const have = owned.has(norm);
       const catalogItem = CS2_SKINS.find(s => normalizeSkinName(s.name) === norm);
       return `<div class="coll-mini-item ${have ? 'owned' : 'locked'}" title="${escapeHtml(name)}">
-        ${catalogItem?.img ? `<img src="${escapeHtml(catalogItem.img)}" alt="" onerror="useImageFallback(this)">` : ''}
+        ${catalogItem?.img ? `<img src="${escapeHtml(getSkinImageSrc(catalogItem))}" alt="" onerror="useImageFallback(this)">` : ''}
       </div>`;
     }).join('');
 
@@ -3339,7 +3383,7 @@ function renderInventoryGrid() {
       <button type="button" data-inventory-id="${escapeHtml(String(s.id))}" class="w-full text-left">
         <span class="wear-badge wear-${wear.code} absolute top-2 left-2 z-10">${wear.code}</span>
         ${s.exclusive ? `<span class="absolute top-2 right-2 text-violet-300 text-xs" title="Ексклюзив">★</span>` : ''}
-        <img src="${escapeHtml(s.img || '')}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" class="h-20 w-full object-contain group-hover:scale-105 transition image-skeleton" loading="lazy" onerror="handleSkinImageError(this)">
+        <img src="${escapeHtml(getSkinImageSrc(s))}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" class="h-20 w-full object-contain group-hover:scale-105 transition image-skeleton" loading="lazy" onerror="handleSkinImageError(this)">
         <div class="text-center w-full mt-2">
           <p class="font-bold text-xs text-white truncate" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</p>
           <p class="text-amber-400 font-extrabold text-xs mt-1">${formatCredits(s.price)}</p>
@@ -3456,7 +3500,7 @@ function renderProfileInventory() {
       <div class="profile-inv-card-top"><span class="wear-badge wear-${wear.code}">${wear.code}</span><span class="profile-inv-origin">${origin}</span></div>
       ${dupes > 1 ? `<span class="dupe-badge">×${dupes}</span>` : ''}
       <button type="button" class="profile-inv-inspect" data-profile-inspect="${escapeHtml(String(s.id))}" title="Відкрити деталі: ${escapeHtml(s.name)}">
-        <img src="${escapeHtml(s.img || '')}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" loading="lazy" onerror="handleSkinImageError(this)">
+        <img src="${escapeHtml(getSkinImageSrc(s))}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" loading="lazy" onerror="handleSkinImageError(this)">
         <div class="profile-inv-copy"><span>${escapeHtml(weapon)}</span><p class="inv-name" title="${escapeHtml(s.name)}">${escapeHtml(skinName)}</p></div>
       </button>
       <div class="profile-inv-card-footer"><p class="inv-price"><i class="fa-solid fa-coins"></i>${formatCredits(s.price)}</p><div class="inv-actions">
@@ -3495,7 +3539,7 @@ function showItemDetail(itemId) {
   const html = `
   <div class="text-center">
     ${it.exclusive ? `<div class="mb-2 inline-flex items-center gap-2 rounded-full border border-violet-500/40 bg-violet-500/15 px-3 py-1"><i class="fa-solid fa-star text-violet-300 text-xs"></i><span class="text-[10px] font-extrabold uppercase tracking-widest text-violet-200">Ексклюзив</span></div>` : ''}
-    <div class="mx-auto mb-3 flex justify-center"><img src="${escapeHtml(it.img || '')}" alt="" class="h-40 object-contain" data-skin-name="${escapeHtml(it.name)}" onerror="handleSkinImageError(this)"></div>
+    <div class="mx-auto mb-3 flex justify-center"><img src="${escapeHtml(getSkinImageSrc(it))}" alt="" class="h-40 object-contain" data-skin-name="${escapeHtml(it.name)}" onerror="handleSkinImageError(this)"></div>
     <p class="text-[10px] font-extrabold uppercase tracking-[.2em] text-amber-400">${catLabel} · ${escapeHtml(it.rarity || 'CS2')}</p>
     <h3 class="font-heading mt-1 text-3xl font-extrabold uppercase text-white leading-none">${escapeHtml(it.name)}</h3>
     <div class="mt-3 inline-flex items-center gap-2 flex-wrap justify-center">
@@ -3716,7 +3760,7 @@ function renderMultiSlots() {
       return `<div class="multi-slot">
         <span class="wear-badge wear-${wear.code} absolute top-1 left-1">${wear.code}</span>
         <button type="button" class="rm" data-multi-remove-id="${escapeHtml(String(s.id))}" aria-label="Видалити"><i class="fa-solid fa-xmark"></i></button>
-        <img src="${escapeHtml(s.img || '')}" alt="" data-skin-name="${escapeHtml(s.name)}" onerror="handleSkinImageError(this)">
+        <img src="${escapeHtml(getSkinImageSrc(s))}" alt="" data-skin-name="${escapeHtml(s.name)}" onerror="handleSkinImageError(this)">
         <div class="price">${formatCredits(s.price).replace(' DC', '')}</div>
       </div>`;
     }).join('');
@@ -4481,7 +4525,7 @@ function renderCaseCatalog() {
         <div class="case-catalog-preview-strip">
           ${previews.map(s => `
             <div class="case-catalog-preview-item" title="${escapeHtml(s.name)} · ${formatCredits(s.price)}">
-              <img src="${escapeHtml(s.img || '')}" alt="" onerror="handleSkinImageError(this)">
+              <img src="${escapeHtml(getSkinImageSrc(s))}" alt="" data-skin-name="${escapeHtml(s.name)}" decoding="async" onerror="handleSkinImageError(this)">
             </div>
           `).join('')}
         </div>
@@ -4651,13 +4695,16 @@ function buildSingleReelTrack(trackId, winner) {
     items.push({ ...s, isWinner: false, wear: rollWear() });
   }
 
-  track.innerHTML = items.map((it, index) => `
+  track.innerHTML = items.map(it => {
+    const image = getSkinImageSrc(it);
+    return `
     <div class="case-reel-card ${it.isWinner ? 'is-winner' : ''}">
-      <img src="${escapeHtml(it.img || '')}" alt="" data-skin-name="${escapeHtml(it.name)}" loading="${Math.abs(index - winnerIndex) < 4 ? 'eager' : 'lazy'}" decoding="async" onerror="handleSkinImageError(this)">
+      <img src="${escapeHtml(image)}" alt="" data-skin-name="${escapeHtml(it.name)}" loading="eager" decoding="async" onerror="handleSkinImageError(this)">
       <p>${escapeHtml(it.name.split('|').pop().trim().slice(0, 18))}</p>
       <p class="text-[10px] font-extrabold text-amber-300">${formatCredits(it.price || 0)}</p>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   return { ...config, cardWidth: 132, gap: 10 };
 }
@@ -4670,6 +4717,43 @@ function getCaseReelTarget(track, reelWindow, winnerIndex, fallbackCardWidth = 1
   const paddingLeft = Number.parseFloat(trackStyle?.paddingLeft || '') || 0;
   const windowWidth = reelWindow?.getBoundingClientRect().width || Math.max(280, document.documentElement.clientWidth - 48);
   return Math.round((windowWidth - cardWidth) / 2 - paddingLeft - winnerIndex * (cardWidth + gap));
+}
+
+function playCaseReels(reels, wrapper) {
+  return new Promise(resolve => {
+    if (!reels.length) return resolve();
+    // Keep the well-tested CSS transition mechanics, but explicitly protect
+    // this game animation from a global reduced-motion CSS reset. The result
+    // is released by transitionend, with a timer only as a browser fallback.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      void wrapper?.offsetWidth;
+      let pending = reels.length;
+      const complete = () => {
+        pending -= 1;
+        if (pending === 0) resolve();
+      };
+      reels.forEach(reel => {
+        const targetX = getCaseReelTarget(reel.track, reel.reelWindow, reel.winnerIndex, reel.cardWidth, reel.gap);
+        const target = `translate3d(${targetX}px, 0, 0)`;
+        let finished = false;
+        const finish = () => {
+          if (finished) return;
+          finished = true;
+          reel.track.removeEventListener('transitionend', onTransitionEnd);
+          complete();
+        };
+        const onTransitionEnd = event => {
+          if (event.target === reel.track && event.propertyName === 'transform') finish();
+        };
+        reel.track.addEventListener('transitionend', onTransitionEnd);
+        reel.track.style.setProperty('transition-property', 'transform', 'important');
+        reel.track.style.setProperty('transition-duration', `${reel.duration}ms`, 'important');
+        reel.track.style.setProperty('transition-timing-function', 'cubic-bezier(.12,.72,.16,1)', 'important');
+        reel.track.style.transform = target;
+        window.setTimeout(finish, reel.duration + 400);
+      });
+    }));
+  });
 }
 
 async function startCaseReel() {
@@ -4781,10 +4865,6 @@ async function startCaseReel() {
   saveState();
   renderGameHub();
 
-  wonItems.forEach(it => {
-    addActivityEvent({ player: currentUser.name || 'Ти', skin: it, outcome: 'win' });
-  });
-
   const isFast = document.getElementById('caseFastOpenToggle')?.checked;
 
   if (isFast) {
@@ -4792,6 +4872,7 @@ async function startCaseReel() {
     isCaseOpening = false;
     isFreeCaseOpening = false;
     displayCaseDropResult(wonItems, isFree, cfg.name);
+    wonItems.forEach(it => addActivityEvent({ player: currentUser.name || 'Ти', skin: it, outcome: 'win' }));
     return;
   }
 
@@ -4817,17 +4898,7 @@ async function startCaseReel() {
     }
     return { track, reelWindow: document.getElementById(`reelWindow_${idx}`), ...setup };
   }).filter(reel => reel.track);
-  const reelDuration = reels.reduce((duration, reel) => Math.max(duration, reel.duration || 0), 2_350);
-
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    // One layout flush for all reels is much cheaper than flushing every track.
-    void wrapper?.offsetWidth;
-    reels.forEach(reel => {
-      const targetX = getCaseReelTarget(reel.track, reel.reelWindow, reel.winnerIndex, reel.cardWidth, reel.gap);
-      reel.track.style.transition = `transform ${reel.duration}ms cubic-bezier(.12,.72,.16,1)`;
-      reel.track.style.transform = `translate3d(${targetX}px, 0, 0)`;
-    });
-  }));
+  const reelAnimation = playCaseReels(reels, wrapper);
 
   const status = document.getElementById('caseReelStatus');
   if (status) status.textContent = 'Обертається…';
@@ -4835,14 +4906,14 @@ async function startCaseReel() {
   const playTicks = getCaseReelConfig().soundTicks && soundEnabled && !document.hidden;
   const ticks = playTicks ? setInterval(() => beep(600 + Math.random() * 400, 0.025, 'square'), 105) : null;
 
-  setTimeout(() => {
-    if (ticks) clearInterval(ticks);
-    if (status) status.textContent = 'Готово!';
-    soundCase();
-    isCaseOpening = false;
-    isFreeCaseOpening = false;
-    displayCaseDropResult(wonItems, isFree, cfg.name);
-  }, reelDuration + 140);
+  await reelAnimation;
+  if (ticks) clearInterval(ticks);
+  if (status) status.textContent = 'Готово!';
+  soundCase();
+  isCaseOpening = false;
+  isFreeCaseOpening = false;
+  displayCaseDropResult(wonItems, isFree, cfg.name);
+  wonItems.forEach(it => addActivityEvent({ player: currentUser.name || 'Ти', skin: it, outcome: 'win' }));
 }
 
 function displayCaseDropResult(items, isFree, caseName, resultKind = 'case') {
@@ -4886,7 +4957,7 @@ function displayCaseDropResult(items, isFree, caseName, resultKind = 'case') {
       return `
         <div class="case-result-card ${isLegendary ? 'is-legendary' : ''}">
           <div class="relative w-full flex items-center justify-center">
-            <img src="${escapeHtml(it.img || '')}" alt="" class="h-28 sm:h-36 object-contain my-2" onerror="handleSkinImageError(this)">
+            <img src="${escapeHtml(getSkinImageSrc(it))}" alt="" data-skin-name="${escapeHtml(it.name)}" class="h-28 sm:h-36 object-contain my-2" decoding="async" onerror="handleSkinImageError(this)">
           </div>
           <p class="text-base font-extrabold text-white truncate w-full">${escapeHtml(it.name)}</p>
           <div class="flex items-center justify-center gap-2 mt-1">
@@ -5020,7 +5091,7 @@ function showCaseDetails(caseType) {
     return `
       <div class="bg-brand-card border border-brand-border rounded-xl p-2.5 flex flex-col items-center hover:border-amber-500/40 transition">
         <div class="relative w-full">
-          <img src="${escapeHtml(s.img || '')}" alt="" class="h-16 w-full object-contain" onerror="handleSkinImageError(this)">
+          <img src="${escapeHtml(getSkinImageSrc(s))}" alt="" class="h-16 w-full object-contain" onerror="handleSkinImageError(this)">
           <span class="case-chance-badge" style="color:${badgeColor};border-color:${badgeColor}40">CHANCE ${chanceStr}</span>
         </div>
         <p class="mt-2 text-[10px] font-extrabold text-white truncate w-full text-center" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</p>
@@ -5257,7 +5328,7 @@ function pickBattlePlayerItem() {
     const wear = getWear(s);
     return `<button type="button" data-battle-pick="${escapeHtml(String(s.id))}" class="bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 flex flex-col items-center transition">
       <span class="wear-badge wear-${wear.code} self-start">${wear.code}</span>
-      <img src="${escapeHtml(s.img || '')}" alt="" data-skin-name="${escapeHtml(s.name)}" class="h-16 object-contain mt-1" onerror="handleSkinImageError(this)">
+      <img src="${escapeHtml(getSkinImageSrc(s))}" alt="" data-skin-name="${escapeHtml(s.name)}" class="h-16 object-contain mt-1" onerror="handleSkinImageError(this)">
       <p class="mt-1 text-xs font-bold text-white truncate w-full text-center">${escapeHtml(s.name)}</p>
       <p class="text-amber-400 text-xs font-extrabold">${formatCredits(s.price)}</p>
     </button>`;
@@ -5314,7 +5385,7 @@ function rerollBattleBot() {
 function resetCoinVisual() {
   const coin = document.getElementById('battleCoin');
   if (!coin) return;
-  coin.style.transition = 'none';
+  coin.style.setProperty('transition', 'none', 'important');
   coin.style.transform = 'rotateX(0deg)';
   document.getElementById('battleCoinStage')?.classList.remove('is-spinning', 'burst');
   document.getElementById('battlePlayerSlot')?.classList.remove('is-winner', 'is-loser');
@@ -5328,28 +5399,40 @@ function spinCoin(isPlayerWin) {
     if (!coin || !stage) return resolve();
     const spins = 6 + Math.floor(Math.random() * 3);
     const finalRot = spins * 360 + (isPlayerWin ? 0 : 180);
-    coin.style.transition = 'none';
+    coin.style.setProperty('transition', 'none', 'important');
     coin.style.transform = 'rotateX(0deg)';
     void coin.offsetWidth;
     stage.classList.add('is-spinning');
-    coin.style.transition = 'transform 3.6s cubic-bezier(.15,.6,.25,1)';
-    requestAnimationFrame(() => {
-      coin.style.transform = `rotateX(${finalRot}deg)`;
-    });
-    let n = 0;
-    const tick = setInterval(() => {
-      beep(500 + Math.random() * 500, 0.025, 'square');
-      n++;
-      if (n > 35) clearInterval(tick);
-    }, 90);
-    setTimeout(() => {
+    const duration = 3600;
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      coin.removeEventListener('transitionend', onTransitionEnd);
       clearInterval(tick);
       stage.classList.remove('is-spinning');
       stage.classList.add('burst');
       soundWin();
       setTimeout(() => stage.classList.remove('burst'), 400);
       resolve();
-    }, 3700);
+    };
+    const onTransitionEnd = event => {
+      if (event.target === coin && event.propertyName === 'transform') finish();
+    };
+    coin.addEventListener('transitionend', onTransitionEnd);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      coin.style.setProperty('transition-property', 'transform', 'important');
+      coin.style.setProperty('transition-duration', `${duration}ms`, 'important');
+      coin.style.setProperty('transition-timing-function', 'cubic-bezier(.15,.6,.25,1)', 'important');
+      coin.style.transform = `rotateX(${finalRot}deg)`;
+    }));
+    let n = 0;
+    const tick = setInterval(() => {
+      beep(500 + Math.random() * 500, 0.025, 'square');
+      n++;
+      if (n > 35) clearInterval(tick);
+    }, 90);
+    window.setTimeout(finish, duration + 400);
   });
 }
 
@@ -5421,6 +5504,7 @@ function startBattle() {
       userInventory.push(playerStake);
       const botItem = makeDemoItem(battleBotItem, '-battle');
       userInventory.push(botItem);
+      addActivityEvent({ player: currentUser.name || 'Ти', skin: botItem, outcome: 'win' });
       gameState.stats.battleWins = (gameState.stats.battleWins || 0) + 1;
       gameState.daily.battleWins = (gameState.daily.battleWins || 0) + 1;
       addXp(150);
@@ -5646,7 +5730,7 @@ function renderRoyalePlayerSlots() {
   const grid = document.getElementById('royalePlayerSlots');
   if (!grid) return;
   grid.innerHTML = royalePlayerSkins.map((s, idx) => {
-    const imgSrc = s.img || '';
+    const imgSrc = getSkinImageSrc(s);
     return `<div class="jackpot-skin-slot">
       <button class="slot-remove" onclick="royaleRemoveSkin(${idx})">✕</button>
       <img src="${escapeHtml(imgSrc)}" alt="" onerror="this.style.display='none'" style="width:40px;height:40px;object-fit:contain">
@@ -5666,7 +5750,7 @@ function renderRoyaleBotPanels() {
     const el = document.getElementById(`royaleBot${i}Skins`);
     if (!el) return;
     el.innerHTML = pool.map(s => {
-      const src = s.img || '';
+      const src = getSkinImageSrc(s);
       return `<img class="jackpot-bot-thumb" src="${escapeHtml(src)}" alt="${escapeHtml(s.name)}" title="${escapeHtml(s.name)} · ${formatCredits(s.price || 0)}" onerror="this.style.display='none'">`;
     }).join('');
   });
@@ -5699,7 +5783,7 @@ function royaleAddSkin() {
     return `<button type="button" data-royale-pick="${escapeHtml(String(s.id))}"
       class="bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 flex flex-col items-center transition">
       <span class="wear-badge wear-${wear.code} self-start">${wear.code}</span>
-      <img src="${escapeHtml(s.img || '')}" alt="" class="h-16 object-contain mt-1" onerror="handleSkinImageError(this)">
+      <img src="${escapeHtml(getSkinImageSrc(s))}" alt="" class="h-16 object-contain mt-1" onerror="handleSkinImageError(this)">
       <p class="mt-1 text-xs font-bold text-white truncate w-full text-center">${escapeHtml(s.name)}</p>
       <p class="text-amber-400 text-xs font-extrabold">${formatCredits(s.price)}</p>
     </button>`;
@@ -5903,6 +5987,8 @@ function royaleSettle(winnerIdx, wagerId) {
       const ni = makeDemoItem(s, '-royale');
       userInventory.push(ni);
     });
+    const liveSkin = allPotSkins.reduce((best, skin) => (skin.price || 0) > (best?.price || 0) ? skin : best, null);
+    if (liveSkin) addActivityEvent({ player: currentUser.name || 'Ти', skin: liveSkin, outcome: 'win' });
 
     addXp(500);
     soundWin();
@@ -5983,7 +6069,7 @@ function pickContractSlot(idx) {
       const wear = getWear(s);
       return `<button type="button" data-contract-pick="${escapeHtml(String(s.id))}" class="bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 flex flex-col items-center transition">
         <span class="wear-badge wear-${wear.code} self-start">${wear.code}</span>
-        <img src="${escapeHtml(s.img || '')}" alt="" data-skin-name="${escapeHtml(s.name)}" class="h-16 object-contain mt-1" onerror="handleSkinImageError(this)">
+        <img src="${escapeHtml(getSkinImageSrc(s))}" alt="" data-skin-name="${escapeHtml(s.name)}" class="h-16 object-contain mt-1" onerror="handleSkinImageError(this)">
         <p class="mt-1 text-xs font-bold text-white truncate w-full text-center">${escapeHtml(s.name)}</p>
         <p class="text-amber-400 text-xs font-extrabold">${formatCredits(s.price)}</p>
       </button>`;
@@ -6006,7 +6092,7 @@ function renderContractSlots() {
     const it = contractItems[i];
     if (it) {
       el.classList.add('filled');
-      el.innerHTML = `<span class="wear-badge wear-${getWear(it).code} absolute top-1 left-1 z-10">${getWear(it).code}</span><img src="${escapeHtml(it.img || '')}" alt="" data-skin-name="${escapeHtml(it.name)}" onerror="handleSkinImageError(this)">`;
+      el.innerHTML = `<span class="wear-badge wear-${getWear(it).code} absolute top-1 left-1 z-10">${getWear(it).code}</span><img src="${escapeHtml(getSkinImageSrc(it))}" alt="" data-skin-name="${escapeHtml(it.name)}" onerror="handleSkinImageError(this)">`;
     } else {
       el.classList.remove('filled');
       el.innerHTML = '<i class="fa-solid fa-plus text-2xl text-amber-500/60"></i>';
@@ -6108,8 +6194,14 @@ const LIVE_FEED_PROFILES = [
 ];
 
 function getLiveFeedProfile(player) {
-  if (account?.publicProfile?.enabled && player === currentUser?.name) {
-    return { id: account.publicProfile.id, ...buildPublicProfilePayload(), avatarUrl: '/api/steam/avatar', demo: false };
+  if (player === currentUser?.name) {
+    const publicProfileEnabled = Boolean(account?.publicProfile?.enabled);
+    return {
+      id: publicProfileEnabled ? account.publicProfile.id : '',
+      ...buildPublicProfilePayload(),
+      avatarUrl: currentUser?.avatar || '',
+      demo: !publicProfileEnabled
+    };
   }
   return LIVE_FEED_PROFILES.find(profile => profile.name === player) || LIVE_FEED_PROFILES[Math.floor(Math.random() * LIVE_FEED_PROFILES.length)];
 }
@@ -6129,6 +6221,7 @@ function addActivityEvent({ player, skin, outcome = 'attempt', profile = null })
   if (!feed || !skin) return;
   const owner = profile || getLiveFeedProfile(player);
   const safeSkinName = escapeHtml(skin.name || 'CS2 Skin');
+  const skinImage = getSkinImageSrc(skin);
   const accent = outcome === 'win' ? '#38d996' : outcome === 'loss' ? '#76839b' : '#f4bf50';
   const el = document.createElement('button');
   el.type = 'button';
@@ -6137,7 +6230,7 @@ function addActivityEvent({ player, skin, outcome = 'attempt', profile = null })
   el._liveProfile = owner;
   el.style.setProperty('--live-accent', accent);
   el.innerHTML = `<span class="live-skin-glow"></span>
-    <img src="${escapeHtml(skin.img || '')}" alt="${safeSkinName}" data-skin-id="${escapeHtml(getSkinKey(skin))}" data-skin-name="${safeSkinName}" loading="lazy" onerror="handleSkinImageError(this)">
+    <img src="${escapeHtml(skinImage)}" alt="${safeSkinName}" data-skin-id="${escapeHtml(getSkinKey(skin))}" data-skin-name="${safeSkinName}" decoding="async" onerror="handleSkinImageError(this)">
     <span class="live-skin-tooltip" role="tooltip">
       <span class="live-tooltip-avatar">${escapeHtml((owner.name || '?').slice(0, 1).toUpperCase())}</span>
       <span><strong>${escapeHtml(owner.name || 'Гравець')}</strong><small>LVL ${clampNumber(owner.level, 1, 9_999, 1)}${owner.prestige ? ` · P${owner.prestige}` : ''} · натисни, щоб відкрити</small></span>
@@ -6225,7 +6318,7 @@ function loadCompleteSkinCatalog() {
     } catch {}
 
     if (cachedSkins) {
-      CS2_SKINS = cachedSkins;
+      CS2_SKINS = cachedSkins.map(applyFeaturedSkinMetadata);
       completeSkinCatalogReady = true;
       populateCategoryFilter();
       filterShop();
@@ -6501,7 +6594,7 @@ function renderShopGrid(skins) {
     const trend = getTrend(s);
     return `<article data-skin-card="${escapeHtml(getSkinKey(s))}" class="skin-card relative bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 transition group focus-within:border-amber-500">
       <button type="button" data-select-skin-id="${escapeHtml(getSkinKey(s))}" class="w-full text-left flex flex-col items-center justify-between focus:outline-none">
-        <img src="${escapeHtml(s.img)}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" class="h-20 w-full object-contain group-hover:scale-105 transition image-skeleton" loading="lazy" onerror="handleSkinImageError(this)">
+        <img src="${escapeHtml(getSkinImageSrc(s))}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" class="h-20 w-full object-contain group-hover:scale-105 transition image-skeleton" loading="lazy" onerror="handleSkinImageError(this)">
         <div class="text-center w-full mt-2 min-w-0">
           <p class="font-bold text-xs text-white truncate" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</p>
           <p class="text-[10px] truncate mt-1" style="color:${escapeHtml(s.rarityColor || '#f59e0b')}">${escapeHtml(s.rarity)}</p>

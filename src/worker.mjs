@@ -107,6 +107,46 @@ function cleanImage(value) {
   }
 }
 
+async function skinImage(request) {
+  if (request.method !== 'GET' && request.method !== 'HEAD') return json({ error: 'Method not allowed' }, 405)
+  const source = cleanImage(new URL(request.url).searchParams.get('src'))
+  if (!source) return json({ error: 'Некоректне джерело зображення.' }, 400)
+
+  const cacheKey = new Request(request.url, { method: 'GET' })
+  try {
+    const cached = await caches.default.match(cacheKey)
+    if (cached) {
+      if (request.method === 'GET') return cached
+      return new Response(null, { status: cached.status, headers: cached.headers })
+    }
+  } catch {}
+
+  let upstream
+  try {
+    upstream = await fetch(source, { headers: { Accept: 'image/avif,image/webp,image/png,image/*;q=0.8' } })
+  } catch {
+    return json({ error: 'Зображення тимчасово недоступне.' }, 502)
+  }
+  const contentType = upstream.headers.get('Content-Type') || ''
+  if (!upstream.ok || !contentType.startsWith('image/')) {
+    return json({ error: 'Зображення тимчасово недоступне.' }, 502)
+  }
+  const response = new Response(request.method === 'HEAD' ? null : upstream.body, {
+    status: 200,
+    headers: {
+      'Content-Type': contentType,
+      'Cache-Control': 'public, max-age=86400, s-maxage=604800',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  })
+  if (request.method === 'GET') {
+    try {
+      await caches.default.put(cacheKey, response.clone())
+    } catch {}
+  }
+  return response
+}
+
 function cleanAvatar(value) {
   try {
     const url = new URL(cleanText(value, 2048))
@@ -1091,6 +1131,10 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url)
     const path = url.pathname
+    // This is a read-only, host-restricted image relay. It does not access
+    // account data or mutate state, so it must not compete with game API calls
+    // for the normal per-minute Durable Object rate-limit budget.
+    if (path === '/api/skin-image') return skinImage(request)
     if (path.startsWith('/api/')) {
       if (request.method === 'POST') {
         const origin = request.headers.get('Origin')
