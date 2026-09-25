@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="/css/tailwind.css?v=5.8.5">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/css/admin.css?v=3">
+<link rel="stylesheet" href="/css/admin.css?v=4">
 </head>
 <body>
 <div class="admin-shell">
@@ -77,10 +77,10 @@
         <div><p class="eyebrow">ВІРТУАЛЬНА ГРА</p><h2 id="gameTitle">Керування профілем</h2></div>
         <span class="audit-lock"><i class="fa-solid fa-cloud"></i> Серверний профіль</span>
       </div>
-      <p class="game-note">Список поповнюється автоматично при вході на сайт. Для кожного відвідувача зберігаються лише дані гри; Cloud Profile можна відкрити й редагувати, локальний профіль доступний тільки для огляду.</p>
+      <p class="game-note">Обери гравця зі списку — усі зміни виконуються на сервері й одразу потрапляють до журналу. Кнопка «Мій профіль» відкриває твій профіль без ручного пошуку ID.</p>
       <section class="player-directory" aria-labelledby="playersTitle">
         <div class="section-head"><div><p class="eyebrow">БАЗА ГРАВЦІВ</p><h3 id="playersTitle">Усі гравці</h3></div><span id="playerDirectoryCount" class="count-pill">—</span></div>
-        <div class="directory-tools"><label>Пошук<input id="playerDirectorySearch" type="search" maxlength="100" autocomplete="off" placeholder="Нікнейм або ID"></label><button id="playerDirectoryRefresh" class="small-button" type="button"><i class="fa-solid fa-rotate"></i> Оновити</button></div>
+        <div class="directory-tools"><label>Пошук<input id="playerDirectorySearch" type="search" maxlength="100" autocomplete="off" placeholder="Нікнейм або ID"></label><button id="openMyProfileButton" class="small-button my-profile-button" type="button"><i class="fa-solid fa-user"></i> Мій профіль</button><button id="playerDirectoryRefresh" class="small-button" type="button"><i class="fa-solid fa-rotate"></i> Оновити</button></div>
         <div id="playerDirectoryList" class="player-directory-list" aria-live="polite"><p class="loading-line"><i class="fa-solid fa-spinner fa-spin"></i> Завантаження гравців…</p></div>
       </section>
       <details class="direct-player-search"><summary>Відкрити профіль за Cloud Profile ID</summary><form class="profile-lookup" id="profileLookupForm"><label>Cloud Profile ID<input id="profileAccountId" type="text" maxlength="64" autocomplete="off" spellcheck="false" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required></label><button class="icon-button" id="profileLookupButton" type="submit"><i class="fa-solid fa-magnifying-glass"></i><span>Відкрити</span></button></form></details>
@@ -113,10 +113,18 @@
             <button class="primary-button" type="submit"><i class="fa-solid fa-check"></i> Встановити</button>
             <p class="form-hint"><i class="fa-solid fa-circle-info"></i> Тільки власник і повний адмін.</p>
           </form>
+          <form class="game-card moderation-card hidden" id="moderationForm">
+            <div class="form-heading"><i class="fa-solid fa-user-lock"></i><span>Блокування</span></div>
+            <div id="moderationState" class="moderation-state">Гравець не заблокований</div>
+            <label>Причина блокування<textarea id="blockReason" maxlength="240" rows="3" placeholder="Наприклад: порушення правил гри"></textarea></label>
+            <button id="blockPlayerButton" class="primary-button" type="submit"><i class="fa-solid fa-ban"></i> Заблокувати</button>
+            <button id="unblockPlayerButton" class="small-button hidden" type="button"><i class="fa-solid fa-unlock"></i> Зняти блокування</button>
+            <p class="form-hint"><i class="fa-solid fa-circle-info"></i> Причина буде показана гравцю. Зняття блокування також фіксується в журналі.</p>
+          </form>
         </div>
         <section class="skin-manager" aria-labelledby="skinManagerTitle">
           <div class="section-head"><div><p class="eyebrow">ІНВЕНТАР</p><h3 id="skinManagerTitle">Скіни</h3></div><span id="inventoryCount" class="count-pill">—</span></div>
-          <div class="skin-grant-row"><label>Пошук у каталозі<input id="skinSearch" type="search" maxlength="100" autocomplete="off" placeholder="Наприклад, AK-47 або Doppler"></label><button id="grantSkinButton" class="icon-button" type="button" disabled><i class="fa-solid fa-gift"></i><span>Видати скін</span></button></div>
+          <div class="skin-grant-row"><label>Пошук у каталозі<input id="skinSearch" type="search" maxlength="100" autocomplete="off" placeholder="Наприклад, AK-47 або Doppler"></label><button id="grantSkinButton" class="icon-button" type="button" disabled><i class="fa-solid fa-gift"></i><span id="grantSkinLabel">Видати скін</span></button></div>
           <div id="skinSearchResults" class="skin-search-results"><p class="empty-line">Введи щонайменше 2 символи, щоб знайти скін.</p></div>
           <div id="playerInventory" class="admin-inventory" aria-live="polite"></div>
         </section>
@@ -153,6 +161,6 @@
   </main>
 </div>
 <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
-<script src="/js/admin.js?v=3" defer></script>
+<script src="/js/admin.js?v=4" defer></script>
 </body>
 </html>

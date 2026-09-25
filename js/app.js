@@ -15,7 +15,8 @@ const STORAGE = {
   catalogCache: 'potuzhno_catalog_cache_v40',
   pendingWager: 'potuzhno_v6_pending_wager',
   fair: 'potuzhno_v9_fair',
-  steamNudge: 'potuzhno_v10_steam_nudge'
+  steamNudge: 'potuzhno_v10_steam_nudge',
+  adminProfileRefresh: 'potuzhno_v6_admin_profile_refresh'
 };
 
 const PAGES = ['upgrader', 'case', 'battle', 'royale', 'contract', 'tasks', 'profile', 'about'];
@@ -354,6 +355,47 @@ let steamConnectionMessage = '';
 let publicProfilePublishTimer = null;
 let publicProfilePublishPromise = null;
 let activePublicProfile = null;
+let profileModeration = { blocked: false, reason: '', updatedAt: 0 };
+
+function normalizeProfileModeration(value) {
+  const blocked = value?.blocked === true;
+  return {
+    blocked,
+    reason: blocked ? cleanText(value?.reason || 'Доступ до гри тимчасово обмежено адміністрацією.', 240) : '',
+    updatedAt: clampNumber(value?.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0)
+  };
+}
+
+function isProfileBlocked() {
+  return profileModeration?.blocked === true;
+}
+
+function renderProfileBlockOverlay() {
+  const existing = document.getElementById('profileBlockOverlay');
+  if (!isProfileBlocked()) {
+    existing?.remove();
+    return;
+  }
+  const reason = profileModeration.reason || 'Доступ до гри тимчасово обмежено адміністрацією.';
+  if (existing) {
+    existing.querySelector('[data-block-reason]').textContent = reason;
+    return;
+  }
+  const overlay = document.createElement('section');
+  overlay.id = 'profileBlockOverlay';
+  overlay.className = 'profile-block-overlay';
+  overlay.setAttribute('role', 'alertdialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', 'Доступ до гри обмежено');
+  overlay.innerHTML = '<div class="profile-block-card"><span><i class="fa-solid fa-ban"></i></span><p>ДОСТУП ОБМЕЖЕНО</p><h2>Профіль заблоковано</h2><strong data-block-reason></strong><small>Якщо це помилка — звернися до адміністрації. Після зняття блокування профіль оновиться автоматично.</small></div>';
+  overlay.querySelector('[data-block-reason]').textContent = reason;
+  document.body.append(overlay);
+}
+
+function setProfileModeration(value) {
+  profileModeration = normalizeProfileModeration(value);
+  renderProfileBlockOverlay();
+}
 
 // Case reels are deliberately lighter on entry-level phones and on devices
 // where the visitor explicitly asks the browser to reduce motion. This keeps
@@ -1711,7 +1753,13 @@ async function requestJson(url, options = {}, timeout = 7000) {
   try {
     const response = await fetch(url, { ...options, signal: controller.signal });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(cleanText(data?.error || 'Сервер не відповів коректно.', 180));
+    if (!response.ok) {
+      const error = new Error(cleanText(data?.error || 'Сервер не відповів коректно.', 180));
+      error.status = response.status;
+      error.code = cleanText(data?.code || '', 48);
+      error.moderation = data?.moderation;
+      throw error;
+    }
     return data;
   } finally {
     clearTimeout(timer);
@@ -1866,6 +1914,7 @@ function applyPortableSave(data, { skipCloudAutoSync = false } = {}) {
   if (!portable || typeof portable !== 'object' || !Array.isArray(portable.inventory) || !portable.gameState || typeof portable.gameState !== 'object') {
     throw new Error('Bad format');
   }
+  setProfileModeration(portable.moderation);
   userInventory = portable.inventory.map((item, index) => normalizeStoredItem(item, index)).filter(Boolean);
 
   const defaults = createDefaultGameState();
@@ -1985,6 +2034,11 @@ async function saveCloudProfile({ silent = false, keepalive = false } = {}) {
     if (!silent) showToast('Прогрес збережено на сервері.', 'success');
     return true;
   } catch (error) {
+    if (error?.code === 'player_blocked') {
+      setProfileModeration(error.moderation);
+      cloudAutoSyncDirty = false;
+      cloudAutoSyncLastError = '';
+    }
     if (!silent) showToast(error?.message || 'Не вдалося синхронізувати профіль.', 'error');
     return false;
   } finally {
@@ -2080,6 +2134,23 @@ function startCloudAutoSync() {
   cloudAutoSyncStarted = true;
   renderCloudSyncUI();
   queueCloudAutoSync();
+
+  const refreshFromAdminChange = () => {
+    if (!isCloudProfile(account?.cloud)) return;
+    try {
+      const change = JSON.parse(localStorage.getItem(STORAGE.adminProfileRefresh) || 'null');
+      if (change?.accountId !== account.cloud.id || Number(change?.revision) <= Number(account.cloud.revision || 0)) return;
+      void loadCloudProfile({ silent: true }).then(loaded => {
+        if (loaded) showToast('Профіль оновлено адміністрацією.', isProfileBlocked() ? 'warn' : 'info');
+      });
+    } catch {}
+  };
+
+  window.addEventListener('storage', event => {
+    if (event.key === STORAGE.adminProfileRefresh) refreshFromAdminChange();
+  });
+  window.addEventListener('pageshow', refreshFromAdminChange);
+  refreshFromAdminChange();
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && cloudAutoSyncDirty) void syncCloudProfileAutomatically({ finalAttempt: true });
@@ -3144,7 +3215,7 @@ function applyCommunitySnapshot(data) {
 }
 
 async function syncCommunity(event = null) {
-  if (!account?.communityId || !gameState || document.hidden) return;
+  if (!account?.communityId || !gameState || document.hidden || isProfileBlocked()) return;
   if (communitySyncInFlight) {
     if (event) queuedCommunityEvents = [...queuedCommunityEvents, event].slice(-8);
     return;

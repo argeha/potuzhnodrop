@@ -65,6 +65,8 @@ const ADMIN_GAME_MAX_PRESTIGE = 99
 const ADMIN_GAME_MAX_INVENTORY = 10_000
 const ADMIN_GAME_PLAYER_LEVEL_XP = 1_200
 const ADMIN_GAME_PASS_MAX_XP = 30 * 750
+const ADMIN_GAME_MAX_LEVEL = Math.floor(ADMIN_GAME_MAX_XP / ADMIN_GAME_PLAYER_LEVEL_XP) + 1
+const ADMIN_GAME_BLOCK_REASON_MAX = 240
 const ADMIN_PLAYER_DIRECTORY_MAX = 5_000
 const ADMIN_PLAYER_DIRECTORY_PAGE_SIZE = 600
 const ADMIN_ROLES = Object.freeze({
@@ -474,19 +476,29 @@ function adminRoleView(role) {
 
 function adminGameCapabilities(actor) {
   const rank = adminRoleRank(actor?.role)
-  if (rank >= 4) return { read: true, grant: true, configure: true, inventory: true }
-  if (rank === 3) return { read: true, grant: true, configure: false, inventory: false }
-  if (rank === 2) return { read: true, grant: false, configure: false, inventory: false }
-  return { read: false, grant: false, configure: false, inventory: false }
+  if (rank >= 4) return { read: true, grant: true, configure: true, inventory: true, moderate: true }
+  if (rank === 3) return { read: true, grant: true, configure: false, inventory: false, moderate: false }
+  if (rank === 2) return { read: true, grant: false, configure: false, inventory: false, moderate: false }
+  return { read: false, grant: false, configure: false, inventory: false, moderate: false }
 }
 
 function canRunAdminGameOperation(actor, operation) {
   const capabilities = adminGameCapabilities(actor)
   if (!capabilities.read) return false
-  if (['pc_add', 'xp_add', 'tickets_add', 'pass_xp_add', 'premium_enable', 'skin_grant'].includes(operation)) return capabilities.grant
-  if (['pc_set', 'xp_set', 'tickets_set', 'pass_xp_set', 'premium_disable', 'prestige_set'].includes(operation)) return capabilities.configure
+  if (['pc_add', 'xp_add', 'level_add', 'tickets_add', 'pass_xp_add', 'premium_enable', 'skin_grant'].includes(operation)) return capabilities.grant
+  if (['pc_set', 'xp_set', 'level_set', 'tickets_set', 'pass_xp_set', 'premium_disable', 'prestige_set'].includes(operation)) return capabilities.configure
   if (operation === 'skin_remove') return capabilities.inventory
+  if (operation === 'block' || operation === 'unblock') return capabilities.moderate
   return false
+}
+
+function adminProfileModeration(value, now = Date.now()) {
+  const blocked = value?.blocked === true
+  return {
+    blocked,
+    reason: blocked ? cleanText(value?.reason, ADMIN_GAME_BLOCK_REASON_MAX) || 'Доступ до гри тимчасово обмежено адміністрацією.' : '',
+    updatedAt: boundedInteger(value?.updatedAt, 0, Number.MAX_SAFE_INTEGER, now),
+  }
 }
 
 function safeAdminInventoryItem(value, index = 0) {
@@ -532,6 +544,7 @@ function adminProfileSummary(accountId, entry) {
       xp: boundedInteger(pass.xp, 0, ADMIN_GAME_PASS_MAX_XP),
       premium: pass.premium === true,
     },
+    moderation: adminProfileModeration(payload.moderation, entry.updatedAt),
     inventoryTotal: safeItems.length,
     inventory: safeItems.sort((left, right) => right.addedAt - left.addedAt).slice(0, 60),
   }
@@ -553,6 +566,7 @@ function adminPlayerDirectoryEntry(accountId, entry) {
     collectionValue: 0,
     firstSeenAt: summary.updatedAt,
     updatedAt: summary.updatedAt,
+    blocked: summary.moderation.blocked,
   }
 }
 
@@ -595,6 +609,7 @@ function normalizeAdminPlayerDirectoryEntry(value) {
     collectionValue: boundedInteger(value?.collectionValue, 0, MAX_PRICE * 10_000),
     firstSeenAt,
     updatedAt,
+    blocked: value?.blocked === true,
   }
 }
 
@@ -959,6 +974,13 @@ export class PotuzhnoState {
       } else if (operation === 'xp_add' || operation === 'xp_set') {
         if (!addOrSet('xp', ADMIN_GAME_MAX_XP)) return { error: 'Некоректна кількість XP.', status: 400 }
         detail = `${operation === 'xp_add' ? '+' : '='}${body.amount} XP`
+      } else if (operation === 'level_add' || operation === 'level_set') {
+        const amount = integer(1, ADMIN_GAME_MAX_LEVEL)
+        if (amount === null) return { error: 'Некоректний рівень.', status: 400 }
+        const currentLevel = Math.floor(boundedInteger(gameState.xp, 0, ADMIN_GAME_MAX_XP) / ADMIN_GAME_PLAYER_LEVEL_XP) + 1
+        const level = operation === 'level_add' ? Math.min(ADMIN_GAME_MAX_LEVEL, currentLevel + amount) : amount
+        gameState.xp = Math.min(ADMIN_GAME_MAX_XP, (level - 1) * ADMIN_GAME_PLAYER_LEVEL_XP)
+        detail = operation === 'level_add' ? `+${amount} рівнів (LVL ${level})` : `рівень = ${level}`
       } else if (operation === 'tickets_add' || operation === 'tickets_set') {
         if (!addOrSet('caseTickets', ADMIN_GAME_MAX_TICKETS)) return { error: 'Некоректна кількість квитків.', status: 400 }
         detail = `${operation === 'tickets_add' ? '+' : '='}${body.amount} квитків`
@@ -989,6 +1011,14 @@ export class PotuzhnoState {
         if (amount === null) return { error: 'Некоректний престиж.', status: 400 }
         gameState.prestige = amount
         detail = `престиж = ${amount}`
+      } else if (operation === 'block') {
+        const reason = cleanText(body?.reason, ADMIN_GAME_BLOCK_REASON_MAX)
+        if (!reason) return { error: 'Вкажи причину блокування.', status: 400 }
+        next.moderation = { blocked: true, reason, updatedAt: Date.now() }
+        detail = `блокування: ${reason}`
+      } else if (operation === 'unblock') {
+        next.moderation = { blocked: false, reason: '', updatedAt: Date.now() }
+        detail = 'блокування знято'
       } else if (operation === 'skin_grant') {
         const skin = adminCatalogSkin(body?.skin)
         if (!skin) return { error: 'Вибраний скін недоступний у каталозі.', status: 400 }
@@ -1074,6 +1104,9 @@ export class PotuzhnoState {
           wins: player.wins || previous?.wins,
           rounds: player.rounds || previous?.rounds,
           collectionValue: player.collectionValue || previous?.collectionValue,
+          // Community heartbeats do not know a player's moderation status, so
+          // they must never accidentally clear a block written by the admin.
+          blocked: typeof body?.player?.blocked === 'boolean' ? player.blocked : previous?.blocked === true,
           firstSeenAt: knownFirstSeen.length ? Math.min(...knownFirstSeen, player.firstSeenAt || Number.MAX_SAFE_INTEGER) : player.firstSeenAt,
           updatedAt: Math.max(Number(previous?.updatedAt || 0), Number(player.updatedAt || 0)),
         })
@@ -1224,12 +1257,23 @@ export class PotuzhnoState {
       const currentRevision = Math.max(1, Math.floor(Number(current?.revision) || 1))
       if (!current || !equalHash(current.recoveryHash, recoveryHash)) return { error: 'Профіль не знайдено або код відновлення неправильний.', status: 403 }
       if (currentRevision !== expectedRevision) return { error: 'Профіль було змінено в іншій вкладці або на іншому пристрої. Спочатку завантаж актуальну версію.', status: 409, revision: currentRevision }
+      const moderation = adminProfileModeration(current.payload?.moderation, Number(current.updatedAt) || Date.now())
+      if (moderation.blocked) {
+        return {
+          error: `Профіль заблоковано. Причина: ${moderation.reason}`,
+          code: 'player_blocked',
+          moderation,
+          status: 423,
+        }
+      }
+      const payload = { ...body.payload, moderation }
+      if (!isPayload(payload)) return { error: 'Профіль завеликий після збереження.', status: 413 }
       const updatedAt = Date.now()
-      const next = { ...current, version: 2, revision: currentRevision + 1, payload: body.payload, updatedAt }
+      const next = { ...current, version: 2, revision: currentRevision + 1, payload, updatedAt }
       await transaction.put(key, next)
       return { updatedAt, revision: next.revision, entry: next }
     })
-    if (saved.error) return json({ error: saved.error, revision: saved.revision }, saved.status)
+    if (saved.error) return json({ error: saved.error, code: saved.code, moderation: saved.moderation, revision: saved.revision }, saved.status)
     await this.indexCloudProfile(accountId, saved.entry)
     return json({ updatedAt: saved.updatedAt, revision: saved.revision })
   }
@@ -2043,7 +2087,7 @@ export class PotuzhnoAdmin {
     if (!ID.test(accountId) || !canRunAdminGameOperation(actor, operation)) {
       return adminForbidden('Твоя роль не може виконати цю дію.')
     }
-    const payload = { action: 'mutate', operation, amount: body?.amount, itemId: body?.itemId }
+    const payload = { action: 'mutate', operation, amount: body?.amount, itemId: body?.itemId, reason: body?.reason }
     if (operation === 'skin_grant') {
       const skinId = cleanText(body?.skinId, 128)
       const catalog = await this.catalogItems()

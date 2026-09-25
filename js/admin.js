@@ -27,6 +27,9 @@
   const playerDirectoryList = $('#playerDirectoryList')
   let skinSearchTimer = null
   let playerDirectorySearchTimer = null
+  const CLOUD_ACCOUNT_STORAGE = 'potuzhno_v6_account'
+  const CLOUD_REFRESH_STORAGE = 'potuzhno_v6_admin_profile_refresh'
+  const CLOUD_PROFILE_ID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i
 
   const actionLabels = {
     access_granted: 'створив(ла) доступ',
@@ -46,11 +49,27 @@
     game_premium_enable: 'активував(ла) Battle Pass',
     game_premium_disable: 'вимкнув(ла) Battle Pass',
     game_prestige_set: 'встановив(ла) престиж',
+    game_level_add: 'додав(ла) рівні',
+    game_level_set: 'встановив(ла) рівень',
     game_skin_grant: 'видав(ла) скін',
     game_skin_remove: 'прибрав(ла) скін',
+    game_block: 'заблокував(ла) гравця',
+    game_unblock: 'зняв(ла) блокування',
   }
 
   const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[char]))
+
+  function localCloudProfileId() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(CLOUD_ACCOUNT_STORAGE) || 'null')
+      const id = String(stored?.cloud?.id || '').trim()
+      return CLOUD_PROFILE_ID.test(id) ? id : ''
+    } catch {
+      return ''
+    }
+  }
+
+  const isOwnPlayer = player => Boolean(player?.accountId && player.accountId === localCloudProfileId())
 
   function showToast(message, type = 'success') {
     const toast = document.createElement('div')
@@ -193,16 +212,16 @@
   // Cloudflare Durable Object version transition when an older `/me` response
   // has not started returning the new capability field yet.
   function fallbackGameCapabilities(roleId) {
-    if (roleId === 'owner' || roleId === 'full_admin') return { read: true, grant: true, configure: true, inventory: true }
-    if (roleId === 'admin') return { read: true, grant: true, configure: false, inventory: false }
-    if (roleId === 'moderator') return { read: true, grant: false, configure: false, inventory: false }
-    return { read: false, grant: false, configure: false, inventory: false }
+    if (roleId === 'owner' || roleId === 'full_admin') return { read: true, grant: true, configure: true, inventory: true, moderate: true }
+    if (roleId === 'admin') return { read: true, grant: true, configure: false, inventory: false, moderate: false }
+    if (roleId === 'moderator') return { read: true, grant: false, configure: false, inventory: false, moderate: false }
+    return { read: false, grant: false, configure: false, inventory: false, moderate: false }
   }
 
   function resolveGameCapabilities(reported, roleId) {
     const fallback = fallbackGameCapabilities(roleId)
     if (!reported || typeof reported !== 'object') return fallback
-    const fields = ['read', 'grant', 'configure', 'inventory']
+    const fields = ['read', 'grant', 'configure', 'inventory', 'moderate']
     if (!fields.some(field => typeof reported[field] === 'boolean')) return fallback
     // During a Worker rollout, an older Durable Object can briefly return an
     // incomplete capability object. The server remains authoritative for every
@@ -216,6 +235,15 @@
     options.forEach(option => element.add(new Option(option.label, option.value, false, option.value === selected)))
   }
 
+  function updateProgressAmountInput() {
+    const progress = $('#progressAmount')
+    if (!progress) return
+    const isLevel = $('#progressOperation').value.startsWith('level_')
+    progress.min = isLevel ? '1' : '0'
+    progress.max = isLevel ? '83334' : '100000000'
+    if (isLevel && integer(progress.value) < 1) progress.value = '1'
+  }
+
   function renderGamePermissions() {
     const canRead = canGame('read')
     gamePanel.classList.toggle('hidden', !state.me)
@@ -225,11 +253,11 @@
       return
     }
     const economyOptions = [{ value: 'pc_add', label: 'Додати PC' }]
-    const progressOptions = [{ value: 'xp_add', label: 'Додати XP' }, { value: 'tickets_add', label: 'Додати квитки' }]
+    const progressOptions = [{ value: 'xp_add', label: 'Додати XP' }, { value: 'level_add', label: 'Додати рівні' }, { value: 'tickets_add', label: 'Додати квитки' }]
     const passOptions = [{ value: 'pass_xp_add', label: 'Додати XP' }]
     if (canGame('configure')) {
       economyOptions.push({ value: 'pc_set', label: 'Встановити PC' })
-      progressOptions.push({ value: 'xp_set', label: 'Встановити XP' }, { value: 'tickets_set', label: 'Встановити квитки' })
+      progressOptions.push({ value: 'xp_set', label: 'Встановити XP' }, { value: 'level_set', label: 'Встановити рівень' }, { value: 'tickets_set', label: 'Встановити квитки' })
       passOptions.push({ value: 'pass_xp_set', label: 'Встановити XP' })
     }
     setOptions($('#economyOperation'), economyOptions)
@@ -237,9 +265,13 @@
     setOptions($('#passOperation'), passOptions)
     $('#premiumDisableButton').classList.toggle('hidden', !canGame('configure'))
     $('#prestigeForm').classList.toggle('hidden', !canGame('configure'))
+    $('#moderationForm').classList.toggle('hidden', !canGame('moderate'))
     $('#skinManagerTitle').closest('.skin-manager').classList.toggle('is-readonly', !canGame('grant'))
-    $('#skinSearch').disabled = !canGame('grant')
-    $('#grantSkinButton').disabled = !canGame('grant') || !state.selectedSkinId
+    $('#skinSearch').disabled = !canGame('grant') || !state.player?.accountId
+    $('#grantSkinButton').disabled = !canGame('grant') || !state.player?.accountId || !state.selectedSkinId
+    $('#openMyProfileButton').disabled = !canRead || !localCloudProfileId()
+    $('#openMyProfileButton').title = localCloudProfileId() ? 'Відкрити свій серверний профіль' : 'Спершу відкрий головний сайт: серверний профіль створюється автоматично.'
+    updateProgressAmountInput()
   }
 
   const integer = value => Math.max(0, Math.round(Number(value) || 0))
@@ -250,8 +282,10 @@
     const player = state.player
     playerWorkspace.classList.toggle('hidden', !player)
     if (!player) return
+    const own = isOwnPlayer(player)
+    const blocked = player.moderation?.blocked === true
     playerSummary.innerHTML = `
-      <div class="player-heading"><div><p class="eyebrow">АКТИВНИЙ ПРОФІЛЬ</p><h3>${escapeHtml(player.name)}</h3><code>${escapeHtml(player.accountId)}</code></div><span class="profile-revision">версія ${escapeHtml(player.revision)}</span></div>
+      <div class="player-heading"><div><p class="eyebrow">${own ? 'ТВІЙ СЕРВЕРНИЙ ПРОФІЛЬ' : 'АКТИВНИЙ ПРОФІЛЬ'}</p><h3>${escapeHtml(player.name)}</h3>${own ? '<span class="player-state"><i class="fa-solid fa-user-check"></i> Це твій профіль</span>' : ''}${blocked ? `<span class="player-state"><i class="fa-solid fa-ban"></i> Заблоковано: ${escapeHtml(player.moderation?.reason || 'без причини')}</span>` : ''}<code>${escapeHtml(player.accountId)}</code></div><span class="profile-revision">версія ${escapeHtml(player.revision)}</span></div>
       <div class="player-stats">
         <div><span>БАЛАНС</span><strong>${compact(player.balance)} PC</strong></div>
         <div><span>РІВЕНЬ</span><strong>${compact(player.level)} <small>${compact(player.xp)} XP</small></strong></div>
@@ -262,6 +296,17 @@
     $('#inventoryCount').textContent = `${compact(player.inventoryTotal)} скінів`
     $('#premiumEnableButton').classList.toggle('hidden', player.battlePass?.premium === true)
     $('#premiumDisableButton').classList.toggle('hidden', !canGame('configure') || player.battlePass?.premium !== true)
+    const moderationState = $('#moderationState')
+    if (moderationState) {
+      moderationState.classList.toggle('is-blocked', blocked)
+      moderationState.textContent = blocked
+        ? `Заблоковано: ${player.moderation?.reason || 'без вказаної причини'}`
+        : 'Гравець не заблокований'
+    }
+    $('#blockPlayerButton').classList.toggle('hidden', blocked)
+    $('#unblockPlayerButton').classList.toggle('hidden', !blocked)
+    $('#blockReason').value = blocked ? String(player.moderation?.reason || '') : ''
+    $('#grantSkinLabel').textContent = own ? 'Видати собі скін' : 'Видати скін'
     const items = Array.isArray(player.inventory) ? player.inventory : []
     playerInventory.innerHTML = items.length
       ? items.map(item => `<article class="admin-skin" data-item-id="${escapeHtml(item.id)}"><img src="${escapeHtml(skinImage(item.img))}" alt="" loading="lazy"><div><strong>${escapeHtml(item.name)}</strong><span style="color:${escapeHtml(item.rarityColor || '#b0c3d9')}">${escapeHtml(item.rarity)} · ${compact(item.price)} PC</span></div>${canGame('inventory') ? '<button class="small-button danger" type="button" data-remove-skin title="Прибрати скін"><i class="fa-solid fa-trash"></i></button>' : ''}</article>`).join('')
@@ -295,9 +340,10 @@
         ? `Cloud Profile · LVL ${compact(player.level)}${player.prestige ? ` · P${compact(player.prestige)}` : ''} · ${compact(player.inventoryTotal)} скінів`
         : `Відвідувач · LVL ${compact(player.level)}${player.prestige ? ` · P${compact(player.prestige)}` : ''} · останній вхід ${formatTime(player.updatedAt)}`
       const active = cloudProfile && state.player?.accountId === player.accountId ? ' is-active' : ''
+      const blocked = player.blocked === true ? ' is-blocked' : ''
       const card = `<i class="fa-solid ${cloudProfile ? 'fa-cloud' : 'fa-user-clock'}"></i><span><strong>${escapeHtml(player.name)}</strong><small>${escapeHtml(detail)}</small></span>${cloudProfile ? '<i class="fa-solid fa-chevron-right directory-open"></i>' : '<i class="fa-solid fa-eye directory-open"></i>'}`
       return cloudProfile
-        ? `<button type="button" class="directory-player${active}" data-player-id="${escapeHtml(player.accountId)}">${card}</button>`
+        ? `<button type="button" class="directory-player${active}${blocked}" data-player-id="${escapeHtml(player.accountId)}">${card}${blocked ? '<i class="fa-solid fa-ban blocked-mark" title="Заблоковано"></i>' : ''}</button>`
         : `<article class="directory-player is-visitor" title="Локальний профіль: зібрано мінімальні дані входу, без віддаленого редагування.">${card}</article>`
     }).join('')
   }
@@ -317,7 +363,7 @@
     }
   }
 
-  async function loadPlayerById(accountId) {
+  async function loadPlayerById(accountId, { quiet = false } = {}) {
     const cleanId = String(accountId || '').trim()
     if (!cleanId) return
     $('#profileAccountId').value = cleanId
@@ -329,12 +375,12 @@
       state.catalog = []
       state.selectedSkinId = ''
       renderGame()
-      showToast('Профіль гравця відкрито.')
+      if (!quiet) showToast(isOwnPlayer(state.player) ? 'Відкрито твій серверний профіль.' : 'Профіль гравця відкрито.')
     } catch (error) {
       state.player = null
       renderGame()
       if (error.status === 401) showGate()
-      showToast(error.message, 'error')
+      if (!quiet) showToast(error.message, 'error')
     } finally {
       button.disabled = false
     }
@@ -380,6 +426,8 @@
       showPanel()
       setHeader('Захищена сесія', 'ready')
       void loadPlayerDirectory({ quiet: true })
+      const ownProfileId = localCloudProfileId()
+      if (ownProfileId) void loadPlayerById(ownProfileId, { quiet: true })
     } catch (error) {
       state.roles = []
       state.assignableRoles = []
@@ -476,9 +524,9 @@
   }
 
   async function mutateGame(operation, extra = {}, { confirmText = '' } = {}) {
-    if (!state.player?.accountId) return showToast('Спочатку відкрий Cloud Profile ID.', 'error')
+    if (!state.player?.accountId) return showToast('Спочатку обери гравця зі списку або відкрий «Мій профіль».', 'error')
     if (confirmText && !window.confirm(confirmText)) return
-    const buttons = [...gameControls.querySelectorAll('button'), $('#grantSkinButton')]
+    const buttons = [...playerWorkspace.querySelectorAll('button')]
     buttons.forEach(button => { if (button) button.disabled = true })
     try {
       const data = await api('/api/admin/game/mutate', {
@@ -486,8 +534,12 @@
         body: JSON.stringify({ accountId: state.player.accountId, operation, ...extra })
       })
       state.player = data.player || state.player
+      try {
+        localStorage.setItem(CLOUD_REFRESH_STORAGE, JSON.stringify({ accountId: state.player.accountId, revision: state.player.revision, at: Date.now() }))
+      } catch {}
       await refreshAuditAfterGameAction()
       renderAll()
+      void loadPlayerDirectory({ quiet: true })
       showToast(data.detail || 'Профіль оновлено на сервері.')
     } catch (error) {
       if (error.status === 401) showGate()
@@ -506,6 +558,11 @@
   })
 
   $('#playerDirectoryRefresh').addEventListener('click', () => void loadPlayerDirectory())
+  $('#openMyProfileButton').addEventListener('click', () => {
+    const accountId = localCloudProfileId()
+    if (!accountId) return showToast('Твій серверний профіль ще не створений. Відкрий головну сторінку — він створиться автоматично.', 'error')
+    void loadPlayerById(accountId)
+  })
   $('#playerDirectorySearch').addEventListener('input', () => {
     window.clearTimeout(playerDirectorySearchTimer)
     playerDirectorySearchTimer = window.setTimeout(() => void loadPlayerDirectory(), 260)
@@ -529,8 +586,11 @@
     const operation = $('#progressOperation').value
     const amount = integer($('#progressAmount').value)
     if (!operation) return
-    void mutateGame(operation, { amount }, { confirmText: operation.endsWith('_set') ? 'Точно замінити значення прогресу?' : '' })
+    const label = operation === 'level_set' ? `Встановити рівень ${compact(amount)}?` : operation.endsWith('_set') ? 'Точно замінити значення прогресу?' : ''
+    void mutateGame(operation, { amount }, { confirmText: label })
   })
+
+  $('#progressOperation').addEventListener('change', updateProgressAmountInput)
 
   $('#passForm').addEventListener('submit', event => {
     event.preventDefault()
@@ -548,6 +608,17 @@
 
   $('#premiumEnableButton').addEventListener('click', () => void mutateGame('premium_enable'))
   $('#premiumDisableButton').addEventListener('click', () => void mutateGame('premium_disable', {}, { confirmText: 'Вимкнути Battle Pass у цього профілю?' }))
+
+  $('#moderationForm').addEventListener('submit', event => {
+    event.preventDefault()
+    const reason = $('#blockReason').value.trim()
+    if (!reason) return showToast('Вкажи причину блокування.', 'error')
+    void mutateGame('block', { reason }, { confirmText: `Заблокувати гравця? Причина: ${reason}` })
+  })
+
+  $('#unblockPlayerButton').addEventListener('click', () => {
+    void mutateGame('unblock', {}, { confirmText: 'Зняти блокування з цього гравця?' })
+  })
 
   $('#skinSearch').addEventListener('input', event => {
     const query = event.target.value.trim()
@@ -577,7 +648,7 @@
     if (!button || !canGame('grant')) return
     state.selectedSkinId = button.dataset.skinId || ''
     renderCatalog()
-    $('#grantSkinButton').disabled = !state.selectedSkinId
+    $('#grantSkinButton').disabled = !state.player?.accountId || !state.selectedSkinId
   })
 
   $('#grantSkinButton').addEventListener('click', () => {
