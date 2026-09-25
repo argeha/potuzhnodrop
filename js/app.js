@@ -904,6 +904,18 @@ const BATTLE_PASS_SEASON = Object.freeze({
   price: 10_000,
 });
 
+// A small daily loop for 6.0. Rewards stay deliberately modest: it is a
+// reason to return, not a shortcut through player levels or the Battle Pass.
+const POWER_RUN_REWARDS = Object.freeze([
+  { credits: 100, xp: 35, icon: 'fa-bolt', label: '+100 PC' },
+  { credits: 130, xp: 40, icon: 'fa-coins', label: '+130 PC' },
+  { credits: 160, xp: 45, icon: 'fa-crosshairs', label: '+160 PC' },
+  { credits: 190, xp: 50, icon: 'fa-fire', label: '+190 PC' },
+  { credits: 230, xp: 55, icon: 'fa-shield-halved', label: '+230 PC' },
+  { credits: 270, xp: 60, icon: 'fa-gem', label: '+270 PC' },
+  { credits: 400, xp: 75, tickets: 1, icon: 'fa-ticket', label: '+400 PC · квиток' }
+]);
+
 // Battle Pass rewards deliberately reuse the real skins already present in
 // the catalogue. This keeps their artwork, name, rarity and inventory data
 // consistent with the shop and case pools instead of creating fake variants.
@@ -1051,6 +1063,10 @@ function createDefaultWeekly() {
   return { week: '', rolls: 0, wins: 0, cases: 0, battles: 0, contracts: 0, sells: 0, bestWinValue: 0, bestStreak: 0, claimed: [] };
 }
 
+function createDefaultPowerRun() {
+  return { lastClaimDate: '', streak: 0, totalClaims: 0 };
+}
+
 function createDefaultAllTime() {
   return { rounds: 0, wins: 0, cases: 0, battles: 0, battleWins: 0, contracts: 0, sells: 0, sellValue: 0, freeCases: 0, biggestWin: 0, legendaryDrops: 0, multiInputs: 0, creditInputs: 0, royaleWins: 0 };
 }
@@ -1063,6 +1079,7 @@ function createDefaultGameState() {
     stats: { rounds: 0, wins: 0, currentStreak: 0, bestStreak: 0, bestValue: 0, cases: 0, pistolWins: 0, sells: 0, battles: 0, battleWins: 0, contracts: 0 },
     daily: createDefaultDaily(),
     weekly: createDefaultWeekly(),
+    powerRun: createDefaultPowerRun(),
     allTime: createDefaultAllTime(),
     achievements: {},
     favorites: [],
@@ -1107,6 +1124,7 @@ function loadGameState() {
       stats: { ...d.stats, ...(s.stats || {}) },
       daily: { ...createDefaultDaily(), ...(s.daily || {}) },
       weekly: { ...createDefaultWeekly(), ...(s.weekly || {}) },
+      powerRun: { ...createDefaultPowerRun(), ...(s.powerRun || {}) },
       allTime: { ...createDefaultAllTime(), ...(s.allTime || {}) },
       achievements: s.achievements || {},
       favorites: Array.isArray(s.favorites) ? s.favorites.map(String) : [],
@@ -1198,6 +1216,99 @@ function getCaseTicketCount() {
   if (!gameState) return 0;
   gameState.caseTickets = clampNumber(gameState.caseTickets, 0, 999, 0);
   return gameState.caseTickets;
+}
+
+function getDateKeyWithOffset(offset) {
+  const date = new Date();
+  date.setDate(date.getDate() + offset);
+  const timezoneOffset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - timezoneOffset).toISOString().slice(0, 10);
+}
+
+function getPowerRunState() {
+  if (!gameState) return createDefaultPowerRun();
+  const stored = gameState.powerRun && typeof gameState.powerRun === 'object' ? gameState.powerRun : {};
+  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(String(stored.lastClaimDate || '')) ? String(stored.lastClaimDate) : '';
+  const powerRun = {
+    lastClaimDate: validDate,
+    streak: clampNumber(stored.streak, 0, POWER_RUN_REWARDS.length, 0),
+    totalClaims: clampNumber(stored.totalClaims, 0, 1_000_000, 0)
+  };
+  gameState.powerRun = powerRun;
+  return powerRun;
+}
+
+function getPowerRunProgress() {
+  const powerRun = getPowerRunState();
+  const today = getTodayKey();
+  const alreadyClaimed = powerRun.lastClaimDate === today;
+  const continuedYesterday = powerRun.lastClaimDate === getDateKeyWithOffset(-1);
+  const nextDay = alreadyClaimed
+    ? Math.max(1, powerRun.streak)
+    : continuedYesterday && powerRun.streak < POWER_RUN_REWARDS.length
+      ? powerRun.streak + 1
+      : 1;
+  const completedDays = alreadyClaimed ? powerRun.streak : nextDay === 1 ? 0 : powerRun.streak;
+  return { powerRun, today, alreadyClaimed, nextDay, completedDays };
+}
+
+function renderPowerRun() {
+  const root = document.getElementById('powerRun');
+  if (!root || !gameState) return;
+  const progress = getPowerRunProgress();
+  const reward = POWER_RUN_REWARDS[progress.nextDay - 1];
+  const dayCards = POWER_RUN_REWARDS.map((entry, index) => {
+    const day = index + 1;
+    const isClaimed = day <= progress.completedDays;
+    const isCurrent = !progress.alreadyClaimed && day === progress.nextDay;
+    const state = isClaimed ? 'is-claimed' : isCurrent ? 'is-current' : '';
+    const marker = isClaimed
+      ? '<i class="fa-solid fa-check"></i>'
+      : isCurrent
+        ? '<i class="fa-solid fa-arrow-down"></i>'
+        : `<span>${day}</span>`;
+    return `<div class="power-run-day ${state}">
+      <b>ДЕНЬ ${day}</b><i class="fa-solid ${entry.icon}"></i><strong>${entry.label}</strong><em>${marker}</em>
+    </div>`;
+  }).join('');
+  const action = progress.alreadyClaimed
+    ? '<div class="power-run-complete"><i class="fa-solid fa-circle-check"></i><span>Сьогодні забрано</span><small>Нова нагорода опівночі</small></div>'
+    : `<button type="button" class="power-run-claim" data-power-run-claim><i class="fa-solid fa-gift"></i>Забрати: ${reward.label}<small>+${reward.xp} XP</small></button>`;
+
+  root.innerHTML = `<article class="power-run-card" aria-label="Power Run, щоденна серія">
+    <div class="power-run-top">
+      <div class="power-run-mark"><i class="fa-solid fa-bolt"></i><b>6.0</b></div>
+      <div class="power-run-copy"><p>ПОВЕРНЕННЯ В ГРУ</p><h2>POWER RUN</h2><span>Забирай одну нагороду щодня. Пропустив день — серія починається знову.</span></div>
+      <div class="power-run-streak"><span>ПОТОЧНА СЕРІЯ</span><b>${progress.alreadyClaimed ? progress.powerRun.streak : Math.max(0, progress.nextDay - 1)} <small>/ ${POWER_RUN_REWARDS.length}</small></b><em>${progress.powerRun.totalClaims} всього</em></div>
+      ${action}
+    </div>
+    <div class="power-run-days">${dayCards}</div>
+    <div class="power-run-footer"><span><i class="fa-solid fa-cloud"></i> Прогрес зберігається у Cloud Profile</span><div><button type="button" data-power-run-go="case"><i class="fa-solid fa-box-open"></i> Кейси</button><button type="button" data-power-run-go="upgrader"><i class="fa-solid fa-bolt"></i> Апгрейд</button><button type="button" data-power-run-go="battle"><i class="fa-solid fa-swords"></i> Бій</button></div></div>
+  </article>`;
+  root.querySelector('[data-power-run-claim]')?.addEventListener('click', claimPowerRun);
+  root.querySelectorAll('[data-power-run-go]').forEach(button => button.addEventListener('click', () => showPage(button.dataset.powerRunGo)));
+}
+
+function claimPowerRun() {
+  if (!gameState || !currentUser) return;
+  const progress = getPowerRunProgress();
+  if (progress.alreadyClaimed) {
+    showToast('Нагороду Power Run на сьогодні вже забрано.', 'info');
+    return;
+  }
+  const reward = POWER_RUN_REWARDS[progress.nextDay - 1];
+  progress.powerRun.lastClaimDate = progress.today;
+  progress.powerRun.streak = progress.nextDay;
+  progress.powerRun.totalClaims += 1;
+  currentUser.balance = clampNumber(currentUser.balance + reward.credits, 0, MAX_STORED_BALANCE, DEMO_STARTING_BALANCE);
+  addXp(reward.xp);
+  if (reward.tickets) gameState.caseTickets = getCaseTicketCount() + reward.tickets;
+  saveState();
+  updateBalanceUI();
+  updateCaseTicketOption();
+  renderGameHub();
+  soundWin();
+  showToast(`Power Run: ${reward.label} і +${reward.xp} XP додано.`, 'success');
 }
 
 function getBattlePassProgress() {
@@ -1924,6 +2035,7 @@ function applyPortableSave(data, { skipCloudAutoSync = false } = {}) {
     stats: { ...defaults.stats, ...(portable.gameState.stats || {}) },
     daily: { ...createDefaultDaily(), ...(portable.gameState.daily || {}) },
     weekly: { ...createDefaultWeekly(), ...(portable.gameState.weekly || {}) },
+    powerRun: { ...createDefaultPowerRun(), ...(portable.gameState.powerRun || {}) },
     allTime: { ...createDefaultAllTime(), ...(portable.gameState.allTime || {}) },
     collectionRewards: portable.gameState.collectionRewards || {}
   };
@@ -3325,6 +3437,7 @@ function renderProfileSocial() {
 function renderGameHub() {
   if (!gameState) return;
   renderProfileProgress();
+  renderPowerRun();
   renderBattlePass();
   renderDailyTasks();
   renderWeeklyTasks();
@@ -7657,6 +7770,7 @@ window.clearContract = clearContract;
 window.executeContract = executeContract;
 window.claimDailyTask = claimDailyTask;
 window.claimWeeklyTask = claimWeeklyTask;
+window.claimPowerRun = claimPowerRun;
 window.openCollectionReward = openCollectionReward;
 window.sellAllDuplicates = sellAllDuplicates;
 window.openInventoryModalFromProfile = openInventoryModalFromProfile;
