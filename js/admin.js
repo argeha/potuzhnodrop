@@ -2,23 +2,29 @@
   'use strict'
 
   const state = { me: null, members: [], roles: [], assignableRoles: [], audit: [] }
+  let inviteCode = new URLSearchParams(window.location.search).get('invite') || ''
   const $ = selector => document.querySelector(selector)
   const headerStatus = $('#headerStatus')
   const accessNotice = $('#accessNotice')
   const teamList = $('#teamList')
   const auditList = $('#auditList')
   const roleSelect = $('#memberRole')
-  const form = $('#memberForm')
+  const memberForm = $('#memberForm')
   const submitButton = $('#memberSubmit')
   const refreshButton = $('#refreshButton')
   const toastRegion = $('#toastRegion')
+  const adminMain = $('#adminMain')
+  const loginGate = $('#loginGate')
+  const inviteGate = $('#inviteGate')
+  const logoutButton = $('#logoutButton')
 
   const actionLabels = {
-    access_granted: 'надав(ла) доступ',
+    access_granted: 'створив(ла) доступ',
     role_updated: 'оновив(ла) роль',
     access_suspended: 'призупинив(ла) доступ',
     access_activated: 'відновив(ла) доступ',
     access_revoked: 'прибрав(ла) доступ',
+    invite_accepted: 'активував(ла) запрошення',
   }
 
   const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[char]))
@@ -68,10 +74,31 @@
     return new Intl.DateTimeFormat('uk-UA', { dateStyle: 'short', timeStyle: 'short' }).format(date)
   }
 
+  function showGate() {
+    adminMain.classList.add('hidden')
+    logoutButton.classList.add('hidden')
+    if (inviteCode) {
+      loginGate.classList.add('hidden')
+      inviteGate.classList.remove('hidden')
+      setHeader('Запрошення очікує', 'loading')
+    } else {
+      inviteGate.classList.add('hidden')
+      loginGate.classList.remove('hidden')
+      setHeader('Потрібен вхід', 'loading')
+    }
+  }
+
+  function showPanel() {
+    loginGate.classList.add('hidden')
+    inviteGate.classList.add('hidden')
+    adminMain.classList.remove('hidden')
+    logoutButton.classList.remove('hidden')
+  }
+
   function renderIdentity() {
     const me = state.me
     $('#myRole').textContent = roleName(me?.role)
-    $('#myEmail').textContent = me?.email || '—'
+    $('#myEmail').textContent = me?.role?.id === 'owner' ? 'Сесія власника' : (me?.email || 'Запрошений доступ')
     $('#myRoleDescription').textContent = me?.role?.description || 'Панель очікує підтвердження особи.'
   }
 
@@ -79,8 +106,7 @@
     const allowed = state.roles.filter(role => state.assignableRoles.includes(role.id))
     roleSelect.replaceChildren()
     if (!allowed.length) {
-      const option = new Option('Твоя роль не видає доступи', '')
-      roleSelect.add(option)
+      roleSelect.add(new Option('Твоя роль не видає доступи', ''))
       roleSelect.disabled = true
       submitButton.disabled = true
       return
@@ -91,8 +117,7 @@
   }
 
   function renderRoles() {
-    const root = $('#rolesOverview')
-    root.innerHTML = state.roles.map(role => `
+    $('#rolesOverview').innerHTML = state.roles.map(role => `
       <article class="role-card${state.assignableRoles.includes(role.id) ? ' is-assignable' : ''}">
         <div class="role-title"><span>${escapeHtml(role.label)}</span><span class="role-rank">РІВЕНЬ ${escapeHtml(role.rank)}</span></div>
         <p>${escapeHtml(role.description)}</p>
@@ -118,7 +143,7 @@
     }
     teamList.innerHTML = state.members.map(member => `
       <article class="team-row" data-email="${escapeHtml(member.email)}">
-        <div><strong class="member-name">${escapeHtml(member.name || (member.protected ? 'Власник' : 'Без імені'))}</strong><span class="member-email">${escapeHtml(member.email)}</span></div>
+        <div><strong class="member-name">${escapeHtml(member.name || (member.protected ? 'Власник' : 'Без імені'))}</strong><span class="member-email">${escapeHtml(member.email || 'Головний доступ')}</span></div>
         <span class="role-badge${member.role.id === 'owner' ? ' owner' : ''}">${escapeHtml(roleName(member.role))}</span>
         <span class="status-badge${member.status === 'suspended' ? ' suspended' : ''}">${member.status === 'suspended' ? 'Призупинено' : 'Активний'}</span>
         ${rowActions(member)}
@@ -133,7 +158,7 @@
     auditList.innerHTML = state.audit.map(entry => `
       <article class="audit-row">
         <span class="audit-marker"></span>
-        <div><strong>${escapeHtml(entry.actorEmail)} ${escapeHtml(actionLabels[entry.action] || entry.action)}</strong><p>${entry.targetEmail ? `Для: ${escapeHtml(entry.targetEmail)}` : ''}${entry.detail ? `${entry.targetEmail ? ' · ' : ''}${escapeHtml(entry.detail)}` : ''}</p></div>
+        <div><strong>${escapeHtml(entry.actor)} ${escapeHtml(actionLabels[entry.action] || entry.action)}</strong><p>${entry.target ? `Для: ${escapeHtml(entry.target)}` : ''}${entry.detail ? `${entry.target ? ' · ' : ''}${escapeHtml(entry.detail)}` : ''}</p></div>
         <time datetime="${new Date(Number(entry.at) || 0).toISOString()}">${escapeHtml(formatTime(entry.at))}</time>
       </article>`).join('')
   }
@@ -146,7 +171,14 @@
     renderAudit()
   }
 
-  async function load() {
+  function renderInvite(invite) {
+    if (!invite?.url) return
+    $('#inviteUrl').value = invite.url
+    $('#inviteExpiry').textContent = `Дійсне до ${formatTime(invite.expiresAt)} · після активації стане недійсним.`
+    $('#inviteResult').classList.remove('hidden')
+  }
+
+  async function load({ quiet = false } = {}) {
     setNotice('')
     refreshButton.disabled = true
     setHeader('Оновлення…')
@@ -158,18 +190,13 @@
       state.assignableRoles = team.assignableRoles || me.assignableRoles || []
       state.audit = audit.audit || []
       renderAll()
-      setHeader('Захищене з’єднання', 'ready')
+      showPanel()
+      setHeader('Захищена сесія', 'ready')
     } catch (error) {
-      setHeader('Доступ не підтверджено', 'error')
-      setNotice(error.message.includes('Cloudflare Access')
-        ? 'Cloudflare Access не підтвердив твою особу. Увійди через Access і перевір, що для /api/admin/* створено політику доступу.'
-        : error.message)
       state.roles = []
       state.assignableRoles = []
-      renderRoleSelect()
-      teamList.innerHTML = '<p class="empty-line">Команда доступна лише після підтвердження прав.</p>'
-      auditList.innerHTML = '<p class="empty-line">Журнал доступний лише після підтвердження прав.</p>'
-      showToast(error.message, 'error')
+      showGate()
+      if (error.status !== 401 && !quiet) showToast(error.message, 'error')
     } finally {
       refreshButton.disabled = false
     }
@@ -183,9 +210,11 @@
       state.audit = data.audit || state.audit
       state.assignableRoles = data.assignableRoles || state.assignableRoles
       renderAll()
+      renderInvite(data.invite)
       showToast(successMessage)
       return true
     } catch (error) {
+      if (error.status === 401) showGate()
       showToast(error.message, 'error')
       return false
     } finally {
@@ -193,15 +222,47 @@
     }
   }
 
-  form.addEventListener('submit', async event => {
+  $('#ownerLoginForm').addEventListener('submit', async event => {
+    event.preventDefault()
+    const button = $('#ownerLoginButton')
+    const password = $('#ownerPassword').value
+    if (!password) return
+    button.disabled = true
+    try {
+      await api('/api/admin/login', { method: 'POST', body: JSON.stringify({ password }) })
+      $('#ownerPassword').value = ''
+      await load({ quiet: true })
+    } catch (error) {
+      showToast(error.message, 'error')
+    } finally {
+      button.disabled = false
+    }
+  })
+
+  $('#activateInviteButton').addEventListener('click', async () => {
+    const button = $('#activateInviteButton')
+    button.disabled = true
+    try {
+      await api('/api/admin/activate-invite', { method: 'POST', body: JSON.stringify({ invite: inviteCode }) })
+      window.history.replaceState({}, document.title, '/admin')
+      inviteCode = ''
+      await load({ quiet: true })
+    } catch (error) {
+      showToast(error.message, 'error')
+    } finally {
+      button.disabled = false
+    }
+  })
+
+  memberForm.addEventListener('submit', async event => {
     event.preventDefault()
     const email = $('#memberEmail').value.trim()
     const role = roleSelect.value
     const name = $('#memberName').value.trim()
     if (!email || !role) return
-    const saved = await mutateMember({ action: 'grant', email, role, name }, 'Роль збережено. Не забудь дозволити цю пошту в Cloudflare Access.')
+    const saved = await mutateMember({ action: 'grant', email, role, name }, 'Запрошення створено. Скопіюй посилання та передай його людині.')
     if (saved) {
-      form.reset()
+      memberForm.reset()
       renderRoleSelect()
     }
   })
@@ -218,6 +279,29 @@
     await mutateMember({ action, email }, `Дію виконано: ${label}.`)
   })
 
-  refreshButton.addEventListener('click', load)
-  load()
+  $('#copyInviteButton').addEventListener('click', async () => {
+    const input = $('#inviteUrl')
+    try {
+      await navigator.clipboard.writeText(input.value)
+    } catch {
+      input.focus()
+      input.select()
+      document.execCommand('copy')
+    }
+    showToast('Одноразове посилання скопійовано.')
+  })
+
+  logoutButton.addEventListener('click', async () => {
+    try { await api('/api/admin/logout', { method: 'POST', body: '{}' }) } catch {}
+    state.me = null
+    state.members = []
+    state.roles = []
+    state.assignableRoles = []
+    state.audit = []
+    showGate()
+  })
+
+  refreshButton.addEventListener('click', () => load({ quiet: false }))
+  showGate()
+  load({ quiet: true })
 })()

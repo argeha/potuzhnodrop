@@ -51,6 +51,13 @@ const COMMUNITY_MAX_EVENTS = 24
 const ADMIN_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const ADMIN_MAX_MEMBERS = 200
 const ADMIN_MAX_AUDIT_EVENTS = 500
+const ADMIN_MAX_SESSIONS = 600
+const ADMIN_MAX_INVITES = 200
+const ADMIN_OWNER_SUBJECT = 'owner'
+const ADMIN_SESSION_COOKIE = 'potuzhno_admin_session'
+const ADMIN_SESSION_TTL = 14 * 24 * 60 * 60_000
+const ADMIN_INVITE_TTL = 24 * 60 * 60_000
+const ADMIN_TOKEN = /^[a-f0-9]{64}$/i
 const ADMIN_ROLES = Object.freeze({
   owner: {
     label: 'Власник',
@@ -96,6 +103,7 @@ const RATE_LIMITS = {
   catalog: { limit: 20, windowMs: 60_000 },
   presence: { limit: 12, windowMs: 60_000 },
   community: { limit: 24, windowMs: 60_000 },
+  adminLogin: { limit: 8, windowMs: 10 * 60_000 },
   admin: { limit: 60, windowMs: 60_000 },
   api: { limit: 120, windowMs: 60_000 },
 }
@@ -282,6 +290,19 @@ function sessionCookie(name, value, maxAge, secure) {
   return `${name}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`
 }
 
+function adminSessionToken(value) {
+  const token = String(value || '')
+  return ADMIN_TOKEN.test(token) ? token.toLowerCase() : ''
+}
+
+function adminSessionCookie(value, maxAge, secure) {
+  return `${ADMIN_SESSION_COOKIE}=${value}; Path=/api/admin; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`
+}
+
+function hasAdminOwnerPassword(env) {
+  return typeof env?.ADMIN_OWNER_PASSWORD === 'string' && env.ADMIN_OWNER_PASSWORD.length >= 24
+}
+
 function steamSessionToken(value) {
   const session = String(value || '')
   const match = session.match(new RegExp(`^${STEAM_SESSION_VERSION}_([a-f0-9]{64})$`, 'i'))
@@ -291,6 +312,7 @@ function steamSessionToken(value) {
 }
 
 function rateLimitGroup(path) {
+  if (path === '/api/admin/login' || path === '/api/admin/activate-invite') return 'adminLogin'
   if (path.startsWith('/api/admin/')) return 'admin'
   if (path === '/api/profile/sync') return 'profile'
   if (path === '/api/public-profile' || path === '/api/public-avatar') return 'publicProfile'
@@ -442,6 +464,7 @@ function normalizeAdminMember(value, email, now) {
   const role = Object.hasOwn(ADMIN_ROLES, value?.role) && value.role !== 'owner' ? value.role : 'support'
   const status = value?.status === 'suspended' ? 'suspended' : 'active'
   return {
+    id: email,
     email,
     name: cleanText(value?.name, 48),
     role,
@@ -454,39 +477,75 @@ function normalizeAdminMember(value, email, now) {
 
 function normalizeAdminAuditEntry(value, now) {
   const action = cleanText(value?.action, 48)
-  const actorEmail = cleanEmail(value?.actorEmail)
-  if (!action || !actorEmail) return null
+  const actor = cleanText(value?.actor || value?.actorEmail, 48)
+  if (!action || !actor) return null
   return {
     id: cleanText(value?.id, 48) || randomHex(12),
     at: boundedInteger(value?.at, 0, now, now),
-    actorEmail,
+    actor,
     action,
-    targetEmail: cleanEmail(value?.targetEmail),
+    target: cleanText(value?.target || value?.targetEmail, 96),
     detail: cleanText(value?.detail, 160),
   }
 }
 
-function normalizeAdminState(value, ownerEmail, now) {
+function normalizeAdminState(value, now) {
   const rawMembers = value?.members && typeof value.members === 'object' && !Array.isArray(value.members) ? value.members : {}
   const members = Object.entries(rawMembers)
     .map(([rawEmail, member]) => {
       const email = cleanEmail(rawEmail)
-      return email && email !== ownerEmail ? [email, normalizeAdminMember(member, email, now)] : null
+      return email ? [email, normalizeAdminMember(member, email, now)] : null
     })
     .filter(Boolean)
     .sort(([, left], [, right]) => right.updatedAt - left.updatedAt)
     .slice(0, ADMIN_MAX_MEMBERS)
+  const memberMap = Object.fromEntries(members)
+  const rawSessions = value?.sessions && typeof value.sessions === 'object' && !Array.isArray(value.sessions) ? value.sessions : {}
+  const sessions = Object.entries(rawSessions)
+    .map(([hash, session]) => {
+      const tokenHash = /^[a-f0-9]{64}$/i.test(hash) ? hash.toLowerCase() : ''
+      const subject = cleanText(session?.subject, 254)
+      const expiresAt = boundedInteger(session?.expiresAt, 0, now + ADMIN_SESSION_TTL, 0)
+      if (!tokenHash || !subject || expiresAt <= now || (subject !== ADMIN_OWNER_SUBJECT && !memberMap[subject])) return null
+      return [tokenHash, {
+        subject,
+        createdAt: boundedInteger(session?.createdAt, 0, now, now),
+        expiresAt,
+      }]
+    })
+    .filter(Boolean)
+    .sort(([, left], [, right]) => right.createdAt - left.createdAt)
+    .slice(0, ADMIN_MAX_SESSIONS)
+  const rawInvites = Array.isArray(value?.invites) ? value.invites : []
+  const invites = rawInvites
+    .map(invite => {
+      const tokenHash = /^[a-f0-9]{64}$/i.test(invite?.tokenHash) ? invite.tokenHash.toLowerCase() : ''
+      const targetEmail = cleanEmail(invite?.targetEmail)
+      const expiresAt = boundedInteger(invite?.expiresAt, 0, now + ADMIN_INVITE_TTL, 0)
+      if (!tokenHash || !targetEmail || !memberMap[targetEmail] || expiresAt <= now) return null
+      return {
+        id: cleanText(invite?.id, 48) || randomHex(12),
+        tokenHash,
+        targetEmail,
+        createdAt: boundedInteger(invite?.createdAt, 0, now, now),
+        expiresAt,
+        createdBy: cleanText(invite?.createdBy, 48),
+      }
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.createdAt - left.createdAt)
+    .slice(0, ADMIN_MAX_INVITES)
   const audit = (Array.isArray(value?.audit) ? value.audit : [])
     .map(entry => normalizeAdminAuditEntry(entry, now))
     .filter(Boolean)
     .sort((left, right) => right.at - left.at)
     .slice(0, ADMIN_MAX_AUDIT_EVENTS)
-  return { version: 1, members: Object.fromEntries(members), audit }
+  return { version: 2, members: memberMap, sessions: Object.fromEntries(sessions), invites, audit }
 }
 
-function adminActorFromState(state, email, ownerEmail) {
-  if (email === ownerEmail) return { email, name: 'Власник', role: 'owner', status: 'active', protected: true }
-  const member = state.members[email]
+function adminActorFromState(state, subject) {
+  if (subject === ADMIN_OWNER_SUBJECT) return { id: ADMIN_OWNER_SUBJECT, email: '', name: 'Власник', role: 'owner', status: 'active', protected: true }
+  const member = state.members[subject]
   if (!member || member.status !== 'active') return null
   return { ...member, protected: false }
 }
@@ -495,14 +554,15 @@ function canAssignAdminRole(actor, role) {
   return Boolean(ADMIN_ASSIGNABLE_ROLES[actor?.role]?.includes(role))
 }
 
-function canManageAdminMember(actor, target, ownerEmail) {
-  if (!actor || !target || target.email === ownerEmail || target.role === 'owner') return false
+function canManageAdminMember(actor, target) {
+  if (!actor || !target || target.role === 'owner') return false
   return canAssignAdminRole(actor, target.role) && adminRoleRank(actor.role) > adminRoleRank(target.role)
 }
 
-function publicAdminMember(member, actor, ownerEmail) {
-  const protectedAccount = member.email === ownerEmail || member.role === 'owner'
+function publicAdminMember(member, actor) {
+  const protectedAccount = member.role === 'owner'
   return {
+    id: member.id || member.email || ADMIN_OWNER_SUBJECT,
     email: member.email,
     name: member.name || '',
     role: adminRoleView(member.role),
@@ -510,18 +570,18 @@ function publicAdminMember(member, actor, ownerEmail) {
     createdAt: member.createdAt || 0,
     updatedAt: member.updatedAt || 0,
     protected: protectedAccount,
-    canManage: !protectedAccount && canManageAdminMember(actor, member, ownerEmail),
-    isCurrent: member.email === actor?.email,
+    canManage: !protectedAccount && canManageAdminMember(actor, member),
+    isCurrent: (member.id || member.email || ADMIN_OWNER_SUBJECT) === actor?.id,
   }
 }
 
-function adminSnapshot(state, actor, ownerEmail) {
-  const owner = { email: ownerEmail, name: 'Власник', role: 'owner', status: 'active', createdAt: 0, updatedAt: 0 }
+function adminSnapshot(state, actor) {
+  const owner = { id: ADMIN_OWNER_SUBJECT, email: '', name: 'Власник', role: 'owner', status: 'active', createdAt: 0, updatedAt: 0 }
   const members = [owner, ...Object.values(state.members)]
-    .sort((left, right) => adminRoleRank(right.role) - adminRoleRank(left.role) || left.email.localeCompare(right.email))
-    .map(member => publicAdminMember(member, actor, ownerEmail))
+    .sort((left, right) => adminRoleRank(right.role) - adminRoleRank(left.role) || (left.name || left.email).localeCompare(right.name || right.email))
+    .map(member => publicAdminMember(member, actor))
   return {
-    me: publicAdminMember(actor, actor, ownerEmail),
+    me: publicAdminMember(actor, actor),
     members,
     roles: Object.entries(ADMIN_ROLES).map(([id]) => adminRoleView(id)),
     assignableRoles: ADMIN_ASSIGNABLE_ROLES[actor.role] || [],
@@ -531,6 +591,10 @@ function adminSnapshot(state, actor, ownerEmail) {
 
 function adminForbidden(message = 'Недостатньо прав для цієї дії.') {
   return json({ error: message }, 403)
+}
+
+function adminUnauthenticated(message = 'Увійди до адмін-панелі.') {
+  return json({ error: message }, 401)
 }
 
 function cleanMatchState(state, now) {
@@ -1354,16 +1418,20 @@ export class PotuzhnoAdmin {
 
   async fetch(request) {
     const path = new URL(request.url).pathname
-    const ownerEmail = cleanEmail(this.env.OWNER_EMAIL)
-    const actorEmail = cleanEmail(request.headers.get('X-Potuzhno-Admin-Actor'))
-    if (!ownerEmail) return json({ error: 'Адмін-панель ще не налаштована.' }, 503)
-    if (!actorEmail) return adminForbidden('Потрібне підтвердження через Cloudflare Access.')
+    if (!hasAdminOwnerPassword(this.env)) return json({ error: 'Адмін-панель ще не налаштована: додай секрет ADMIN_OWNER_PASSWORD.' }, 503)
 
     try {
-      if (path === '/api/admin/me' && request.method === 'GET') return await this.me(actorEmail, ownerEmail)
-      if (path === '/api/admin/team' && request.method === 'GET') return await this.team(actorEmail, ownerEmail)
-      if (path === '/api/admin/audit' && request.method === 'GET') return await this.audit(actorEmail, ownerEmail)
-      if (path === '/api/admin/members' && request.method === 'POST') return await this.members(request, actorEmail, ownerEmail)
+      if (path === '/api/admin/login' && request.method === 'POST') return await this.login(request)
+      if (path === '/api/admin/activate-invite' && request.method === 'POST') return await this.activateInvite(request)
+      if (path === '/api/admin/logout' && request.method === 'POST') return await this.logout(request)
+
+      const state = normalizeAdminState(await this.storage.get('admin:state'), Date.now())
+      const actor = await this.actorForRequest(request, state)
+      if (!actor) return adminUnauthenticated('Увійди паролем власника або активуй одноразове запрошення.')
+      if (path === '/api/admin/me' && request.method === 'GET') return this.me(actor)
+      if (path === '/api/admin/team' && request.method === 'GET') return this.team(state, actor)
+      if (path === '/api/admin/audit' && request.method === 'GET') return this.audit(state, actor)
+      if (path === '/api/admin/members' && request.method === 'POST') return await this.members(request)
       return json({ error: 'Маршрут адмін-панелі не знайдено.' }, 404)
     } catch (error) {
       console.error('Admin API error', path, error)
@@ -1377,38 +1445,122 @@ export class PotuzhnoAdmin {
     return JSON.parse(raw)
   }
 
-  async withActor(actorEmail, ownerEmail, callback) {
-    const now = Date.now()
-    const state = normalizeAdminState(await this.storage.get('admin:state'), ownerEmail, now)
-    const actor = adminActorFromState(state, actorEmail, ownerEmail)
-    if (!actor) return adminForbidden('Твій доступ до адмін-панелі відсутній або призупинений.')
-    return callback(state, actor, now)
+  sessionHeaders(request, token, maxAge) {
+    return { 'Set-Cookie': adminSessionCookie(token, maxAge, new URL(request.url).protocol === 'https:') }
   }
 
-  async me(actorEmail, ownerEmail) {
-    return this.withActor(actorEmail, ownerEmail, (state, actor) => json({
-      me: publicAdminMember(actor, actor, ownerEmail),
+  async createSession(state, subject, now) {
+    const token = randomHex(32)
+    const tokenHash = await sha256(token)
+    state.sessions[tokenHash] = { subject, createdAt: now, expiresAt: now + ADMIN_SESSION_TTL }
+    const entries = Object.entries(state.sessions)
+      .sort(([, left], [, right]) => right.createdAt - left.createdAt)
+      .slice(0, ADMIN_MAX_SESSIONS)
+    state.sessions = Object.fromEntries(entries)
+    return token
+  }
+
+  async actorForRequest(request, state) {
+    const token = adminSessionToken(readCookie(request, ADMIN_SESSION_COOKIE))
+    if (!token) return null
+    const session = state.sessions[await sha256(token)]
+    if (!session || session.expiresAt <= Date.now()) return null
+    return adminActorFromState(state, session.subject)
+  }
+
+  removeSessionsForSubject(state, subject) {
+    state.sessions = Object.fromEntries(Object.entries(state.sessions).filter(([, session]) => session.subject !== subject))
+  }
+
+  me(actor) {
+    return json({
+      me: publicAdminMember(actor, actor),
       roles: Object.entries(ADMIN_ROLES).map(([id]) => adminRoleView(id)),
       assignableRoles: ADMIN_ASSIGNABLE_ROLES[actor.role] || [],
       protectedOwner: true,
-    }))
-  }
-
-  async team(actorEmail, ownerEmail) {
-    return this.withActor(actorEmail, ownerEmail, (state, actor) => {
-      const snapshot = adminSnapshot(state, actor, ownerEmail)
-      return json({ members: snapshot.members, roles: snapshot.roles, assignableRoles: snapshot.assignableRoles })
     })
   }
 
-  async audit(actorEmail, ownerEmail) {
-    return this.withActor(actorEmail, ownerEmail, (state, actor) => json({
-      audit: state.audit.slice(0, 160),
-      canView: Boolean(actor),
-    }))
+  team(state, actor) {
+    const snapshot = adminSnapshot(state, actor)
+    return json({ members: snapshot.members, roles: snapshot.roles, assignableRoles: snapshot.assignableRoles })
   }
 
-  async members(request, actorEmail, ownerEmail) {
+  audit(state, actor) {
+    return json({
+      audit: state.audit.slice(0, 160),
+      canView: Boolean(actor),
+    })
+  }
+
+  async login(request) {
+    let body
+    try {
+      body = await this.readBody(request)
+    } catch (error) {
+      return json({ error: error instanceof RangeError ? error.message : 'Некоректний запит.' }, error instanceof RangeError ? 413 : 400)
+    }
+    const password = String(body?.password ?? '')
+    if (!equalHash(password, this.env.ADMIN_OWNER_PASSWORD)) return adminUnauthenticated('Неправильний пароль власника.')
+
+    const result = await this.storage.transaction(async transaction => {
+      const now = Date.now()
+      const state = normalizeAdminState(await transaction.get('admin:state'), now)
+      const token = await this.createSession(state, ADMIN_OWNER_SUBJECT, now)
+      await transaction.put('admin:state', state)
+      return token
+    })
+    return json({ authenticated: true }, 200, this.sessionHeaders(request, result, Math.floor(ADMIN_SESSION_TTL / 1000)))
+  }
+
+  async activateInvite(request) {
+    let body
+    try {
+      body = await this.readBody(request)
+    } catch (error) {
+      return json({ error: error instanceof RangeError ? error.message : 'Некоректний запит.' }, error instanceof RangeError ? 413 : 400)
+    }
+    const inviteToken = adminSessionToken(body?.invite)
+    if (!inviteToken) return json({ error: 'Запрошення некоректне або вже недійсне.' }, 400)
+
+    const result = await this.storage.transaction(async transaction => {
+      const now = Date.now()
+      const state = normalizeAdminState(await transaction.get('admin:state'), now)
+      const tokenHash = await sha256(inviteToken)
+      const invite = state.invites.find(entry => entry.tokenHash === tokenHash)
+      const member = invite ? state.members[invite.targetEmail] : null
+      if (!invite || !member || member.status !== 'active') return { response: adminUnauthenticated('Запрошення недійсне, використане або доступ призупинений.') }
+      state.invites = state.invites.filter(entry => entry.tokenHash !== tokenHash)
+      const token = await this.createSession(state, member.id, now)
+      state.audit.unshift({
+        id: randomHex(12),
+        at: now,
+        actor: member.name || member.email,
+        action: 'invite_accepted',
+        target: member.email,
+        detail: adminRoleView(member.role).label,
+      })
+      state.audit = state.audit.slice(0, ADMIN_MAX_AUDIT_EVENTS)
+      await transaction.put('admin:state', state)
+      return { response: json({ activated: true }, 200, this.sessionHeaders(request, token, Math.floor(ADMIN_SESSION_TTL / 1000))) }
+    })
+    return result.response
+  }
+
+  async logout(request) {
+    const token = adminSessionToken(readCookie(request, ADMIN_SESSION_COOKIE))
+    if (token) {
+      await this.storage.transaction(async transaction => {
+        const now = Date.now()
+        const state = normalizeAdminState(await transaction.get('admin:state'), now)
+        delete state.sessions[await sha256(token)]
+        await transaction.put('admin:state', state)
+      })
+    }
+    return json({ loggedOut: true }, 200, this.sessionHeaders(request, '', 0))
+  }
+
+  async members(request) {
     let body
     try {
       body = await this.readBody(request)
@@ -1417,24 +1569,22 @@ export class PotuzhnoAdmin {
     }
     const action = cleanText(body?.action, 24)
     const targetEmail = cleanEmail(body?.email)
-    if (!['grant', 'suspend', 'activate', 'revoke'].includes(action) || !targetEmail) {
-      return json({ error: 'Некоректна дія з доступом.' }, 400)
-    }
-    if (targetEmail === ownerEmail) return adminForbidden('Обліковий запис власника захищений і не змінюється через панель.')
+    if (!['grant', 'suspend', 'activate', 'revoke'].includes(action) || !targetEmail) return json({ error: 'Некоректна дія з доступом.' }, 400)
 
     const result = await this.storage.transaction(async transaction => {
       const now = Date.now()
-      const state = normalizeAdminState(await transaction.get('admin:state'), ownerEmail, now)
-      const actor = adminActorFromState(state, actorEmail, ownerEmail)
-      if (!actor) return { response: adminForbidden('Твій доступ до адмін-панелі відсутній або призупинений.') }
+      const state = normalizeAdminState(await transaction.get('admin:state'), now)
+      const actor = await this.actorForRequest(request, state)
+      if (!actor) return { response: adminUnauthenticated('Твоя сесія завершилася. Увійди знову.') }
       const existing = state.members[targetEmail]
+      let invite = null
 
       if (action === 'grant') {
         const role = cleanText(body?.role, 24)
         if (!Object.hasOwn(ADMIN_ROLES, role) || role === 'owner' || !canAssignAdminRole(actor, role)) {
           return { response: adminForbidden('Цю роль ти не можеш призначати.') }
         }
-        if (existing && !canManageAdminMember(actor, existing, ownerEmail)) {
+        if (existing && !canManageAdminMember(actor, existing)) {
           return { response: adminForbidden('Ти не можеш змінювати цього учасника.') }
         }
         if (!existing && Object.keys(state.members).length >= ADMIN_MAX_MEMBERS) {
@@ -1443,50 +1593,64 @@ export class PotuzhnoAdmin {
         const name = cleanText(body?.name, 48)
         state.members[targetEmail] = {
           email: targetEmail,
+          id: targetEmail,
           name: name || existing?.name || '',
           role,
           status: 'active',
           createdAt: existing?.createdAt || now,
           updatedAt: now,
-          updatedBy: actor.email,
+          updatedBy: actor.id,
         }
+        const inviteToken = randomHex(32)
+        invite = {
+          id: randomHex(12),
+          tokenHash: await sha256(inviteToken),
+          targetEmail,
+          createdAt: now,
+          expiresAt: now + ADMIN_INVITE_TTL,
+          createdBy: actor.name,
+          url: new URL(`/admin?invite=${inviteToken}`, request.url).href,
+        }
+        state.invites = [{ ...invite, url: undefined }, ...state.invites.filter(entry => entry.targetEmail !== targetEmail)].slice(0, ADMIN_MAX_INVITES)
         state.audit.unshift({
           id: randomHex(12),
           at: now,
-          actorEmail: actor.email,
+          actor: actor.name,
           action: existing ? 'role_updated' : 'access_granted',
-          targetEmail,
+          target: targetEmail,
           detail: `${adminRoleView(role).label}${name ? ` · ${name}` : ''}`,
         })
       } else {
-        if (!existing || !canManageAdminMember(actor, existing, ownerEmail)) {
+        if (!existing || !canManageAdminMember(actor, existing)) {
           return { response: adminForbidden('Ти не можеш змінювати цього учасника.') }
         }
         if (action === 'revoke') {
           delete state.members[targetEmail]
+          state.invites = state.invites.filter(entry => entry.targetEmail !== targetEmail)
         } else {
           state.members[targetEmail] = {
             ...existing,
             status: action === 'suspend' ? 'suspended' : 'active',
             updatedAt: now,
-            updatedBy: actor.email,
+            updatedBy: actor.id,
           }
         }
+        if (action === 'suspend' || action === 'revoke') this.removeSessionsForSubject(state, targetEmail)
         state.audit.unshift({
           id: randomHex(12),
           at: now,
-          actorEmail: actor.email,
+          actor: actor.name,
           action: action === 'revoke' ? 'access_revoked' : action === 'suspend' ? 'access_suspended' : 'access_activated',
-          targetEmail,
+          target: targetEmail,
           detail: existing.name || adminRoleView(existing.role).label,
         })
       }
 
       state.audit = state.audit.slice(0, ADMIN_MAX_AUDIT_EVENTS)
       await transaction.put('admin:state', state)
-      const updatedActor = adminActorFromState(state, actorEmail, ownerEmail)
-      const snapshot = adminSnapshot(state, updatedActor, ownerEmail)
-      return { response: json({ ok: true, members: snapshot.members, audit: snapshot.audit, assignableRoles: snapshot.assignableRoles }) }
+      const updatedActor = await this.actorForRequest(request, state)
+      const snapshot = adminSnapshot(state, updatedActor)
+      return { response: json({ ok: true, members: snapshot.members, audit: snapshot.audit, assignableRoles: snapshot.assignableRoles, invite: invite ? { url: invite.url, expiresAt: invite.expiresAt, target: invite.targetEmail } : null }) }
     })
     return result.response
   }
@@ -1589,33 +1753,13 @@ async function stateForRequest(request, env, path) {
   return env.POTUZHNO_STATE.get(env.POTUZHNO_STATE.idFromName(name))
 }
 
-async function cloudflareAccessEmail(ctx) {
-  if (!ctx?.access?.getIdentity) return ''
-  try {
-    const identity = await ctx.access.getIdentity()
-    return cleanEmail(identity?.email)
-  } catch {
-    return ''
-  }
-}
-
-async function adminResponse(request, env, ctx) {
-  const ownerEmail = cleanEmail(env.OWNER_EMAIL)
-  if (!ownerEmail) return json({ error: 'Адмін-панель ще не налаштована: відсутній секрет OWNER_EMAIL.' }, 503)
-  const actorEmail = await cloudflareAccessEmail(ctx)
-  if (!actorEmail) return adminForbidden('Увійди через Cloudflare Access, щоб відкрити адмін-панель.')
-
-  const headers = new Headers(request.headers)
-  // This request is created inside the Worker and the Durable Object has no
-  // public route. Never read an identity from a browser-provided header.
-  headers.set('X-Potuzhno-Admin-Actor', actorEmail)
-  headers.set('X-Potuzhno-Admin-Request-Id', randomHex(12))
+async function adminResponse(request, env) {
   const admin = env.POTUZHNO_ADMIN.get(env.POTUZHNO_ADMIN.idFromName('admin:global'))
-  return admin.fetch(new Request(request, { headers }))
+  return admin.fetch(request)
 }
 
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, env) {
     const url = new URL(request.url)
     const path = url.pathname
     if (path === '/admin' || path === '/admin/') {
@@ -1636,7 +1780,7 @@ export default {
       }
       const limited = await rateLimitResponse(request, env, path)
       if (limited) return limited
-      if (path.startsWith('/api/admin/')) return adminResponse(request, env, ctx)
+      if (path.startsWith('/api/admin/')) return adminResponse(request, env)
       return (await stateForRequest(request, env, path)).fetch(request)
     }
     return env.ASSETS.fetch(request)
