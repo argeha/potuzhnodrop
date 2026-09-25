@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="/css/tailwind.css?v=5.8.5">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/css/admin.css?v=4">
+<link rel="stylesheet" href="/css/admin.css?v=5">
 </head>
 <body>
 <div class="admin-shell">
@@ -121,6 +121,13 @@
             <button id="unblockPlayerButton" class="small-button hidden" type="button"><i class="fa-solid fa-unlock"></i> Зняти блокування</button>
             <p class="form-hint"><i class="fa-solid fa-circle-info"></i> Причина буде показана гравцю. Зняття блокування також фіксується в журналі.</p>
           </form>
+          <section class="game-card visibility-card hidden" id="visibilityPanel">
+            <div class="form-heading"><i class="fa-solid fa-eye-slash"></i><span>Видимість на сайті</span></div>
+            <div id="visibilityState" class="visibility-state">Профіль видно на сайті</div>
+            <button id="hideFromSiteButton" class="primary-button" type="button"><i class="fa-solid fa-eye-slash"></i> Приховати з сайту</button>
+            <button id="showOnSiteButton" class="small-button hidden" type="button"><i class="fa-solid fa-eye"></i> Повернути на сайт</button>
+            <p class="form-hint"><i class="fa-solid fa-flask"></i> Профіль зникне з рейтингу й live-стрічки, але залишиться доступним у цій адмінці для тестів.</p>
+          </section>
         </div>
         <section class="skin-manager" aria-labelledby="skinManagerTitle">
           <div class="section-head"><div><p class="eyebrow">ІНВЕНТАР</p><h3 id="skinManagerTitle">Скіни</h3></div><span id="inventoryCount" class="count-pill">—</span></div>
@@ -161,6 +168,6 @@
   </main>
 </div>
 <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
-<script src="/js/admin.js?v=4" defer></script>
+<script src="/js/admin.js?v=5" defer></script>
 </body>
 </html>

@@ -398,6 +398,7 @@ function normalizeCommunityPlayer(value, visitorHash, now) {
     inventoryTotal: boundedInteger(value?.inventoryTotal, 0, ADMIN_GAME_MAX_INVENTORY),
     level: boundedInteger(value?.level, 1, 9_999),
     prestige: boundedInteger(value?.prestige, 0, 99),
+    hidden: value?.hidden === true,
     updatedAt: now,
   }
 }
@@ -448,6 +449,7 @@ function normalizeCommunityState(value, now) {
 
 function communityResponse(state, visitorHash) {
   const rows = Object.values(state.players)
+    .filter(player => player.hidden !== true)
     .sort((left, right) => right.xp - left.xp || right.wins - left.wins || right.collectionValue - left.collectionValue || right.updatedAt - left.updatedAt)
   const leaderboard = rows.slice(0, 12).map((player, index) => ({
     rank: index + 1,
@@ -462,7 +464,8 @@ function communityResponse(state, visitorHash) {
     isMe: player.id === visitorHash,
   }))
   const ownRank = rows.findIndex(player => player.id === visitorHash) + 1
-  return { season: state.season, leaderboard, rank: ownRank || null, events: state.events }
+  const events = state.events.filter(event => state.players[event.playerId]?.hidden !== true)
+  return { season: state.season, leaderboard, rank: ownRank || null, events }
 }
 
 function adminRoleRank(role) {
@@ -486,7 +489,7 @@ function canRunAdminGameOperation(actor, operation) {
   const capabilities = adminGameCapabilities(actor)
   if (!capabilities.read) return false
   if (['pc_add', 'xp_add', 'level_add', 'tickets_add', 'pass_xp_add', 'premium_enable', 'skin_grant'].includes(operation)) return capabilities.grant
-  if (['pc_set', 'xp_set', 'level_set', 'tickets_set', 'pass_xp_set', 'premium_disable', 'prestige_set'].includes(operation)) return capabilities.configure
+  if (['pc_set', 'xp_set', 'level_set', 'tickets_set', 'pass_xp_set', 'premium_disable', 'prestige_set', 'site_hide', 'site_show'].includes(operation)) return capabilities.configure
   if (operation === 'skin_remove') return capabilities.inventory
   if (operation === 'block' || operation === 'unblock') return capabilities.moderate
   return false
@@ -497,6 +500,13 @@ function adminProfileModeration(value, now = Date.now()) {
   return {
     blocked,
     reason: blocked ? cleanText(value?.reason, ADMIN_GAME_BLOCK_REASON_MAX) || 'Доступ до гри тимчасово обмежено адміністрацією.' : '',
+    updatedAt: boundedInteger(value?.updatedAt, 0, Number.MAX_SAFE_INTEGER, now),
+  }
+}
+
+function adminProfileVisibility(value, now = Date.now()) {
+  return {
+    hidden: value?.hidden === true,
     updatedAt: boundedInteger(value?.updatedAt, 0, Number.MAX_SAFE_INTEGER, now),
   }
 }
@@ -545,6 +555,7 @@ function adminProfileSummary(accountId, entry) {
       premium: pass.premium === true,
     },
     moderation: adminProfileModeration(payload.moderation, entry.updatedAt),
+    visibility: adminProfileVisibility(payload.visibility, entry.updatedAt),
     inventoryTotal: safeItems.length,
     inventory: safeItems.sort((left, right) => right.addedAt - left.addedAt).slice(0, 60),
   }
@@ -567,6 +578,7 @@ function adminPlayerDirectoryEntry(accountId, entry) {
     firstSeenAt: summary.updatedAt,
     updatedAt: summary.updatedAt,
     blocked: summary.moderation.blocked,
+    hidden: summary.visibility.hidden,
   }
 }
 
@@ -610,6 +622,7 @@ function normalizeAdminPlayerDirectoryEntry(value) {
     firstSeenAt,
     updatedAt,
     blocked: value?.blocked === true,
+    hidden: value?.hidden === true,
   }
 }
 
@@ -832,9 +845,11 @@ export class PotuzhnoState {
       if (path === '/__internal/steam-session') return await this.internalSteamSession(request)
       if (path === '/__internal/migrate-profile') return await this.internalProfileMigration(request)
       if (path === '/__internal/migrate-public-profile') return await this.internalPublicProfileMigration(request)
+      if (path === '/__internal/profile-visibility') return await this.internalProfileVisibility(request)
       if (path === '/__internal/admin-profile') return await this.internalAdminProfile(request)
       if (path === '/__internal/admin-player-directory') return await this.internalAdminPlayerDirectory(request)
       if (path === '/__internal/admin-community-players') return await this.internalCommunityPlayers(request)
+      if (path === '/__internal/community-visibility') return await this.internalCommunityVisibility(request)
       if (path === '/api/profile/sync') return await this.profile(request)
       if (path === '/api/public-profile') return await this.publicProfile(request)
       if (path === '/api/public-avatar') return await this.publicAvatar(request)
@@ -1019,6 +1034,12 @@ export class PotuzhnoState {
       } else if (operation === 'unblock') {
         next.moderation = { blocked: false, reason: '', updatedAt: Date.now() }
         detail = 'блокування знято'
+      } else if (operation === 'site_hide') {
+        next.visibility = { hidden: true, updatedAt: Date.now() }
+        detail = 'профіль приховано з публічних рейтингів і live-стрічки'
+      } else if (operation === 'site_show') {
+        next.visibility = { hidden: false, updatedAt: Date.now() }
+        detail = 'профіль повернуто на сайт'
       } else if (operation === 'skin_grant') {
         const skin = adminCatalogSkin(body?.skin)
         if (!skin) return { error: 'Вибраний скін недоступний у каталозі.', status: 400 }
@@ -1070,6 +1091,20 @@ export class PotuzhnoState {
     return json({ player: result.player, detail: result.detail })
   }
 
+  async internalProfileVisibility(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request, 4_096)
+    } catch {
+      return json({ error: 'Некоректний запит профілю.' }, 400)
+    }
+    const accountId = cleanText(body?.accountId, 64)
+    if (!ID.test(accountId)) return json({ error: 'Некоректний Cloud Profile ID.' }, 400)
+    const entry = await this.storage.get(`profile:${accountId}`)
+    return json({ hidden: adminProfileVisibility(entry?.payload?.visibility, entry?.updatedAt).hidden })
+  }
+
   async internalAdminPlayerDirectory(request) {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
     let body
@@ -1107,6 +1142,7 @@ export class PotuzhnoState {
           // Community heartbeats do not know a player's moderation status, so
           // they must never accidentally clear a block written by the admin.
           blocked: typeof body?.player?.blocked === 'boolean' ? player.blocked : previous?.blocked === true,
+          hidden: typeof body?.player?.hidden === 'boolean' ? player.hidden : previous?.hidden === true,
           firstSeenAt: knownFirstSeen.length ? Math.min(...knownFirstSeen, player.firstSeenAt || Number.MAX_SAFE_INTEGER) : player.firstSeenAt,
           updatedAt: Math.max(Number(previous?.updatedAt || 0), Number(player.updatedAt || 0)),
         })
@@ -1136,6 +1172,27 @@ export class PotuzhnoState {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
     const state = normalizeCommunityState(await this.storage.get('community:season'), Date.now())
     return json({ players: Object.values(state.players).slice(0, COMMUNITY_MAX_PLAYERS) })
+  }
+
+  async internalCommunityVisibility(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request, 4_096)
+    } catch {
+      return json({ error: 'Некоректний запит видимості.' }, 400)
+    }
+    const accountId = cleanText(body?.accountId, 64)
+    if (!ID.test(accountId) || typeof body?.hidden !== 'boolean') return json({ error: 'Некоректні дані видимості.' }, 400)
+    const now = Date.now()
+    await this.storage.transaction(async transaction => {
+      const state = normalizeCommunityState(await transaction.get('community:season'), now)
+      for (const player of Object.values(state.players)) {
+        if (player.cloudProfileId === accountId) player.hidden = body.hidden
+      }
+      await transaction.put('community:season', state)
+    })
+    return json({ updated: true })
   }
 
   async indexCloudProfile(accountId, entry) {
@@ -1258,6 +1315,7 @@ export class PotuzhnoState {
       if (!current || !equalHash(current.recoveryHash, recoveryHash)) return { error: 'Профіль не знайдено або код відновлення неправильний.', status: 403 }
       if (currentRevision !== expectedRevision) return { error: 'Профіль було змінено в іншій вкладці або на іншому пристрої. Спочатку завантаж актуальну версію.', status: 409, revision: currentRevision }
       const moderation = adminProfileModeration(current.payload?.moderation, Number(current.updatedAt) || Date.now())
+      const visibility = adminProfileVisibility(current.payload?.visibility, Number(current.updatedAt) || Date.now())
       if (moderation.blocked) {
         return {
           error: `Профіль заблоковано. Причина: ${moderation.reason}`,
@@ -1266,7 +1324,7 @@ export class PotuzhnoState {
           status: 423,
         }
       }
-      const payload = { ...body.payload, moderation }
+      const payload = { ...body.payload, moderation, visibility }
       if (!isPayload(payload)) return { error: 'Профіль завеликий після збереження.', status: 413 }
       const updatedAt = Date.now()
       const next = { ...current, version: 2, revision: currentRevision + 1, payload, updatedAt }
@@ -1535,6 +1593,16 @@ export class PotuzhnoState {
     const visitorHash = await sha256(visitorId)
     const player = normalizeCommunityPlayer(body?.player, visitorHash, now)
     if (!player) return json({ error: 'Некоректні дані гравця.' }, 400)
+    if (player.cloudProfileId) {
+      const profile = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(`profile:${player.cloudProfileId}`))
+      try {
+        const visibilityResponse = await profile.fetch(new Request('https://internal/__internal/profile-visibility', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId: player.cloudProfileId }) }))
+        const visibility = await visibilityResponse.json()
+        player.hidden = visibility?.hidden === true
+      } catch {
+        // The public sync must continue when a profile shard is momentarily unavailable.
+      }
+    }
     const rawEvent = body?.event && typeof body.event === 'object'
       ? { ...body.event, playerId: visitorHash, name: player.name, profileId: player.profileId, level: player.level, prestige: player.prestige, at: now }
       : null
@@ -1970,6 +2038,20 @@ export class PotuzhnoAdmin {
     return { ok: response.ok, status: response.status, data: data || {} }
   }
 
+  async setCommunityVisibility(accountId, hidden) {
+    const community = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName('community'))
+    try {
+      await community.fetch(new Request('https://internal/__internal/community-visibility', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountId, hidden }),
+      }))
+    } catch {
+      // The profile change is still authoritative. Future community heartbeats
+      // verify visibility with the profile shard before they enter the ranking.
+    }
+  }
+
   async playerDirectory(query = '') {
     const global = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName('global'))
     const community = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName('community'))
@@ -2097,6 +2179,7 @@ export class PotuzhnoAdmin {
     }
     const response = await this.profileAdminRequest(accountId, payload)
     if (!response.ok) return json({ error: response.data?.error || 'Не вдалося змінити профіль.' }, response.status)
+    if (operation === 'site_hide' || operation === 'site_show') await this.setCommunityVisibility(accountId, operation === 'site_hide')
     await this.recordGameAudit(actor, accountId, operation, response.data.detail || '')
     return json({ ok: true, player: response.data.player, detail: response.data.detail || '' })
   }

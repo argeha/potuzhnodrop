@@ -172,6 +172,10 @@ button { cursor: pointer; }
 .moderation-state { margin-bottom: 11px; padding: 8px 9px; border: 1px solid rgba(74, 222, 128, .25); border-radius: 9px; color: #9af0bd; background: rgba(22, 163, 74, .08); font-size: 10px; font-weight: 800; line-height: 1.4; }
 .moderation-state.is-blocked { border-color: rgba(251, 113, 133, .45); color: #fecdd3; background: rgba(136, 19, 55, .22); }
 .moderation-card .small-button { width: 100%; margin-top: 9px; }
+.visibility-card { border-color: rgba(167, 139, 250, .36); background: rgba(91, 33, 182, .07); }
+.visibility-state { margin-bottom: 11px; padding: 8px 9px; border: 1px solid rgba(34, 211, 238, .25); border-radius: 9px; color: #a5f3fc; background: rgba(6, 182, 212, .08); font-size: 10px; font-weight: 800; line-height: 1.4; }
+.visibility-state.is-hidden { border-color: rgba(167, 139, 250, .45); color: #ddd6fe; background: rgba(91, 33, 182, .2); }
+.visibility-card .small-button { width: 100%; margin-top: 9px; }
 .player-heading .player-state { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; color: #fecdd3; font-size: 10px; font-weight: 800; }
 .directory-player.is-blocked { border-color: rgba(251, 113, 133, .42); }
 .directory-player .blocked-mark { color: #fda4af; font-size: 10px; }

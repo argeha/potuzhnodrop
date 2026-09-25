@@ -55,6 +55,8 @@
     game_skin_remove: 'прибрав(ла) скін',
     game_block: 'заблокував(ла) гравця',
     game_unblock: 'зняв(ла) блокування',
+    game_site_hide: 'приховав(ла) профіль із сайту',
+    game_site_show: 'повернув(ла) профіль на сайт',
   }
 
   const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[char]))
@@ -266,6 +268,7 @@
     $('#premiumDisableButton').classList.toggle('hidden', !canGame('configure'))
     $('#prestigeForm').classList.toggle('hidden', !canGame('configure'))
     $('#moderationForm').classList.toggle('hidden', !canGame('moderate'))
+    $('#visibilityPanel').classList.toggle('hidden', !canGame('configure'))
     $('#skinManagerTitle').closest('.skin-manager').classList.toggle('is-readonly', !canGame('grant'))
     $('#skinSearch').disabled = !canGame('grant') || !state.player?.accountId
     $('#grantSkinButton').disabled = !canGame('grant') || !state.player?.accountId || !state.selectedSkinId
@@ -284,8 +287,9 @@
     if (!player) return
     const own = isOwnPlayer(player)
     const blocked = player.moderation?.blocked === true
+    const hiddenFromSite = player.visibility?.hidden === true
     playerSummary.innerHTML = `
-      <div class="player-heading"><div><p class="eyebrow">${own ? 'ТВІЙ СЕРВЕРНИЙ ПРОФІЛЬ' : 'АКТИВНИЙ ПРОФІЛЬ'}</p><h3>${escapeHtml(player.name)}</h3>${own ? '<span class="player-state"><i class="fa-solid fa-user-check"></i> Це твій профіль</span>' : ''}${blocked ? `<span class="player-state"><i class="fa-solid fa-ban"></i> Заблоковано: ${escapeHtml(player.moderation?.reason || 'без причини')}</span>` : ''}<code>${escapeHtml(player.accountId)}</code></div><span class="profile-revision">версія ${escapeHtml(player.revision)}</span></div>
+      <div class="player-heading"><div><p class="eyebrow">${own ? 'ТВІЙ СЕРВЕРНИЙ ПРОФІЛЬ' : 'АКТИВНИЙ ПРОФІЛЬ'}</p><h3>${escapeHtml(player.name)}</h3>${own ? '<span class="player-state"><i class="fa-solid fa-user-check"></i> Це твій профіль</span>' : ''}${blocked ? `<span class="player-state"><i class="fa-solid fa-ban"></i> Заблоковано: ${escapeHtml(player.moderation?.reason || 'без причини')}</span>` : ''}${hiddenFromSite ? '<span class="player-state"><i class="fa-solid fa-eye-slash"></i> Приховано з сайту</span>' : ''}<code>${escapeHtml(player.accountId)}</code></div><span class="profile-revision">версія ${escapeHtml(player.revision)}</span></div>
       <div class="player-stats">
         <div><span>БАЛАНС</span><strong>${compact(player.balance)} PC</strong></div>
         <div><span>РІВЕНЬ</span><strong>${compact(player.level)} <small>${compact(player.xp)} XP</small></strong></div>
@@ -306,6 +310,13 @@
     $('#blockPlayerButton').classList.toggle('hidden', blocked)
     $('#unblockPlayerButton').classList.toggle('hidden', !blocked)
     $('#blockReason').value = blocked ? String(player.moderation?.reason || '') : ''
+    const visibilityState = $('#visibilityState')
+    if (visibilityState) {
+      visibilityState.classList.toggle('is-hidden', hiddenFromSite)
+      visibilityState.textContent = hiddenFromSite ? 'Профіль приховано з рейтингу й live-стрічки' : 'Профіль видно на сайті'
+    }
+    $('#hideFromSiteButton').classList.toggle('hidden', hiddenFromSite)
+    $('#showOnSiteButton').classList.toggle('hidden', !hiddenFromSite)
     $('#grantSkinLabel').textContent = own ? 'Видати собі скін' : 'Видати скін'
     const items = Array.isArray(player.inventory) ? player.inventory : []
     playerInventory.innerHTML = items.length
@@ -341,9 +352,10 @@
         : `Відвідувач · LVL ${compact(player.level)}${player.prestige ? ` · P${compact(player.prestige)}` : ''} · останній вхід ${formatTime(player.updatedAt)}`
       const active = cloudProfile && state.player?.accountId === player.accountId ? ' is-active' : ''
       const blocked = player.blocked === true ? ' is-blocked' : ''
+      const hidden = player.hidden === true
       const card = `<i class="fa-solid ${cloudProfile ? 'fa-cloud' : 'fa-user-clock'}"></i><span><strong>${escapeHtml(player.name)}</strong><small>${escapeHtml(detail)}</small></span>${cloudProfile ? '<i class="fa-solid fa-chevron-right directory-open"></i>' : '<i class="fa-solid fa-eye directory-open"></i>'}`
       return cloudProfile
-        ? `<button type="button" class="directory-player${active}${blocked}" data-player-id="${escapeHtml(player.accountId)}">${card}${blocked ? '<i class="fa-solid fa-ban blocked-mark" title="Заблоковано"></i>' : ''}</button>`
+        ? `<button type="button" class="directory-player${active}${blocked}" data-player-id="${escapeHtml(player.accountId)}">${card}${blocked ? '<i class="fa-solid fa-ban blocked-mark" title="Заблоковано"></i>' : ''}${hidden ? '<i class="fa-solid fa-eye-slash blocked-mark" title="Приховано з сайту"></i>' : ''}</button>`
         : `<article class="directory-player is-visitor" title="Локальний профіль: зібрано мінімальні дані входу, без віддаленого редагування.">${card}</article>`
     }).join('')
   }
@@ -618,6 +630,14 @@
 
   $('#unblockPlayerButton').addEventListener('click', () => {
     void mutateGame('unblock', {}, { confirmText: 'Зняти блокування з цього гравця?' })
+  })
+
+  $('#hideFromSiteButton').addEventListener('click', () => {
+    void mutateGame('site_hide', {}, { confirmText: 'Приховати профіль із рейтингу та live-стрічки сайту? В адмінці він залишиться доступним.' })
+  })
+
+  $('#showOnSiteButton').addEventListener('click', () => {
+    void mutateGame('site_show', {}, { confirmText: 'Повернути профіль у рейтинг та live-стрічку сайту?' })
   })
 
   $('#skinSearch').addEventListener('input', event => {
