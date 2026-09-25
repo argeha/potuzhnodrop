@@ -649,6 +649,13 @@
     window.open(previewUrl.toString(), '_blank', 'noopener')
   })
 
+  $('#openIcewirePreviewButton').addEventListener('click', () => {
+    if (!canGame('configure')) return showToast('Твоя роль не має доступу до приватного перегляду подій.', 'error')
+    const previewUrl = new URL('/', window.location.origin)
+    previewUrl.searchParams.set('adminPreview', 'icewire-2026')
+    window.open(previewUrl.toString(), '_blank', 'noopener')
+  })
+
   $('#skinSearch').addEventListener('input', event => {
     const query = event.target.value.trim()
     state.selectedSkinId = ''

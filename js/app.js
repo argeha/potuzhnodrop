@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 6.4 ============ */
+/* ============ ПОТУЖНО DROP 6.5 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -482,6 +482,18 @@ function isWeaponSkin(skin) {
 
 const CASE_TYPES = {
   // HOT & LIMITED
+  icewire_cache: {
+    id: 'icewire_cache',
+    name: 'ICEWIRE Cache',
+    cost: 720,
+    category: 'hot',
+    badge: 'ZERO HOUR',
+    badgeClass: 'badge-exclusive',
+    theme: 'blue',
+    seasonal: 'icewire-2026',
+    desc: 'Контейнер з чорного льоду: Ice Coaled, Whiteout, Asiimov та полярні сигнали',
+    filter: s => isWeaponSkin(s) && skinNameIncludes(s, 'Ice Coaled', 'Winterized', 'Whiteout', 'Asiimov', 'Vulcan', 'Printstream', 'Coolant', 'Snow Leopard', 'Neo-Noir')
+  },
   halloween_night: {
     id: 'halloween_night',
     name: 'Нічний кейс',
@@ -933,6 +945,13 @@ const HALLOWEEN_EVENT = Object.freeze({
   endDate: '2026-11-03',
   dailyCaps: Object.freeze({ case: 2, battle: 1, arena: 1 })
 });
+const WINTER_EVENT = Object.freeze({
+  id: 'icewire-2026',
+  timeZone: 'Europe/Kyiv',
+  startDate: '2026-12-12',
+  endDate: '2027-01-17',
+  dailyCaps: Object.freeze({ case: 2, battle: 1, arena: 1 })
+});
 const HALLOWEEN_REWARDS = Object.freeze([
   { pumpkins: 3, type: 'credits', amount: 450, icon: 'fa-coins', title: '450 PC' },
   { pumpkins: 7, type: 'ticket', amount: 1, icon: 'fa-ticket', title: 'Потужний квиток' },
@@ -980,12 +999,33 @@ const HALLOWEEN_PAGE_COPY = Object.freeze({
   profile: { nav: 'Досьє', title: 'Нічне досьє' },
   about: { nav: 'Кодекс', title: 'Кодекс Nightfall', eyebrow: 'ПРАВИЛА НІЧНОГО МІСТА', heading: 'Кодекс <em>Nightfall</em>', description: 'Сезонна пригода лишається віртуальною грою: без ставок, платежів чи реальних призів.' }
 });
+const WINTER_PAGE_COPY = Object.freeze({
+  upgrader: { nav: 'Кріосинтез', title: 'Кріосинтез', eyebrow: 'ПОЛЯРНА ЛАБОРАТОРІЯ', heading: 'Збери <em>чистий сигнал</em>', description: 'Поєднуй віртуальні предмети та FC під холодним світлом реактора. Шанс завжди видно до запуску.' },
+  case: { nav: 'Контейнери', title: 'Крижані контейнери', eyebrow: 'КРИЖАНИЙ ДОК', heading: 'Відкрий <em>ICEWIRE</em>', description: 'Шукай сигнали в контейнерах, які винесло на чорний лід після полярної бурі.' },
+  battle: { nav: 'Чорний лід', title: 'Дуелі чорного льоду', eyebrow: 'ПОЛЯРНА АРЕНА', heading: 'Утримай <em>покриття</em>', description: 'Чесна віртуальна дуель на льоду: без ставок реальних грошей і без справжніх призів.' },
+  royale: { nav: 'Біла орбіта', title: 'Біла орбіта', eyebrow: 'КОЛО СЯЙВА', heading: 'Увійди в <em>білу орбіту</em>', description: 'Збери віртуальний банк у світлі полярного сяйва та подивись, кому дістанеться сигнал.' },
+  contract: { nav: 'Кріоконтракт', title: 'Кріоконтракт', eyebrow: 'СТАНЦІЯ НУЛЬ', heading: 'Перезбери <em>контур</em>', description: 'П’ять предметів входять у кріоконтур — один результат повертається з морозної темряви.' },
+  tasks: { nav: 'ICEWIRE', title: 'ICEWIRE: Zero Hour', eyebrow: 'ЕКСПЕДИЦІЯ У ХОЛОД', heading: 'Станція <em>Нуль</em>', description: 'Заряджай Ядро полярного сяйва разом з усіма гравцями та проводь сигнали крізь заметіль.' },
+  profile: { nav: 'Капсула', title: 'Крижана капсула' },
+  about: { nav: 'Протокол', title: 'Протокол ICEWIRE', eyebrow: 'ПРАВИЛА ПОЛЯРНОЇ СТАНЦІЇ', heading: 'Протокол <em>Zero Hour</em>', description: 'Сезонна експедиція — віртуальна гра без ставок, платежів чи реальних призів.' }
+});
+const WINTER_COSMETICS = Object.freeze({
+  aurora_conductor_2026: { id: 'aurora_conductor_2026', kind: 'title', icon: 'fa-satellite-dish', title: 'Провідник сяйва', note: 'Постійний титул за майстерний маршрут крізь заметіль' },
+  icewire_survivor_2026: { id: 'icewire_survivor_2026', kind: 'title', icon: 'fa-snowflake', title: 'Той, хто пережив заметіль', note: 'Постійний титул за сезонний прогрес' },
+  aurora_frame_2026: { id: 'aurora_frame_2026', kind: 'frame', icon: 'fa-wand-magic-sparkles', title: 'Aurora', note: 'Постійна рамка профілю' }
+});
+const SEASONAL_COSMETICS = Object.freeze({ ...HALLOWEEN_COSMETICS, ...WINTER_COSMETICS });
 const HALLOWEEN_ADMIN_PREVIEW_QUERY = 'adminPreview';
 let halloweenAdminPreviewRequested = new URLSearchParams(window.location.search).get(HALLOWEEN_ADMIN_PREVIEW_QUERY) === HALLOWEEN_EVENT.id;
 let halloweenAdminPreviewAuthorized = false;
+let winterAdminPreviewRequested = new URLSearchParams(window.location.search).get(HALLOWEEN_ADMIN_PREVIEW_QUERY) === WINTER_EVENT.id;
+let winterAdminPreviewAuthorized = false;
 const MIDNIGHT_RIFT_RUN_MS = 15_000;
 const MIDNIGHT_RIFT_MAX_RUNS = 3;
 let midnightRiftRun = null;
+const ICEWIRE_ROUTE_RUN_MS = 20_000;
+const ICEWIRE_ROUTE_MAX_RUNS = 3;
+let icewireRouteRun = null;
 
 const TARGET_ARENA_STAKES = Object.freeze([2_500, 10_000, 25_000]);
 const TARGET_ARENA_DURATION_MS = 15_000;
@@ -1138,7 +1178,8 @@ function setSteamImportRecord(steamId, record) {
 const CURRENCY_TOKEN = 'PC';
 
 function getCurrencyToken() {
-  return getHalloweenEventStatus().active ? 'NC' : CURRENCY_TOKEN;
+  const season = getActiveSeason();
+  return season?.kind === 'winter' ? 'FC' : season?.kind === 'halloween' ? 'NC' : CURRENCY_TOKEN;
 }
 
 function formatCreditValue(v) {
@@ -1187,6 +1228,19 @@ function createDefaultHalloweenEvent() {
   };
 }
 
+function createDefaultWinterEvent() {
+  return {
+    shards: 0,
+    dailyDate: '',
+    dailySources: { case: 0, battle: 0, arena: 0 },
+    routeDate: '',
+    routeRuns: 0,
+    bestRoute: 0,
+    claimed: [],
+    cosmetics: { titles: [], frames: [], activeTitle: '', activeFrame: '' }
+  };
+}
+
 function createDefaultPulseCircuit() {
   return { date: '', step: 0, completed: 0, completedDate: '', badgeUnlocked: false, lastCompletedAt: 0 };
 }
@@ -1209,6 +1263,7 @@ function createDefaultGameState() {
     weekly: createDefaultWeekly(),
     powerRun: createDefaultPowerRun(),
     halloweenEvent: createDefaultHalloweenEvent(),
+    winterEvent: createDefaultWinterEvent(),
     pulseCircuit: createDefaultPulseCircuit(),
     targetArena: createDefaultTargetArena(),
     allTime: createDefaultAllTime(),
@@ -1257,6 +1312,7 @@ function loadGameState() {
       weekly: { ...createDefaultWeekly(), ...(s.weekly || {}) },
       powerRun: { ...createDefaultPowerRun(), ...(s.powerRun || {}) },
       halloweenEvent: { ...createDefaultHalloweenEvent(), ...(s.halloweenEvent || {}) },
+      winterEvent: { ...createDefaultWinterEvent(), ...(s.winterEvent || {}) },
       pulseCircuit: { ...createDefaultPulseCircuit(), ...(s.pulseCircuit || {}) },
       targetArena: { ...createDefaultTargetArena(), ...(s.targetArena || {}) },
       allTime: { ...createDefaultAllTime(), ...(s.allTime || {}) },
@@ -1376,16 +1432,41 @@ function getHalloweenEventStatus() {
   return { date, active: scheduledActive || preview, scheduledActive, preview, upcoming: date < HALLOWEEN_EVENT.startDate, ended: date > HALLOWEEN_EVENT.endDate };
 }
 
+function getWinterEventStatus() {
+  const date = getDateKeyInTimeZone(WINTER_EVENT.timeZone);
+  const scheduledActive = date >= WINTER_EVENT.startDate && date <= WINTER_EVENT.endDate;
+  const preview = winterAdminPreviewAuthorized && !scheduledActive;
+  return { date, active: scheduledActive || preview, scheduledActive, preview, upcoming: date < WINTER_EVENT.startDate, ended: date > WINTER_EVENT.endDate };
+}
+
+function getSeasonalEventStatus(eventId) {
+  if (eventId === HALLOWEEN_EVENT.id) return getHalloweenEventStatus();
+  if (eventId === WINTER_EVENT.id) return getWinterEventStatus();
+  return { active: false, scheduledActive: false, preview: false, date: getTodayKey() };
+}
+
+function getActiveSeason() {
+  const winter = getWinterEventStatus();
+  if (winter.active) return { id: WINTER_EVENT.id, kind: 'winter', event: WINTER_EVENT, status: winter, copy: WINTER_PAGE_COPY };
+  const halloween = getHalloweenEventStatus();
+  if (halloween.active) return { id: HALLOWEEN_EVENT.id, kind: 'halloween', event: HALLOWEEN_EVENT, status: halloween, copy: HALLOWEEN_PAGE_COPY };
+  return null;
+}
+
 function getPageDisplayTitle(id) {
   const standard = {
     upgrader: 'Апгрейд', case: 'Кейси', battle: 'Бій', royale: 'Battle Royale',
     contract: 'Контракт', tasks: 'Завдання', profile: 'Профіль', about: 'Про гру'
   };
-  return getHalloweenEventStatus().active ? (HALLOWEEN_PAGE_COPY[id]?.title || standard[id] || 'Гра') : (standard[id] || 'Гра');
+  const season = getActiveSeason();
+  return season ? (season.copy[id]?.title || standard[id] || 'Гра') : (standard[id] || 'Гра');
 }
 
 function getActiveBrandName() {
-  return getHalloweenEventStatus().active ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
+  const season = getActiveSeason();
+  if (season?.kind === 'winter') return 'ICEWIRE DROP';
+  if (season?.kind === 'halloween') return 'NIGHTFALL DROP';
+  return 'ПОТУЖНО DROP';
 }
 
 function setSeasonalText(element, seasonalText, active) {
@@ -1408,8 +1489,8 @@ function setSeasonalParagraph(element, seasonalText, active) {
   element.textContent = active ? seasonalText : element.dataset.normalText;
 }
 
-function applyHalloweenSeasonCopy(active) {
-  Object.entries(HALLOWEEN_PAGE_COPY).forEach(([id, copy]) => {
+function applySeasonCopy(copyMap, active) {
+  Object.entries(copyMap).forEach(([id, copy]) => {
     document.querySelectorAll(`[data-nav="${id}"], [data-mobile-nav="${id}"]`).forEach(element => setSeasonalText(element, copy.nav, active));
     const section = document.querySelector(`[data-page="${id}"]`);
     const intro = section?.querySelector('.mode-intro');
@@ -1418,29 +1499,59 @@ function applyHalloweenSeasonCopy(active) {
     setSeasonalText(intro.querySelector('span'), copy.eyebrow, active);
     setSeasonalParagraph(intro.querySelector('p'), copy.description, active);
   });
+}
+
+function applyHalloweenSeasonCopy(active) {
+  // Restore the inactive season first. Both copy maps touch the same nav and
+  // page-intro nodes, so applying the active one last preserves its text.
+  if (active?.kind === 'halloween') {
+    applySeasonCopy(WINTER_PAGE_COPY, false);
+    applySeasonCopy(HALLOWEEN_PAGE_COPY, true);
+  } else if (active?.kind === 'winter') {
+    applySeasonCopy(HALLOWEEN_PAGE_COPY, false);
+    applySeasonCopy(WINTER_PAGE_COPY, true);
+  } else {
+    applySeasonCopy(HALLOWEEN_PAGE_COPY, false);
+    applySeasonCopy(WINTER_PAGE_COPY, false);
+  }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active ? 'THE 13TH' : '6.4';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.5';
   const brand = document.getElementById('brandName');
-  if (brand) brand.textContent = active ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
-  setSeasonalParagraph(document.getElementById('brandRiskText'), 'NIGHTFALL DROP — це тимчасове ігрове перевтілення. Тут немає реальних виграшів, депозитів, трейдів або виведення скінів. Усі предмети та нічні кредити існують лише у віртуальній грі.', active);
-  setSeasonalHtml(document.getElementById('brandFooterText'), 'NIGHTFALL DROP · THE 13TH SIGNAL — тимчасова віртуальна Halloween-подія без реальних грошей, скінів або призів. <a href="#about" onclick="showPage(\'about\');return false" class="text-cyan-300 hover:text-cyan-200">Правила й безпека</a>', active);
+  if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
+  const riskText = active?.kind === 'winter'
+    ? 'ICEWIRE DROP — це тимчасове ігрове перевтілення. Тут немає реальних виграшів, депозитів, трейдів або виведення скінів. Усі предмети та frost credits існують лише у віртуальній грі.'
+    : 'NIGHTFALL DROP — це тимчасове ігрове перевтілення. Тут немає реальних виграшів, депозитів, трейдів або виведення скінів. Усі предмети та нічні кредити існують лише у віртуальній грі.';
+  setSeasonalParagraph(document.getElementById('brandRiskText'), riskText, Boolean(active));
+  const footerHtml = active?.kind === 'winter'
+    ? 'ICEWIRE DROP · ZERO HOUR — тимчасова віртуальна зимова подія без реальних грошей, скінів або призів. <a href="#about" onclick="showPage(\'about\');return false" class="text-cyan-300 hover:text-cyan-200">Правила й безпека</a>'
+    : 'NIGHTFALL DROP · THE 13TH SIGNAL — тимчасова віртуальна Halloween-подія без реальних грошей, скінів або призів. <a href="#about" onclick="showPage(\'about\');return false" class="text-cyan-300 hover:text-cyan-200">Правила й безпека</a>';
+  setSeasonalHtml(document.getElementById('brandFooterText'), footerHtml, Boolean(active));
 }
 
 function renderHalloweenSeasonShell() {
-  const status = getHalloweenEventStatus();
-  document.body.classList.toggle('halloween-season', status.active);
-  applyHalloweenSeasonCopy(status.active);
+  const season = getActiveSeason();
+  const status = season?.status;
+  document.body.classList.toggle('halloween-season', season?.kind === 'halloween');
+  document.body.classList.toggle('winter-season', season?.kind === 'winter');
+  applyHalloweenSeasonCopy(season);
   const signal = document.getElementById('seasonSignal');
   const label = document.getElementById('liveFeedLabelText');
   const labelWrap = document.getElementById('liveFeedLabel');
-  if (signal) signal.classList.toggle('hidden', !status.active);
-  if (label) label.textContent = status.active ? 'Nightfall signal' : 'Live skins';
-  if (labelWrap) labelWrap.classList.toggle('is-nightfall', status.active);
-  document.body.dataset.nightfallPhase = status.active ? String(getPulseCircuitCommunity().phase) : '';
+  const active = Boolean(season?.status?.active);
+  if (signal) {
+    signal.classList.toggle('hidden', !active);
+    signal.title = season?.kind === 'winter' ? 'Відкрити станцію ICEWIRE' : 'Відкрити мапу Nightfall';
+    signal.innerHTML = season?.kind === 'winter' ? '<i class="fa-solid fa-snowflake"></i><span>ICEWIRE</span><small>Станція Нуль</small>' : '<i class="fa-solid fa-moon"></i><span>Nightfall</span><small>Мапа події</small>';
+  }
+  if (label) label.textContent = season?.kind === 'winter' ? 'Aurora signal' : season?.kind === 'halloween' ? 'Nightfall signal' : 'Live skins';
+  if (labelWrap) labelWrap.classList.toggle('is-nightfall', season?.kind === 'halloween');
+  if (labelWrap) labelWrap.classList.toggle('is-icewire', season?.kind === 'winter');
+  document.body.dataset.nightfallPhase = season?.kind === 'halloween' ? String(getPulseCircuitCommunity().phase) : '';
+  document.body.dataset.icewirePhase = season?.kind === 'winter' ? String(getIcewireReactorCommunity().phase) : '';
 }
 
 async function enableHalloweenAdminPreview() {
-  if (!halloweenAdminPreviewRequested || halloweenAdminPreviewAuthorized) return;
+  if ((!halloweenAdminPreviewRequested && !winterAdminPreviewRequested) || (halloweenAdminPreviewAuthorized || winterAdminPreviewAuthorized)) return;
   try {
     const response = await fetch('/api/admin/me', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
     if (!response.ok) return;
@@ -1448,14 +1559,15 @@ async function enableHalloweenAdminPreview() {
     const roleId = String(data?.me?.role?.id || data?.me?.roleId || data?.me?.role || '');
     const canPreview = data?.gameCapabilities?.configure === true || roleId === 'owner' || roleId === 'full_admin';
     if (!canPreview) return;
-    halloweenAdminPreviewAuthorized = true;
+    if (halloweenAdminPreviewRequested) halloweenAdminPreviewAuthorized = true;
+    if (winterAdminPreviewRequested) winterAdminPreviewAuthorized = true;
     const url = new URL(window.location.href);
     url.searchParams.delete(HALLOWEEN_ADMIN_PREVIEW_QUERY);
     window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
     renderHalloweenSeasonShell();
     renderGameHub();
     if (currentPage) document.title = `${getPageDisplayTitle(currentPage)} · ${getActiveBrandName()}`;
-    showToast('Halloween відкрито лише для твого приватного перегляду.', 'info');
+    showToast(winterAdminPreviewRequested ? 'ICEWIRE відкрито лише для твого приватного перегляду.' : 'Halloween відкрито лише для твого приватного перегляду.', 'info');
   } catch {
     // The public site stays in its scheduled state if the protected check fails.
   }
@@ -1493,6 +1605,33 @@ function getHalloweenEventState() {
   return state;
 }
 
+function getWinterEventState() {
+  if (!gameState) return createDefaultWinterEvent();
+  const stored = gameState.winterEvent && typeof gameState.winterEvent === 'object' ? gameState.winterEvent : {};
+  const defaults = createDefaultWinterEvent();
+  const storedCosmetics = stored.cosmetics && typeof stored.cosmetics === 'object' ? stored.cosmetics : {};
+  const normalizeCosmeticIds = (value, kind) => Array.isArray(value)
+    ? [...new Set(value.map(String).filter(id => WINTER_COSMETICS[id]?.kind === kind))]
+    : [];
+  const titles = normalizeCosmeticIds(storedCosmetics.titles, 'title');
+  const frames = normalizeCosmeticIds(storedCosmetics.frames, 'frame');
+  const activeTitle = titles.includes(String(storedCosmetics.activeTitle || '')) ? String(storedCosmetics.activeTitle) : '';
+  const activeFrame = frames.includes(String(storedCosmetics.activeFrame || '')) ? String(storedCosmetics.activeFrame) : '';
+  const state = {
+    shards: clampNumber(stored.shards, 0, 999, 0),
+    dailyDate: /^\d{4}-\d{2}-\d{2}$/.test(String(stored.dailyDate || '')) ? String(stored.dailyDate) : '',
+    dailySources: { ...defaults.dailySources, ...(stored.dailySources || {}) },
+    routeDate: /^\d{4}-\d{2}-\d{2}$/.test(String(stored.routeDate || '')) ? String(stored.routeDate) : '',
+    routeRuns: clampNumber(stored.routeRuns, 0, ICEWIRE_ROUTE_MAX_RUNS, 0),
+    bestRoute: clampNumber(stored.bestRoute, 0, 99, 0),
+    claimed: Array.isArray(stored.claimed) ? [...new Set(stored.claimed.map(Number).filter(Number.isInteger))] : [],
+    cosmetics: { titles, frames, activeTitle, activeFrame }
+  };
+  for (const source of Object.keys(WINTER_EVENT.dailyCaps)) state.dailySources[source] = clampNumber(state.dailySources[source], 0, WINTER_EVENT.dailyCaps[source], 0);
+  gameState.winterEvent = state;
+  return state;
+}
+
 function awardHalloweenPumpkins(source, amount = 1) {
   const status = getHalloweenEventStatus();
   if (!status.scheduledActive || !Object.prototype.hasOwnProperty.call(HALLOWEEN_EVENT.dailyCaps, source)) return 0;
@@ -1518,11 +1657,34 @@ function awardHalloweenProgress(source, amount = 1) {
   return { pumpkins, coins };
 }
 
+function awardWinterShards(source, amount = 1) {
+  const status = getWinterEventStatus();
+  if (!status.scheduledActive || !Object.prototype.hasOwnProperty.call(WINTER_EVENT.dailyCaps, source)) return 0;
+  const state = getWinterEventState();
+  if (state.dailyDate !== status.date) {
+    state.dailyDate = status.date;
+    state.dailySources = { case: 0, battle: 0, arena: 0 };
+  }
+  const available = Math.max(0, WINTER_EVENT.dailyCaps[source] - state.dailySources[source]);
+  const granted = Math.min(Math.max(0, Math.floor(amount)), available);
+  if (!granted) return 0;
+  state.dailySources[source] += granted;
+  state.shards = clampNumber(state.shards + granted, 0, 999, 0);
+  if (state.shards >= 13 && !state.cosmetics.titles.includes('icewire_survivor_2026')) {
+    state.cosmetics.titles.push('icewire_survivor_2026');
+    state.cosmetics.activeTitle = 'icewire_survivor_2026';
+  }
+  return granted;
+}
+
 function getHalloweenCosmetics() {
   const state = getHalloweenEventState();
-  const activeTitle = HALLOWEEN_COSMETICS[state.cosmetics.activeTitle] || null;
-  const activeFrame = HALLOWEEN_COSMETICS[state.cosmetics.activeFrame] || null;
-  return { state, activeTitle, activeFrame, titles: state.cosmetics.titles.map(id => HALLOWEEN_COSMETICS[id]).filter(Boolean), frames: state.cosmetics.frames.map(id => HALLOWEEN_COSMETICS[id]).filter(Boolean) };
+  const winter = getWinterEventState();
+  const titles = [...new Set([...state.cosmetics.titles, ...winter.cosmetics.titles])].map(id => SEASONAL_COSMETICS[id]).filter(Boolean);
+  const frames = [...new Set([...state.cosmetics.frames, ...winter.cosmetics.frames])].map(id => SEASONAL_COSMETICS[id]).filter(Boolean);
+  const activeTitle = SEASONAL_COSMETICS[winter.cosmetics.activeTitle] || SEASONAL_COSMETICS[state.cosmetics.activeTitle] || null;
+  const activeFrame = SEASONAL_COSMETICS[winter.cosmetics.activeFrame] || SEASONAL_COSMETICS[state.cosmetics.activeFrame] || null;
+  return { state, winter, activeTitle, activeFrame, titles, frames };
 }
 
 function renderProfileCosmeticsSummary() {
@@ -1557,7 +1719,7 @@ function renderProfileCosmeticsModal() {
   const renderGroup = (entries, activeId, kind, empty) => entries.length
     ? entries.map(entry => `<button type="button" class="halloween-cosmetic-choice ${entry.id === activeId ? 'is-active' : ''}" data-halloween-equip="${entry.id}"><i class="fa-solid ${entry.icon}"></i><span><b>${escapeHtml(entry.title)}</b><small>${escapeHtml(entry.note)}</small></span><em>${entry.id === activeId ? 'Активно' : 'Обрати'}</em></button>`).join('')
     : `<p class="halloween-cosmetic-empty"><i class="fa-solid ${kind === 'title' ? 'fa-crosshairs' : 'fa-ghost'}"></i>${empty}</p>`;
-  content.innerHTML = `<div class="halloween-cosmetics-heading"><p>ПРОФІЛЬ · HALLOWEEN</p><h3>ТИТУЛ І РАМКА</h3><span>Обери активну косметику. Вона збережеться у Cloud Profile та буде видима в публічному профілі.</span></div><section class="halloween-cosmetic-group"><h4><i class="fa-solid fa-id-badge"></i> Титули</h4>${renderGroup(cosmetics.titles, cosmetics.activeTitle?.id, 'title', 'Пройди Halloween-ритуал або знайди титул у Нічній крамниці.')}</section><section class="halloween-cosmetic-group"><h4><i class="fa-solid fa-border-all"></i> Рамки</h4>${renderGroup(cosmetics.frames, cosmetics.activeFrame?.id, 'frame', 'Рамка з’явиться в Нічній крамниці під час події.')}</section>`;
+  content.innerHTML = `<div class="halloween-cosmetics-heading"><p>ПРОФІЛЬ · СЕЗОННА КОЛЕКЦІЯ</p><h3>ТИТУЛ І РАМКА</h3><span>Обери активну косметику. Вона збережеться у Cloud Profile та буде видима в публічному профілі.</span></div><section class="halloween-cosmetic-group"><h4><i class="fa-solid fa-id-badge"></i> Титули</h4>${renderGroup(cosmetics.titles, cosmetics.activeTitle?.id, 'title', 'Отримай титули у сезонних подіях.')}</section><section class="halloween-cosmetic-group"><h4><i class="fa-solid fa-border-all"></i> Рамки</h4>${renderGroup(cosmetics.frames, cosmetics.activeFrame?.id, 'frame', 'Рамки з’являються у сезонних подіях.')}</section>`;
   content.querySelectorAll('[data-halloween-equip]').forEach(button => button.addEventListener('click', () => setHalloweenCosmetic(button.dataset.halloweenEquip)));
 }
 
@@ -1569,9 +1731,9 @@ function openProfileCosmeticsModal() {
 }
 
 function setHalloweenCosmetic(id) {
-  const cosmetic = HALLOWEEN_COSMETICS[id];
+  const cosmetic = SEASONAL_COSMETICS[id];
   if (!cosmetic) return;
-  const state = getHalloweenEventState();
+  const state = WINTER_COSMETICS[id] ? getWinterEventState() : getHalloweenEventState();
   const collection = cosmetic.kind === 'title' ? state.cosmetics.titles : state.cosmetics.frames;
   if (!collection.includes(id)) return;
   if (cosmetic.kind === 'title') state.cosmetics.activeTitle = state.cosmetics.activeTitle === id ? '' : id;
@@ -1645,6 +1807,144 @@ function renderHalloweenEvent() {
   root.querySelector('#pulseCircuit')?.insertAdjacentHTML('afterend', '<section id="midnightRift" class="halloween-rift-slot" aria-live="polite"></section>');
   renderPulseCircuit();
   renderMidnightRift();
+}
+
+function getIcewireReactorCommunity() {
+  const shared = getMidnightRiftCommunity();
+  const charge = Math.max(0, shared.maxHealth - shared.health);
+  const phase = Math.min(4, Math.floor((charge / Math.max(1, shared.maxHealth)) * 4) + 1);
+  return { ...shared, charge, phase, complete: shared.health <= 0 };
+}
+
+function renderWinterEvent() {
+  const root = document.getElementById('halloweenEvent');
+  if (!root) return;
+  const status = getWinterEventStatus();
+  if (!status.active || !gameState) {
+    root.innerHTML = '';
+    return;
+  }
+  const state = getWinterEventState();
+  const reactor = getIcewireReactorCommunity();
+  const runs = state.routeDate === status.date ? state.routeRuns : 0;
+  const chargePercent = Math.min(100, Math.round((reactor.charge / reactor.maxHealth) * 100));
+  const source = (key, label) => `${label} ${state.dailySources[key]} / ${WINTER_EVENT.dailyCaps[key]}`;
+  const recent = reactor.recent.length
+    ? reactor.recent.map(entry => `<span><i class="fa-solid fa-snowflake"></i>${escapeHtml(cleanText(entry?.name, 20) || 'Експедитор')} <b>+${clampNumber(entry?.damage, 0, 99, 0)}</b></span>`).join('')
+    : '<span class="is-empty">Станція чекає на перший сигнал.</span>';
+  const rewardTitle = state.cosmetics.titles.includes('icewire_survivor_2026') ? 'Титул «Той, хто пережив заметіль» у колекції' : `${state.shards} / 13 Frost Shards до постійного титулу`;
+  const routeDisabled = status.preview || !status.scheduledActive || reactor.complete || runs >= ICEWIRE_ROUTE_MAX_RUNS;
+  const routeAction = status.preview ? 'Лише перегляд' : reactor.complete ? 'Ядро заряджено до завтра' : runs >= ICEWIRE_ROUTE_MAX_RUNS ? 'Маршрути на сьогодні завершено' : 'Провести сигнал';
+  const previewNotice = status.preview ? '<div class="icewire-preview-notice"><i class="fa-solid fa-eye"></i> ПРИВАТНИЙ ПЕРЕГЛЯД АДМІНА · ГРАВЦЯМ ICEWIRE ЩЕ НЕ ВИДНО</div>' : '';
+  root.innerHTML = `<article class="icewire-event-card ${status.preview ? 'is-admin-preview' : ''}" aria-label="ICEWIRE: Zero Hour"><div class="icewire-art" aria-hidden="true"></div><div class="icewire-shade" aria-hidden="true"></div><header class="icewire-event-head"><div class="icewire-mark"><i class="fa-solid fa-snowflake"></i></div><div><p>12 ГРУДНЯ 2026 — 17 СІЧНЯ 2027 · КИЇВ</p><h2>ICEWIRE <small>· ZERO HOUR</small></h2><span>Полярна станція прокинулась. Заряджай Ядро разом із усіма експедиторами.</span></div><div class="icewire-route-count"><span>ТВОЇ МАРШРУТИ</span><strong>${runs}<small> / ${ICEWIRE_ROUTE_MAX_RUNS}</small></strong><em>кращий: ${state.bestRoute} сигналів</em></div></header>${previewNotice}<div class="icewire-event-body"><section class="icewire-reactor"><div class="icewire-reactor-copy"><p><i class="fa-solid fa-satellite-dish"></i> СПІЛЬНИЙ РЕАКТОР</p><h3>${reactor.complete ? 'AURORA ONLINE' : 'ЯДРО ПОЛЯРНОГО СЯЙВА'}</h3><span>${reactor.complete ? 'Місто пережило бурю. Нова зарядка з’явиться завтра.' : 'Кожен успішний маршрут дає справжній внесок у спільний заряд.'}</span></div><div class="icewire-reactor-meter"><div><b>${reactor.charge.toLocaleString('uk-UA')} <small>/ ${reactor.maxHealth.toLocaleString('uk-UA')}</small></b><span>ЕНЕРГІЇ</span></div><div class="icewire-reactor-track"><i style="width:${chargePercent}%"></i></div><em>Фаза ${reactor.phase} · ${chargePercent}% заряджено</em></div><div class="icewire-recent"><b><i class="fa-solid fa-tower-broadcast"></i> СВІЖІ СИГНАЛИ</b>${recent}</div></section><section class="icewire-sectors" aria-label="Райони станції"><button type="button" data-icewire-go="case"><i class="fa-solid fa-box-open"></i><span>КРИЖАНИЙ ДОК</span><small>${source('case', 'Контейнери')}</small></button><button type="button" data-icewire-go="battle"><i class="fa-solid fa-mountain"></i><span>ЧОРНИЙ ЛІД</span><small>${source('battle', 'Дуелі')}</small></button><button type="button" data-icewire-go="tasks"><i class="fa-solid fa-compass"></i><span>СТАНЦІЯ НУЛЬ</span><small>${source('arena', 'Тир 13+')}</small></button></section><section class="icewire-route-game" id="icewireRouteGame"><div class="icewire-route-copy"><i class="fa-solid fa-route"></i><div><p>МІНІГРА · СЛІД У ЗАМЕТІЛІ</p><h3>Запам’ятай маршрут, поки його не сховала буря.</h3><span>20 секунд. Кожна правильно проведена ділянка заряджає Ядро.</span></div></div><button type="button" class="icewire-route-start" data-icewire-start ${routeDisabled ? 'disabled' : ''}><i class="fa-solid fa-play"></i>${routeAction}<small>${status.preview ? 'Нагороди та заряд вимкнені' : 'Frost Shards + XP + внесок у реактор'}</small></button></section><footer class="icewire-event-foot"><div><i class="fa-solid fa-gem"></i><b>FROST SHARDS</b><strong>${state.shards}</strong><span>${rewardTitle}</span></div><p><i class="fa-solid fa-shield-heart"></i> ICEWIRE — кооперативна віртуальна подія без реальних ставок та призів.</p></footer></div></article>`;
+  root.querySelectorAll('[data-icewire-go]').forEach(button => button.addEventListener('click', () => showPage(button.dataset.icewireGo)));
+  root.querySelector('[data-icewire-start]')?.addEventListener('click', startIcewireRoute);
+}
+
+function startIcewireRoute() {
+  const status = getWinterEventStatus();
+  const state = getWinterEventState();
+  const reactor = getIcewireReactorCommunity();
+  const runs = state.routeDate === status.date ? state.routeRuns : 0;
+  if (!status.scheduledActive || icewireRouteRun?.active || reactor.complete || runs >= ICEWIRE_ROUTE_MAX_RUNS) return;
+  if (state.routeDate !== status.date) {
+    state.routeDate = status.date;
+    state.routeRuns = 0;
+  }
+  const stage = document.getElementById('icewireRouteGame');
+  if (!stage) return;
+  const run = { active: true, score: 0, position: 0, sequence: [], startedAt: Date.now(), interval: null, timeout: null, revealTimer: null };
+  icewireRouteRun = run;
+  stage.innerHTML = `<div class="icewire-route-hud"><span>БУРЯ <b id="icewireTime">20.0</b></span><span>СИГНАЛИ <b id="icewireScore">0</b></span></div><p id="icewireRouteHint" class="icewire-route-hint">Запам’ятай траєкторію…</p><div class="icewire-route-grid">${['fa-arrow-up', 'fa-arrow-right', 'fa-arrow-down', 'fa-arrow-left'].map((icon, index) => `<button type="button" class="icewire-route-node" data-icewire-node="${index}" disabled aria-label="Ділянка маршруту ${index + 1}"><i class="fa-solid ${icon}"></i></button>`).join('')}</div>`;
+  const time = document.getElementById('icewireTime');
+  const score = document.getElementById('icewireScore');
+  const hint = document.getElementById('icewireRouteHint');
+  const nodes = [...stage.querySelectorAll('[data-icewire-node]')];
+  const nextRoute = () => {
+    run.position = 0;
+    run.sequence.push(Math.floor(Math.random() * nodes.length));
+    nodes.forEach(node => { node.disabled = true; node.classList.remove('is-lit', 'is-wrong'); });
+    if (hint) hint.textContent = 'Запам’ятай траєкторію…';
+    let step = 0;
+    run.revealTimer = window.setInterval(() => {
+      nodes.forEach(node => node.classList.remove('is-lit'));
+      if (step >= run.sequence.length) {
+        window.clearInterval(run.revealTimer);
+        run.revealTimer = null;
+        nodes.forEach(node => { node.disabled = false; });
+        if (hint) hint.textContent = 'Проведи сигнал крізь заметіль.';
+        return;
+      }
+      nodes[run.sequence[step]]?.classList.add('is-lit');
+      step += 1;
+    }, 420);
+  };
+  nodes.forEach(node => node.addEventListener('click', () => {
+    if (!run.active || run.revealTimer) return;
+    const nodeId = Number(node.dataset.icewireNode);
+    const expected = run.sequence[run.position];
+    if (nodeId !== expected) {
+      node.classList.add('is-wrong');
+      run.score = Math.max(0, run.score - 1);
+      if (score) score.textContent = String(run.score);
+      return;
+    }
+    run.position += 1;
+    node.classList.add('is-lit');
+    if (run.position < run.sequence.length) return;
+    run.score += run.sequence.length;
+    if (score) score.textContent = String(run.score);
+    nextRoute();
+  }));
+  nextRoute();
+  const finish = () => finishIcewireRoute(run);
+  run.interval = window.setInterval(() => {
+    const left = Math.max(0, ICEWIRE_ROUTE_RUN_MS - (Date.now() - run.startedAt));
+    if (time) time.textContent = (left / 1000).toFixed(1);
+    if (!left) finish();
+  }, 80);
+  run.timeout = window.setTimeout(finish, ICEWIRE_ROUTE_RUN_MS + 60);
+}
+
+function finishIcewireRoute(run) {
+  if (!run?.active || icewireRouteRun !== run) return;
+  run.active = false;
+  window.clearInterval(run.interval);
+  window.clearTimeout(run.timeout);
+  if (run.revealTimer) window.clearInterval(run.revealTimer);
+  icewireRouteRun = null;
+  const status = getWinterEventStatus();
+  const state = getWinterEventState();
+  const score = clampNumber(run.score, 0, 99, 0);
+  const energy = clampNumber(16 + score * 5, 16, 90, 16);
+  state.routeDate = status.date;
+  state.routeRuns = clampNumber(state.routeRuns + 1, 0, ICEWIRE_ROUTE_MAX_RUNS, 0);
+  state.bestRoute = Math.max(state.bestRoute, score);
+  state.shards = clampNumber(state.shards + Math.max(1, Math.min(7, Math.floor(score / 3) + 1)), 0, 999, 0);
+  if (score >= 12 && !state.cosmetics.titles.includes('aurora_conductor_2026')) {
+    state.cosmetics.titles.push('aurora_conductor_2026');
+    state.cosmetics.activeTitle = 'aurora_conductor_2026';
+  }
+  if (state.shards >= 24 && !state.cosmetics.frames.includes('aurora_frame_2026')) {
+    state.cosmetics.frames.push('aurora_frame_2026');
+    state.cosmetics.activeFrame = 'aurora_frame_2026';
+  }
+  addXp(18 + score * 3);
+  saveState();
+  updateBalanceUI();
+  renderProfileCosmeticsSummary();
+  renderWinterEvent();
+  void syncCommunity(null, null, { id: makeUuid(), damage: energy });
+  soundWin();
+  showToast(`ICEWIRE: ${score} сигналів · +${energy} до Ядра · Frost Shards додано.`, score >= 12 ? 'success' : 'info');
+}
+
+function renderSeasonalEvent() {
+  const season = getActiveSeason();
+  if (season?.kind === 'winter') return renderWinterEvent();
+  if (season?.kind === 'halloween') return renderHalloweenEvent();
+  const root = document.getElementById('halloweenEvent');
+  if (root) root.innerHTML = '';
 }
 
 function claimHalloweenReward(pumpkins) {
@@ -2090,12 +2390,14 @@ function renderTargetArena() {
     return;
   }
   const arena = getTargetArenaState();
-  const halloweenActive = getHalloweenEventStatus().active;
-  const arenaName = halloweenActive ? 'ГАРБУЗОВИЙ ТИР' : 'ЕЛІТНИЙ ТИР';
-  const compactAction = `<div class="target-arena-compact"><span><i class="fa-solid ${halloweenActive ? 'fa-ghost' : 'fa-coins'}"></i> Внески від ${formatCredits(TARGET_ARENA_STAKES[0])} · +220 мс за влучання</span><button type="button" data-arena-open><i class="fa-solid fa-crosshairs"></i> Відкрити тир</button></div>`;
+  const season = getActiveSeason();
+  const halloweenActive = season?.kind === 'halloween';
+  const winterActive = season?.kind === 'winter';
+  const arenaName = halloweenActive ? 'ГАРБУЗОВИЙ ТИР' : winterActive ? 'ПОЛЯРНИЙ ТИР' : 'ЕЛІТНИЙ ТИР';
+  const compactAction = `<div class="target-arena-compact"><span><i class="fa-solid ${halloweenActive ? 'fa-ghost' : winterActive ? 'fa-snowflake' : 'fa-coins'}"></i> Внески від ${formatCredits(TARGET_ARENA_STAKES[0])} · +220 мс за влучання</span><button type="button" data-arena-open><i class="fa-solid fa-crosshairs"></i> Відкрити тир</button></div>`;
   const fullControls = `<div class="target-arena-body"><div class="target-arena-stakes"><span>ОБЕРИ ВНЕСОК</span><div>${TARGET_ARENA_STAKES.map(stake => `<button type="button" data-arena-stake="${stake}" class="${targetArenaSelectedStake === stake ? 'is-selected' : ''}">${formatCredits(stake)}</button>`).join('')}</div><small>Невдала спроба не повертає PC. Тут немає реальних грошей чи призів.</small></div><div class="target-arena-rules"><span>ВИПЛАТА ЗА ВЛУЧАННЯ</span><div><b>0–8</b><b>9–12</b><b>13–16</b><b>17–20</b><b>21+</b></div><div><em>0%</em><em>40%</em><em>75%</em><em>110%</em><em>135%</em></div></div><div class="target-arena-actions"><button type="button" class="target-arena-start" data-arena-start><i class="fa-solid fa-play"></i>ПОЧАТИ ЗА ${formatCredits(targetArenaSelectedStake)}<small>без cooldown</small></button><button type="button" class="target-arena-collapse" data-arena-close>Згорнути</button></div></div>`;
-  root.innerHTML = `<article class="target-arena-card ${halloweenActive ? 'is-halloween' : ''} ${targetArenaExpanded ? 'is-expanded' : 'is-compact'}" aria-label="${arenaName}">
-    <div class="target-arena-head"><div class="target-arena-icon">${halloweenActive ? '🎃' : '<i class="fa-solid fa-crosshairs"></i>'}</div><div><p>${halloweenActive ? 'HALLOWEEN · ДО 3 ЛИСТОПАДА' : 'ДЛЯ ВЕЛИКОГО БАЛАНСУ'}</p><h2>${arenaName}</h2><span>15 секунд на рухомі мішені. Чим краща точність — тим більша частина ставки повертається.</span></div><div class="target-arena-record"><span>РЕКОРД</span><b>${arena.bestScore}</b><small>${arena.rounds} спроб</small></div></div>
+  root.innerHTML = `<article class="target-arena-card ${halloweenActive ? 'is-halloween' : winterActive ? 'is-icewire' : ''} ${targetArenaExpanded ? 'is-expanded' : 'is-compact'}" aria-label="${arenaName}">
+    <div class="target-arena-head"><div class="target-arena-icon">${halloweenActive ? '🎃' : winterActive ? '❄️' : '<i class="fa-solid fa-crosshairs"></i>'}</div><div><p>${halloweenActive ? 'HALLOWEEN · ДО 3 ЛИСТОПАДА' : winterActive ? 'ICEWIRE · ZERO HOUR' : 'ДЛЯ ВЕЛИКОГО БАЛАНСУ'}</p><h2>${arenaName}</h2><span>15 секунд на рухомі мішені. Чим краща точність — тим більша частина ставки повертається.</span></div><div class="target-arena-record"><span>РЕКОРД</span><b>${arena.bestScore}</b><small>${arena.rounds} спроб</small></div></div>
     ${targetArenaExpanded ? fullControls : compactAction}
   </article>`;
   root.querySelector('[data-arena-open]')?.addEventListener('click', () => {
@@ -2115,9 +2417,11 @@ function renderTargetArena() {
 
 function renderActiveTargetArena(root) {
   clearTargetArenaTimers();
-  const halloweenActive = getHalloweenEventStatus().active;
-  const liveName = halloweenActive ? 'ГАРБУЗОВИЙ ТИР' : 'ЕЛІТНИЙ ТИР';
-  root.innerHTML = `<article class="target-arena-card ${halloweenActive ? 'is-halloween' : ''} is-active" aria-label="${liveName}, активна спроба"><div class="target-arena-live-head"><div><p>${halloweenActive ? '🎃' : '<i class="fa-solid fa-crosshairs"></i>'} ${liveName} · СПРОБА ТРИВАЄ</p><strong id="targetArenaTimer">15.0 с</strong></div><div><span>ВНЕСОК</span><b>${formatCredits(targetArenaSession.stake)}</b></div><div><span>ВЛУЧАННЯ</span><b id="targetArenaScore">${targetArenaSession.score}</b><small id="targetArenaBonus">+${(Number(targetArenaSession.bonusMs) || 0) / 1000} с</small></div></div><div class="target-arena-board" id="targetArenaBoard"><span class="target-arena-board-copy">${halloweenActive ? 'Полюй на гарбузи' : 'Тисни по мішені'}</span><button type="button" class="target-arena-target" id="targetArenaTarget" aria-label="Влучити в мішень">${halloweenActive ? '🎃' : '<i class="fa-solid fa-crosshairs"></i>'}</button></div><p class="target-arena-live-note">Кожне влучання додає +220 мс (до +5 с). Для прибутку потрібно щонайменше 17.</p></article>`;
+  const season = getActiveSeason();
+  const halloweenActive = season?.kind === 'halloween';
+  const winterActive = season?.kind === 'winter';
+  const liveName = halloweenActive ? 'ГАРБУЗОВИЙ ТИР' : winterActive ? 'ПОЛЯРНИЙ ТИР' : 'ЕЛІТНИЙ ТИР';
+  root.innerHTML = `<article class="target-arena-card ${halloweenActive ? 'is-halloween' : winterActive ? 'is-icewire' : ''} is-active" aria-label="${liveName}, активна спроба"><div class="target-arena-live-head"><div><p>${halloweenActive ? '🎃' : winterActive ? '❄️' : '<i class="fa-solid fa-crosshairs"></i>'} ${liveName} · СПРОБА ТРИВАЄ</p><strong id="targetArenaTimer">15.0 с</strong></div><div><span>ВНЕСОК</span><b>${formatCredits(targetArenaSession.stake)}</b></div><div><span>ВЛУЧАННЯ</span><b id="targetArenaScore">${targetArenaSession.score}</b><small id="targetArenaBonus">+${(Number(targetArenaSession.bonusMs) || 0) / 1000} с</small></div></div><div class="target-arena-board" id="targetArenaBoard"><span class="target-arena-board-copy">${halloweenActive ? 'Полюй на гарбузи' : winterActive ? 'Лови крижані маяки' : 'Тисни по мішені'}</span><button type="button" class="target-arena-target" id="targetArenaTarget" aria-label="Влучити в мішень">${halloweenActive ? '🎃' : winterActive ? '❄️' : '<i class="fa-solid fa-crosshairs"></i>'}</button></div><p class="target-arena-live-note">Кожне влучання додає +220 мс (до +5 с). Для прибутку потрібно щонайменше 17.</p></article>`;
   const board = root.querySelector('#targetArenaBoard');
   const target = root.querySelector('#targetArenaTarget');
   const moveTarget = () => {
@@ -2191,17 +2495,18 @@ function finishTargetArena() {
   arena.lastPlayedAt = Date.now();
   recordPulseCircuitStep(session.score >= 13 ? 'arena' : '');
   const halloweenProgress = session.score >= 13 ? awardHalloweenProgress('arena') : { pumpkins: 0, coins: 0 };
+  const winterShards = session.score >= 13 ? awardWinterShards('arena') : 0;
   currentUser.balance = clampNumber(currentUser.balance + payout, 0, MAX_STORED_BALANCE, DEMO_STARTING_BALANCE);
   targetArenaSession = null;
   clearTargetArenaTimers();
   saveState();
   updateBalanceUI();
   renderTargetArena();
-  if (halloweenProgress.pumpkins) renderHalloweenEvent();
+  if (halloweenProgress.pumpkins || winterShards) renderSeasonalEvent();
   if (payout > session.stake) soundWin(); else soundLose();
   const net = payout - session.stake;
   const netLabel = net > 0 ? `прибуток +${formatCredits(net)}` : net < 0 ? `втрачено ${formatCredits(Math.abs(net))}` : 'повернення внеску';
-  showToast(`Тир: ${session.score} влучань · ${tier.label} · ${netLabel}${halloweenProgress.pumpkins ? ` · +${halloweenProgress.pumpkins} 🎃 · +${halloweenProgress.coins} 🪙` : ''}.`, payout >= session.stake ? 'success' : 'warn');
+  showToast(`Тир: ${session.score} влучань · ${tier.label} · ${netLabel}${halloweenProgress.pumpkins ? ` · +${halloweenProgress.pumpkins} 🎃 · +${halloweenProgress.coins} 🪙` : ''}${winterShards ? ` · +${winterShards} Frost Shard` : ''}.`, payout >= session.stake ? 'success' : 'warn');
 }
 
 function getBattlePassProgress() {
@@ -2640,8 +2945,8 @@ function renderPublicProfileModal(profile, { demo = false } = {}) {
   const prestige = clampNumber(profile.prestige, 0, 99, 0);
   const avatar = getPublicAvatarSource(profile);
   const safeName = escapeHtml(cleanText(profile.name, 24) || 'Гравець');
-  const publicTitle = HALLOWEEN_COSMETICS[profile?.cosmetics?.title] || null;
-  const publicFrame = HALLOWEEN_COSMETICS[profile?.cosmetics?.frame] || null;
+  const publicTitle = SEASONAL_COSMETICS[profile?.cosmetics?.title] || null;
+  const publicFrame = SEASONAL_COSMETICS[profile?.cosmetics?.frame] || null;
   const signalForge = profile?.signal?.forged === true;
   const signalRoutes = clampNumber(profile?.signal?.routes, 0, 9_999, 0);
   const isOwnProfile = profile.id && profile.id === account?.publicProfile?.id;
@@ -2943,6 +3248,7 @@ function applyPortableSave(data, { skipCloudAutoSync = false } = {}) {
     weekly: { ...createDefaultWeekly(), ...(portable.gameState.weekly || {}) },
     powerRun: { ...createDefaultPowerRun(), ...(portable.gameState.powerRun || {}) },
     halloweenEvent: { ...createDefaultHalloweenEvent(), ...(portable.gameState.halloweenEvent || {}) },
+    winterEvent: { ...createDefaultWinterEvent(), ...(portable.gameState.winterEvent || {}) },
     pulseCircuit: { ...createDefaultPulseCircuit(), ...(portable.gameState.pulseCircuit || {}) },
     targetArena: { ...createDefaultTargetArena(), ...(portable.gameState.targetArena || {}) },
     allTime: { ...createDefaultAllTime(), ...(portable.gameState.allTime || {}) },
@@ -4239,6 +4545,7 @@ function applyCommunitySnapshot(data) {
   renderCommunityFeed(communitySnapshot.events);
   renderPulseCircuit();
   renderMidnightRift();
+  renderSeasonalEvent();
   renderHalloweenSeasonShell();
 }
 
@@ -4355,7 +4662,7 @@ function renderGameHub() {
   renderHalloweenSeasonShell();
   renderProfileProgress();
   renderPowerRun();
-  renderHalloweenEvent();
+  renderSeasonalEvent();
   renderPulseCircuit();
   renderTargetArena();
   renderBattlePass();
@@ -6343,7 +6650,7 @@ function renderCaseCatalog() {
   // when the visitor opens the Cases page, then redraw with full themed pools.
   if (currentPage === 'case' && !completeSkinCatalogReady) void loadCompleteSkinCatalog();
 
-  const validEntries = Object.entries(CASE_TYPES).filter(([id, c]) => !c.aliasTo && (!c.seasonal || (c.seasonal === HALLOWEEN_EVENT.id && getHalloweenEventStatus().active)));
+  const validEntries = Object.entries(CASE_TYPES).filter(([id, c]) => !c.aliasTo && (!c.seasonal || getSeasonalEventStatus(c.seasonal).active));
   const filtered = validEntries.filter(([id, c]) => {
     if (currentCaseCategory === 'all') return true;
     return c.category === currentCaseCategory;
@@ -6454,9 +6761,10 @@ function openPowerCase(caseType = 'budget_covert') {
   let cfg = CASE_TYPES[caseType] || CASE_TYPES.budget_covert;
   if (cfg.aliasTo) cfg = CASE_TYPES[cfg.aliasTo] || cfg;
 
-  const halloweenStatus = getHalloweenEventStatus();
-  if (cfg.seasonal && (cfg.seasonal !== HALLOWEEN_EVENT.id || !halloweenStatus.scheduledActive)) {
-    showToast(halloweenStatus.preview ? 'Нічний кейс показано в перегляді, але до старту події не відкривається.' : 'Цей сезонний кейс зараз закритий.', 'warn');
+  const seasonalStatus = cfg.seasonal ? getSeasonalEventStatus(cfg.seasonal) : null;
+  if (cfg.seasonal && !seasonalStatus?.scheduledActive) {
+    const previewLabel = cfg.seasonal === WINTER_EVENT.id ? 'ICEWIRE Cache' : 'Нічний кейс';
+    showToast(seasonalStatus?.preview ? `${previewLabel} показано в перегляді, але до старту події не відкривається.` : 'Цей сезонний кейс зараз закритий.', 'warn');
     return;
   }
 
@@ -6779,6 +7087,7 @@ async function startCaseReel() {
   gameState.weekly.cases = (gameState.weekly.cases || 0) + mult;
   recordPulseCircuitStep('case');
   const halloweenProgress = awardHalloweenProgress('case', mult);
+  const winterShards = awardWinterShards('case', mult);
   updateAllTimeOnCase();
   wonItems.forEach(it => {
     if ((it.price || 0) >= 50000) gameState.allTime.legendaryDrops = (gameState.allTime.legendaryDrops || 0) + 1;
@@ -6793,6 +7102,7 @@ async function startCaseReel() {
   saveState();
   renderGameHub();
   if (halloweenProgress.pumpkins) showToast(`Halloween: +${halloweenProgress.pumpkins} 🎃 і +${halloweenProgress.coins} 🪙 за кейс.`, 'success');
+  if (winterShards) showToast(`ICEWIRE: +${winterShards} Frost Shard за контейнер.`, 'success');
 
   if (isFast) {
     soundCase();
@@ -7441,6 +7751,7 @@ function startBattle() {
     }
     if (isPlayerWin) recordPulseCircuitStep('battle');
     const halloweenProgress = isPlayerWin ? awardHalloweenProgress('battle') : { pumpkins: 0, coins: 0 };
+    const winterShards = isPlayerWin ? awardWinterShards('battle') : 0;
 
     gameState.rounds.unshift({
       at: Date.now(),
@@ -7461,6 +7772,7 @@ function startBattle() {
     updateAvatarBadge();
     renderGameHub();
     if (halloweenProgress.pumpkins) showToast(`Halloween: +${halloweenProgress.pumpkins} 🎃 і +${halloweenProgress.coins} 🪙 за перемогу в бою.`, 'success');
+    if (winterShards) showToast(`ICEWIRE: +${winterShards} Frost Shard за перемогу в бою.`, 'success');
     void syncCommunity();
 
     if (startBtn) startBtn.innerHTML = '<i class="fa-solid fa-coins mr-2"></i>КИНУТИ МОНЕТКУ';
