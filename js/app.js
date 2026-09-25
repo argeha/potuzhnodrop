@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 5.8 ============ */
+/* ============ ПОТУЖНО DROP 6.4 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -42,7 +42,7 @@ function showPage(id) {
     el.setAttribute('aria-current', active ? 'page' : 'false');
   });
 
-  document.title = `${getPageDisplayTitle(id)} · ПОТУЖНО DROP`;
+  document.title = `${getPageDisplayTitle(id)} · ${getActiveBrandName()}`;
 
   localStorage.setItem(STORAGE.page, id);
   if (location.hash.replace('#', '') !== id) {
@@ -946,6 +946,7 @@ const HALLOWEEN_TREAT_COST = 3;
 const HALLOWEEN_COSMETICS = Object.freeze({
   night_hunter_2026: { id: 'night_hunter_2026', kind: 'title', icon: 'fa-crosshairs', title: 'Нічний мисливець', note: 'Постійний титул Halloween 2026' },
   midnight_keeper_2026: { id: 'midnight_keeper_2026', kind: 'title', icon: 'fa-moon', title: 'Сторож опівночі', note: 'Постійний титул за ритуал' },
+  rift_breaker_2026: { id: 'rift_breaker_2026', kind: 'title', icon: 'fa-burst', title: 'Руйнівник Розлому', note: 'Постійний титул за майстерний удар у Розломі' },
   halloween_night_2026: { id: 'halloween_night_2026', kind: 'frame', icon: 'fa-ghost', title: 'Гарбузова ніч', note: 'Постійна рамка профілю' }
 });
 const HALLOWEEN_SHOP_ITEMS = Object.freeze([
@@ -982,6 +983,9 @@ const HALLOWEEN_PAGE_COPY = Object.freeze({
 const HALLOWEEN_ADMIN_PREVIEW_QUERY = 'adminPreview';
 let halloweenAdminPreviewRequested = new URLSearchParams(window.location.search).get(HALLOWEEN_ADMIN_PREVIEW_QUERY) === HALLOWEEN_EVENT.id;
 let halloweenAdminPreviewAuthorized = false;
+const MIDNIGHT_RIFT_RUN_MS = 15_000;
+const MIDNIGHT_RIFT_MAX_RUNS = 3;
+let midnightRiftRun = null;
 
 const TARGET_ARENA_STAKES = Object.freeze([2_500, 10_000, 25_000]);
 const TARGET_ARENA_DURATION_MS = 15_000;
@@ -1133,8 +1137,16 @@ function setSteamImportRecord(steamId, record) {
 
 const CURRENCY_TOKEN = 'PC';
 
+function getCurrencyToken() {
+  return getHalloweenEventStatus().active ? 'NC' : CURRENCY_TOKEN;
+}
+
+function formatCreditValue(v) {
+  return Math.max(0, Math.round(Number(v) || 0)).toLocaleString('uk-UA');
+}
+
 function formatCredits(v) {
-  return `${Math.max(0, Math.round(Number(v) || 0)).toLocaleString('uk-UA')} ${CURRENCY_TOKEN}`;
+  return `${formatCreditValue(v)} ${getCurrencyToken()}`;
 }
 
 function escapeHtml(v) {
@@ -1167,6 +1179,9 @@ function createDefaultHalloweenEvent() {
     treatDate: '',
     treatChoice: '',
     ritualShards: 0,
+    riftDate: '',
+    riftRuns: 0,
+    riftBest: 0,
     purchases: [],
     cosmetics: { titles: [], frames: [], activeTitle: '', activeFrame: '' }
   };
@@ -1369,6 +1384,10 @@ function getPageDisplayTitle(id) {
   return getHalloweenEventStatus().active ? (HALLOWEEN_PAGE_COPY[id]?.title || standard[id] || 'Гра') : (standard[id] || 'Гра');
 }
 
+function getActiveBrandName() {
+  return getHalloweenEventStatus().active ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
+}
+
 function setSeasonalText(element, seasonalText, active) {
   if (!element || !seasonalText) return;
   const textNode = [...element.childNodes].find(node => node.nodeType === 3 && node.textContent.trim());
@@ -1400,7 +1419,11 @@ function applyHalloweenSeasonCopy(active) {
     setSeasonalParagraph(intro.querySelector('p'), copy.description, active);
   });
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active ? 'NIGHTFALL' : '6.3';
+  if (release) release.textContent = active ? 'THE 13TH' : '6.4';
+  const brand = document.getElementById('brandName');
+  if (brand) brand.textContent = active ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
+  setSeasonalParagraph(document.getElementById('brandRiskText'), 'NIGHTFALL DROP — це тимчасове ігрове перевтілення. Тут немає реальних виграшів, депозитів, трейдів або виведення скінів. Усі предмети та нічні кредити існують лише у віртуальній грі.', active);
+  setSeasonalHtml(document.getElementById('brandFooterText'), 'NIGHTFALL DROP · THE 13TH SIGNAL — тимчасова віртуальна Halloween-подія без реальних грошей, скінів або призів. <a href="#about" onclick="showPage(\'about\');return false" class="text-cyan-300 hover:text-cyan-200">Правила й безпека</a>', active);
 }
 
 function renderHalloweenSeasonShell() {
@@ -1413,6 +1436,7 @@ function renderHalloweenSeasonShell() {
   if (signal) signal.classList.toggle('hidden', !status.active);
   if (label) label.textContent = status.active ? 'Nightfall signal' : 'Live skins';
   if (labelWrap) labelWrap.classList.toggle('is-nightfall', status.active);
+  document.body.dataset.nightfallPhase = status.active ? String(getPulseCircuitCommunity().phase) : '';
 }
 
 async function enableHalloweenAdminPreview() {
@@ -1428,7 +1452,9 @@ async function enableHalloweenAdminPreview() {
     const url = new URL(window.location.href);
     url.searchParams.delete(HALLOWEEN_ADMIN_PREVIEW_QUERY);
     window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
+    renderHalloweenSeasonShell();
     renderGameHub();
+    if (currentPage) document.title = `${getPageDisplayTitle(currentPage)} · ${getActiveBrandName()}`;
     showToast('Halloween відкрито лише для твого приватного перегляду.', 'info');
   } catch {
     // The public site stays in its scheduled state if the protected check fails.
@@ -1456,6 +1482,9 @@ function getHalloweenEventState() {
     treatDate: /^\d{4}-\d{2}-\d{2}$/.test(String(stored.treatDate || '')) ? String(stored.treatDate) : '',
     treatChoice: HALLOWEEN_TREAT_OPTIONS.some(item => item.id === stored.treatChoice) ? stored.treatChoice : '',
     ritualShards: clampNumber(stored.ritualShards, 0, 3, 0),
+    riftDate: /^\d{4}-\d{2}-\d{2}$/.test(String(stored.riftDate || '')) ? String(stored.riftDate) : '',
+    riftRuns: clampNumber(stored.riftRuns, 0, MIDNIGHT_RIFT_MAX_RUNS, 0),
+    riftBest: clampNumber(stored.riftBest, 0, 99, 0),
     purchases: Array.isArray(stored.purchases) ? stored.purchases.map(String).filter(id => HALLOWEEN_SHOP_ITEMS.some(item => item.id === id)).slice(0, 8) : [],
     cosmetics: { titles, frames, activeTitle, activeFrame }
   };
@@ -1601,7 +1630,7 @@ function renderHalloweenEvent() {
   const previewNotice = status.preview ? '<div class="halloween-preview-notice"><i class="fa-solid fa-eye"></i> ПРИВАТНИЙ ПЕРЕГЛЯД АДМІНА · ГРАВЦЯМ ПОДІЯ ДОСІ НЕДОСТУПНА</div>' : '';
   const shopToggle = `<button type="button" class="halloween-utility-button" data-halloween-shop-toggle><i class="fa-solid fa-store"></i>${halloweenShopExpanded ? 'Сховати крамницю' : 'Нічна крамниця'} <b>${state.pumpkinCoins} 🪙</b></button>`;
   const treatToggle = `<button type="button" class="halloween-utility-button" data-halloween-treat-toggle><i class="fa-solid fa-candy-cane"></i>${halloweenTreatExpanded ? 'Сховати Trick or Treat' : 'Trick or Treat'} <b>${state.treatDate === status.date ? '✓ сьогодні' : `${HALLOWEEN_TREAT_COST} 🪙`}</b></button>`;
-  root.innerHTML = `<article class="halloween-event-card ${status.preview ? 'is-admin-preview' : ''}" aria-label="Halloween: Нічний дроп"><div class="halloween-event-top"><div class="halloween-pumpkin">🎃</div><div><p>18 ЖОВТНЯ — 3 ЛИСТОПАДА · КИЇВ</p><h2>HALLOWEEN: НІЧНИЙ ДРОП</h2><span>Гарбузи — прогрес. Гарбузові монетки — окрема валюта Нічної крамниці.</span></div><div class="halloween-progress"><span>${progress} / 13 🎃</span><div><i style="width:${Math.round((progress / 13) * 100)}%"></i></div><small>До ${Object.values(HALLOWEEN_EVENT.dailyCaps).reduce((sum, cap) => sum + cap, 0)} 🎃 / день</small></div></div>${previewNotice}<div class="halloween-event-body"><div id="pulseCircuit" class="halloween-nightfall-slot" aria-live="polite"></div><div class="halloween-sources"><span>${sourceLabel('case', 'Кейси')} · +${HALLOWEEN_COIN_REWARDS.case} 🪙</span><span>${sourceLabel('battle', 'Перемога в бою')} · +${HALLOWEEN_COIN_REWARDS.battle} 🪙</span><span>${sourceLabel('arena', 'Тир 13+')} · +${HALLOWEEN_COIN_REWARDS.arena} 🪙</span></div><div class="halloween-rewards">${rewards}</div><div class="halloween-utility-row">${shopToggle}${treatToggle}</div>${halloweenShopExpanded ? renderHalloweenShop(state, status) : ''}${halloweenTreatExpanded ? renderHalloweenTreat(state, status) : ''}</div></article>`;
+  root.innerHTML = `<article class="halloween-event-card ${status.preview ? 'is-admin-preview' : ''}" aria-label="Nightfall Drop: The 13th Signal"><div class="halloween-event-top"><div class="halloween-pumpkin">🎃</div><div><p>18 ЖОВТНЯ — 3 ЛИСТОПАДА · КИЇВ</p><h2>NIGHTFALL DROP <small>· THE 13TH SIGNAL</small></h2><span>Місто відповідає на сигнал: гарбузи — прогрес, а нічні монетки — валюта крамниці.</span></div><div class="halloween-progress"><span>${progress} / 13 🎃</span><div><i style="width:${Math.round((progress / 13) * 100)}%"></i></div><small>До ${Object.values(HALLOWEEN_EVENT.dailyCaps).reduce((sum, cap) => sum + cap, 0)} 🎃 / день</small></div></div>${previewNotice}<div class="halloween-event-body"><div id="pulseCircuit" class="halloween-nightfall-slot" aria-live="polite"></div><div class="halloween-sources"><span>${sourceLabel('case', 'Кейси')} · +${HALLOWEEN_COIN_REWARDS.case} 🪙</span><span>${sourceLabel('battle', 'Перемога в бою')} · +${HALLOWEEN_COIN_REWARDS.battle} 🪙</span><span>${sourceLabel('arena', 'Тир 13+')} · +${HALLOWEEN_COIN_REWARDS.arena} 🪙</span></div><div class="halloween-rewards">${rewards}</div><div class="halloween-utility-row">${shopToggle}${treatToggle}</div>${halloweenShopExpanded ? renderHalloweenShop(state, status) : ''}${halloweenTreatExpanded ? renderHalloweenTreat(state, status) : ''}</div></article>`;
   root.querySelectorAll('[data-halloween-claim]').forEach(button => button.addEventListener('click', () => claimHalloweenReward(Number(button.dataset.halloweenClaim))));
   root.querySelector('[data-halloween-shop-toggle]')?.addEventListener('click', () => {
     halloweenShopExpanded = !halloweenShopExpanded;
@@ -1613,7 +1642,9 @@ function renderHalloweenEvent() {
   });
   root.querySelectorAll('[data-halloween-buy]').forEach(button => button.addEventListener('click', () => buyHalloweenShopItem(button.dataset.halloweenBuy)));
   root.querySelectorAll('[data-halloween-treat]').forEach(button => button.addEventListener('click', () => chooseHalloweenTreat(button.dataset.halloweenTreat)));
+  root.querySelector('#pulseCircuit')?.insertAdjacentHTML('afterend', '<section id="midnightRift" class="halloween-rift-slot" aria-live="polite"></section>');
   renderPulseCircuit();
+  renderMidnightRift();
 }
 
 function claimHalloweenReward(pumpkins) {
@@ -1777,6 +1808,108 @@ function renderPulseCircuit() {
   if (state.badgeUnlocked) root.querySelector('.nightfall-vault b').textContent = 'SIGNAL FORGE · ВІДБИТОК ЗБЕРЕЖЕНО';
   root.querySelectorAll('[data-nightfall-go]').forEach(button => button.addEventListener('click', () => goToNightfallDistrict(button.dataset.nightfallGo)));
   root.querySelector('[data-nightfall-share]')?.addEventListener('click', () => { void shareNightfallRoute(); });
+}
+
+function getMidnightRiftCommunity() {
+  const rift = communitySnapshot?.rift && typeof communitySnapshot.rift === 'object' ? communitySnapshot.rift : {};
+  const maxHealth = clampNumber(rift.maxHealth, 100, 100_000, 2_500);
+  const health = clampNumber(rift.health, 0, maxHealth, maxHealth);
+  const hits = clampNumber(rift.hits, 0, 999_999, 0);
+  const recent = Array.isArray(rift.recent) ? rift.recent.slice(0, 5) : [];
+  return { maxHealth, health, hits, recent, defeated: health <= 0 };
+}
+
+function renderMidnightRift() {
+  const root = document.getElementById('midnightRift');
+  if (!root || !gameState || midnightRiftRun?.active) return;
+  const status = getHalloweenEventStatus();
+  if (!status.active) {
+    root.innerHTML = '';
+    return;
+  }
+  const state = getHalloweenEventState();
+  const runs = state.riftDate === status.date ? state.riftRuns : 0;
+  const rift = getMidnightRiftCommunity();
+  const healthPercent = Math.max(0, Math.round((rift.health / rift.maxHealth) * 100));
+  const recent = rift.recent.length
+    ? rift.recent.map(entry => `<span><i class="fa-solid fa-burst"></i>${escapeHtml(cleanText(entry?.name, 20) || 'Гравець')} <b>−${clampNumber(entry?.damage, 0, 99, 0)}</b></span>`).join('')
+    : '<span class="is-empty">Розлом ще не торкнувся жоден мисливець.</span>';
+  const disabled = status.preview || !status.scheduledActive || rift.defeated || runs >= MIDNIGHT_RIFT_MAX_RUNS;
+  const action = status.preview ? 'Лише перегляд' : rift.defeated ? 'Розлом закрито до завтра' : runs >= MIDNIGHT_RIFT_MAX_RUNS ? 'Твої удари на сьогодні вичерпано' : 'Увійти в Розлом';
+  root.innerHTML = `<article class="midnight-rift" aria-label="Розлом опівночі"><div class="midnight-rift-art" aria-hidden="true"></div><div class="midnight-rift-shade" aria-hidden="true"></div><header class="midnight-rift-head"><div><p><i class="fa-solid fa-circle-exclamation"></i> СПІЛЬНА ТРИВОГА · УСІ ГРАВЦІ</p><h2>РОЗЛОМ ОПІВНОЧІ</h2><span>15 секунд на руну. Кожен влучний сигнал зменшує спільну силу Розлому.</span></div><div class="midnight-rift-count"><span>ТВОЇ СПРОБИ</span><strong>${runs} <small>/ ${MIDNIGHT_RIFT_MAX_RUNS}</small></strong><em>${rift.hits.toLocaleString('uk-UA')} ударів міста</em></div></header><div class="midnight-rift-core"><div class="midnight-rift-entity"><span>THE 13TH SIGNAL</span><b>${rift.defeated ? 'ЗАКРИТИЙ' : 'АКТИВНИЙ'}</b><small>${rift.defeated ? 'Місто витримало цю ніч.' : 'Вартовий туману чекає на спільний удар.'}</small></div><div class="midnight-rift-health"><div><span>СТАБІЛЬНІСТЬ РОЗЛОМУ</span><b>${rift.health.toLocaleString('uk-UA')} <small>/ ${rift.maxHealth.toLocaleString('uk-UA')}</small></b></div><div class="midnight-rift-health-track"><i style="width:${healthPercent}%"></i></div><em>${100 - healthPercent}% очищено спільнотою</em></div><div class="midnight-rift-game" id="midnightRiftGame"><div class="midnight-rift-game-copy"><i class="fa-solid fa-wand-magic-sparkles"></i><b>СТАБІЛІЗУЙ РУНИ</b><span>Злови якомога більше рухомих знаків за 15 секунд.</span></div><button type="button" class="midnight-rift-start" data-rift-start ${disabled ? 'disabled' : ''}><i class="fa-solid fa-play"></i>${action}<small>${status.preview ? 'Нагороди та шкода вимкнені' : 'Нагорода: гарбузові монетки + XP'}</small></button></div></div><footer class="midnight-rift-foot"><div><b><i class="fa-solid fa-satellite-dish"></i> ОСТАННІ УДАРИ</b>${recent}</div><p><i class="fa-solid fa-shield-heart"></i> Це кооперативна skill-активність без ставок і без реальних призів.</p></footer></article>`;
+  root.querySelector('[data-rift-start]')?.addEventListener('click', startMidnightRift);
+}
+
+function positionMidnightRiftTarget(target) {
+  if (!target) return;
+  target.style.left = `${8 + Math.random() * 76}%`;
+  target.style.top = `${12 + Math.random() * 68}%`;
+  target.style.transform = `translate(-50%,-50%) rotate(${Math.round(-18 + Math.random() * 36)}deg)`;
+}
+
+function startMidnightRift() {
+  const status = getHalloweenEventStatus();
+  const state = getHalloweenEventState();
+  const rift = getMidnightRiftCommunity();
+  const todayRuns = state.riftDate === status.date ? state.riftRuns : 0;
+  if (!status.scheduledActive || midnightRiftRun?.active || rift.defeated || todayRuns >= MIDNIGHT_RIFT_MAX_RUNS) return;
+  if (state.riftDate !== status.date) {
+    state.riftDate = status.date;
+    state.riftRuns = 0;
+  }
+  const stage = document.getElementById('midnightRiftGame');
+  if (!stage) return;
+  const run = { active: true, score: 0, startedAt: Date.now(), interval: null, timeout: null };
+  midnightRiftRun = run;
+  stage.innerHTML = `<div class="midnight-rift-hud"><span>ЧАС <b id="riftTime">15.0</b></span><span>РУНИ <b id="riftScore">0</b></span></div><button type="button" class="midnight-rift-target" id="midnightRiftTarget" aria-label="Спіймати руну"><i class="fa-solid fa-ankh"></i><span>СПІЙМАТИ</span></button>`;
+  const target = document.getElementById('midnightRiftTarget');
+  const score = document.getElementById('riftScore');
+  const time = document.getElementById('riftTime');
+  const finish = () => finishMidnightRift(run);
+  positionMidnightRiftTarget(target);
+  target?.addEventListener('click', () => {
+    if (!run.active) return;
+    run.score += 1;
+    if (score) score.textContent = String(run.score);
+    positionMidnightRiftTarget(target);
+    target.classList.remove('is-hit');
+    requestAnimationFrame(() => target.classList.add('is-hit'));
+  });
+  run.interval = window.setInterval(() => {
+    const left = Math.max(0, MIDNIGHT_RIFT_RUN_MS - (Date.now() - run.startedAt));
+    if (time) time.textContent = (left / 1000).toFixed(1);
+    if (!left) finish();
+  }, 80);
+  run.timeout = window.setTimeout(finish, MIDNIGHT_RIFT_RUN_MS + 60);
+}
+
+function finishMidnightRift(run) {
+  if (!run?.active || midnightRiftRun !== run) return;
+  run.active = false;
+  window.clearInterval(run.interval);
+  window.clearTimeout(run.timeout);
+  midnightRiftRun = null;
+  const status = getHalloweenEventStatus();
+  const state = getHalloweenEventState();
+  const score = clampNumber(run.score, 0, 99, 0);
+  const damage = clampNumber(16 + score * 7, 16, 90, 16);
+  state.riftDate = status.date;
+  state.riftRuns = clampNumber(state.riftRuns + 1, 0, MIDNIGHT_RIFT_MAX_RUNS, 0);
+  state.riftBest = Math.max(state.riftBest, score);
+  const coins = Math.max(1, Math.min(7, Math.floor(score / 2) + 1));
+  state.pumpkinCoins = clampNumber(state.pumpkinCoins + coins, 0, 9_999, 0);
+  addXp(12 + score * 3);
+  if (score >= 10 && !state.cosmetics.titles.includes('rift_breaker_2026')) {
+    state.cosmetics.titles.push('rift_breaker_2026');
+    state.cosmetics.activeTitle = 'rift_breaker_2026';
+  }
+  saveState();
+  updateBalanceUI();
+  renderProfileCosmeticsSummary();
+  renderHalloweenEvent();
+  void syncCommunity(null, null, { id: makeUuid(), damage });
+  soundWin();
+  showToast(`Розлом: ${score} рун · −${damage} спільної сили · +${coins} 🪙`, score >= 10 ? 'success' : 'info');
 }
 
 function goToNightfallDistrict(stepId) {
@@ -4007,7 +4140,7 @@ function toggleFavorite(k) {
   if (document.getElementById('shopModal')?.classList.contains('flex')) filterShop();
 }
 
-let communitySnapshot = { leaderboard: [], events: [], rank: null, season: '', circuit: null };
+let communitySnapshot = { leaderboard: [], events: [], rank: null, season: '', circuit: null, rift: null };
 let communitySyncStarted = false;
 let communitySyncInFlight = false;
 let queuedCommunityEvents = [];
@@ -4099,17 +4232,20 @@ function applyCommunitySnapshot(data) {
     events: Array.isArray(data?.events) ? data.events : [],
     rank: Number.isSafeInteger(data?.rank) ? data.rank : null,
     season: cleanText(data?.season, 16),
-    circuit: data?.circuit && typeof data.circuit === 'object' ? data.circuit : null
+    circuit: data?.circuit && typeof data.circuit === 'object' ? data.circuit : null,
+    rift: data?.rift && typeof data.rift === 'object' ? data.rift : null
   };
   renderLeaderboard();
   renderCommunityFeed(communitySnapshot.events);
   renderPulseCircuit();
+  renderMidnightRift();
+  renderHalloweenSeasonShell();
 }
 
-async function syncCommunity(event = null, circuitPulse = null) {
+async function syncCommunity(event = null, circuitPulse = null, riftPulse = null) {
   if (!account?.communityId || !gameState || document.hidden || isProfileBlocked()) return;
   if (communitySyncInFlight) {
-    if (event || circuitPulse) queuedCommunityEvents = [...queuedCommunityEvents, { event, circuitPulse }].slice(-8);
+    if (event || circuitPulse || riftPulse) queuedCommunityEvents = [...queuedCommunityEvents, { event, circuitPulse, riftPulse }].slice(-8);
     return;
   }
   communitySyncInFlight = true;
@@ -4117,7 +4253,7 @@ async function syncCommunity(event = null, circuitPulse = null) {
     const data = await requestJson('/api/community', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: account.communityId, player: getCommunityPlayerPayload(), ...(event ? { event } : {}), ...(circuitPulse ? { circuitPulse } : {}) })
+      body: JSON.stringify({ id: account.communityId, player: getCommunityPlayerPayload(), ...(event ? { event } : {}), ...(circuitPulse ? { circuitPulse } : {}), ...(riftPulse ? { riftPulse } : {}) })
     }, 6_000);
     applyCommunitySnapshot(data);
   } catch {
@@ -4125,7 +4261,7 @@ async function syncCommunity(event = null, circuitPulse = null) {
   } finally {
     communitySyncInFlight = false;
     const nextEvent = queuedCommunityEvents.shift();
-    if (nextEvent) void syncCommunity(nextEvent.event, nextEvent.circuitPulse);
+    if (nextEvent) void syncCommunity(nextEvent.event, nextEvent.circuitPulse, nextEvent.riftPulse);
   }
 }
 
@@ -5461,7 +5597,7 @@ function renderMultiSlots() {
         <span class="wear-badge wear-${wear.code} absolute top-1 left-1">${wear.code}</span>
         <button type="button" class="rm" data-multi-remove-id="${escapeHtml(String(s.id))}" aria-label="Видалити"><i class="fa-solid fa-xmark"></i></button>
         <img src="${escapeHtml(getSkinImageSrc(s))}" alt="" data-skin-name="${escapeHtml(s.name)}" onerror="handleSkinImageError(this)">
-        <div class="price">${formatCredits(s.price).replace(` ${CURRENCY_TOKEN}`, '')}</div>
+            <div class="price">${formatCreditValue(s.price)}</div>
       </div>`;
     }).join('');
     g.querySelectorAll('[data-multi-remove-id]').forEach(button => {
@@ -7899,7 +8035,7 @@ function renderContractSlots() {
   if (range) {
     if (total > 0) {
       const lo = Math.round(total * 0.75), hi = Math.round(total * 1.35);
-      range.textContent = `${formatCredits(lo).replace(` ${CURRENCY_TOKEN}`, '')} — ${formatCredits(hi)}`;
+      range.textContent = `${formatCreditValue(lo)} — ${formatCredits(hi)}`;
     } else {
       range.textContent = '—';
     }
@@ -8506,7 +8642,7 @@ window.addEventListener('DOMContentLoaded', () => {
       halloweenEventDateKey = halloweenDate;
       renderGameHub();
       renderCaseCatalog();
-      if (currentPage) document.title = `${getPageDisplayTitle(currentPage)} · ПОТУЖНО DROP`;
+      if (currentPage) document.title = `${getPageDisplayTitle(currentPage)} · ${getActiveBrandName()}`;
     }
     const prevD = gameState.daily.date;
     const today = getTodayKey();

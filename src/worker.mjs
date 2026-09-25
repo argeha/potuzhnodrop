@@ -34,7 +34,7 @@ const MAX_PRICE = 1_000_000
 const WAIT_TTL = 10_000
 const MATCH_TTL = 10 * 60_000
 const PUBLIC_PROFILE_TTL = 90 * 24 * 60 * 60_000
-const PUBLIC_PROFILE_TITLES = new Set(['night_hunter_2026', 'midnight_keeper_2026'])
+const PUBLIC_PROFILE_TITLES = new Set(['night_hunter_2026', 'midnight_keeper_2026', 'rift_breaker_2026'])
 const PUBLIC_PROFILE_FRAMES = new Set(['halloween_night_2026'])
 const STEAM_PROFILE_TTL = 6 * 60 * 60_000
 const STEAM_SESSION_TTL = 30 * 24 * 60 * 60_000
@@ -54,6 +54,9 @@ const COMMUNITY_CIRCUIT_PHASE_SIZE = 18
 const COMMUNITY_CIRCUIT_PHASES = 4
 const COMMUNITY_CIRCUIT_DAILY_LIMIT = 1
 const COMMUNITY_CIRCUIT_RECENT_LIMIT = 8
+const COMMUNITY_RIFT_MAX_HEALTH = 2_500
+const COMMUNITY_RIFT_DAILY_LIMIT = 3
+const COMMUNITY_RIFT_RECENT_LIMIT = 8
 const ADMIN_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const ADMIN_MAX_MEMBERS = 200
 const ADMIN_MAX_AUDIT_EVENTS = 500
@@ -451,6 +454,50 @@ function applyCommunityCircuitPulse(circuit, visitorHash, player, pulse, now) {
   return true
 }
 
+function normalizeCommunityRift(value, now) {
+  const day = communityCircuitDayKey()
+  const source = value?.day === day && value && typeof value === 'object' ? value : {}
+  const daily = Object.fromEntries(Object.entries(source.daily && typeof source.daily === 'object' ? source.daily : {})
+    .map(([visitorHash, entry]) => {
+      const validHash = /^[a-f0-9]{64}$/i.test(visitorHash)
+      const count = boundedInteger(entry?.count, 0, COMMUNITY_RIFT_DAILY_LIMIT)
+      return validHash && count ? [visitorHash, { count }] : null
+    })
+    .filter(Boolean)
+    .slice(0, COMMUNITY_MAX_PLAYERS))
+  const recent = (Array.isArray(source.recent) ? source.recent : [])
+    .map(entry => {
+      const playerId = cleanText(entry?.playerId, 64)
+      const name = cleanText(entry?.name, 24)
+      const damage = boundedInteger(entry?.damage, 12, 90, 12)
+      const at = boundedInteger(entry?.at, now - 24 * 60 * 60_000, now, now)
+      return /^[a-f0-9]{64}$/i.test(playerId) && name ? { id: cleanText(entry?.id, 48) || randomHex(12), playerId, name, damage, at } : null
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.at - left.at)
+    .slice(0, COMMUNITY_RIFT_RECENT_LIMIT)
+  return {
+    day,
+    health: boundedInteger(source.health, 0, COMMUNITY_RIFT_MAX_HEALTH, COMMUNITY_RIFT_MAX_HEALTH),
+    hits: boundedInteger(source.hits, 0, 999_999),
+    daily,
+    recent,
+  }
+}
+
+function applyCommunityRiftPulse(rift, visitorHash, player, pulse, now) {
+  const id = cleanText(pulse?.id, 48)
+  if (!id || rift.health <= 0) return false
+  const previous = rift.daily[visitorHash]
+  if (previous?.count >= COMMUNITY_RIFT_DAILY_LIMIT || rift.recent.some(entry => entry.id === id)) return false
+  const damage = boundedInteger(pulse?.damage, 12, 90, 12)
+  rift.daily[visitorHash] = { count: Math.min(COMMUNITY_RIFT_DAILY_LIMIT, (previous?.count || 0) + 1) }
+  rift.health = Math.max(0, rift.health - damage)
+  rift.hits = Math.min(999_999, rift.hits + 1)
+  rift.recent = [{ id, playerId: visitorHash, name: player.name, damage, at: now }, ...rift.recent].slice(0, COMMUNITY_RIFT_RECENT_LIMIT)
+  return true
+}
+
 function normalizeCommunityPlayer(value, visitorHash, now) {
   const name = cleanText(value?.name, 24)
   if (!name) return null
@@ -514,7 +561,7 @@ function normalizeCommunityState(value, now) {
     .filter(event => event && now - event.at < COMMUNITY_EVENT_TTL)
     .sort((left, right) => right.at - left.at)
     .slice(0, COMMUNITY_MAX_EVENTS)
-  return { season, players: Object.fromEntries(players), events, circuit: normalizeCommunityCircuit(source.circuit, now) }
+  return { season, players: Object.fromEntries(players), events, circuit: normalizeCommunityCircuit(source.circuit, now), rift: normalizeCommunityRift(source.rift, now) }
 }
 
 function communityResponse(state, visitorHash) {
@@ -540,6 +587,10 @@ function communityResponse(state, visitorHash) {
     .filter(entry => state.players[entry.playerId]?.hidden !== true)
     .map(entry => ({ name: entry.name, at: entry.at }))
   const phase = Math.min(COMMUNITY_CIRCUIT_PHASES, Math.floor(circuit.total / COMMUNITY_CIRCUIT_PHASE_SIZE) + 1)
+  const rift = normalizeCommunityRift(state.rift, Date.now())
+  const riftRecent = rift.recent
+    .filter(entry => state.players[entry.playerId]?.hidden !== true)
+    .map(entry => ({ name: entry.name, damage: entry.damage, at: entry.at }))
   return {
     season: state.season,
     leaderboard,
@@ -552,6 +603,13 @@ function communityResponse(state, visitorHash) {
       phaseSize: COMMUNITY_CIRCUIT_PHASE_SIZE,
       phaseProgress: circuit.total % COMMUNITY_CIRCUIT_PHASE_SIZE,
       recent,
+    },
+    rift: {
+      day: rift.day,
+      maxHealth: COMMUNITY_RIFT_MAX_HEALTH,
+      health: rift.health,
+      hits: rift.hits,
+      recent: riftRecent,
     },
   }
 }
@@ -1696,11 +1754,13 @@ export class PotuzhnoState {
       : null
     const event = rawEvent ? normalizeCommunityEvent(rawEvent, now) : null
     const circuitPulse = body?.circuitPulse && typeof body.circuitPulse === 'object' ? body.circuitPulse : null
+    const riftPulse = body?.riftPulse && typeof body.riftPulse === 'object' ? body.riftPulse : null
     const result = await this.storage.transaction(async transaction => {
       const state = normalizeCommunityState(await transaction.get('community:season'), now)
       state.players[visitorHash] = player
       if (event) state.events = [event, ...state.events.filter(entry => entry.id !== event.id)].slice(0, COMMUNITY_MAX_EVENTS)
       if (circuitPulse && player.hidden !== true) applyCommunityCircuitPulse(state.circuit, visitorHash, player, circuitPulse, now)
+      if (riftPulse && player.hidden !== true) applyCommunityRiftPulse(state.rift, visitorHash, player, riftPulse, now)
       await transaction.put('community:season', state)
       return communityResponse(state, visitorHash)
     })
