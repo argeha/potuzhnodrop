@@ -34,6 +34,8 @@ const MAX_PRICE = 1_000_000
 const WAIT_TTL = 10_000
 const MATCH_TTL = 10 * 60_000
 const PUBLIC_PROFILE_TTL = 90 * 24 * 60 * 60_000
+const PUBLIC_PROFILE_TITLES = new Set(['night_hunter_2026', 'midnight_keeper_2026'])
+const PUBLIC_PROFILE_FRAMES = new Set(['halloween_night_2026'])
 const STEAM_PROFILE_TTL = 6 * 60 * 60_000
 const STEAM_SESSION_TTL = 30 * 24 * 60 * 60_000
 const CATALOG_TTL = 6 * 60 * 60_000
@@ -229,6 +231,7 @@ function cleanAvatar(value) {
 function publicProfilePayload(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const stats = value.stats && typeof value.stats === 'object' && !Array.isArray(value.stats) ? value.stats : {}
+  const cosmetics = value.cosmetics && typeof value.cosmetics === 'object' && !Array.isArray(value.cosmetics) ? value.cosmetics : {}
   const name = cleanText(value.name, 24)
   if (!name) return null
   return {
@@ -237,6 +240,10 @@ function publicProfilePayload(value) {
     level: Math.round(Math.min(9_999, Math.max(1, Number(value.level) || 1))),
     prestige: Math.round(Math.min(99, Math.max(0, Number(value.prestige) || 0))),
     steamConnected: value.steamConnected === true,
+    cosmetics: {
+      title: PUBLIC_PROFILE_TITLES.has(String(cosmetics.title || '')) ? String(cosmetics.title) : '',
+      frame: PUBLIC_PROFILE_FRAMES.has(String(cosmetics.frame || '')) ? String(cosmetics.frame) : '',
+    },
     stats: {
       rounds: Math.round(Math.min(9_999_999, Math.max(0, Number(stats.rounds) || 0))),
       cases: Math.round(Math.min(9_999_999, Math.max(0, Number(stats.cases) || 0))),

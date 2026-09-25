@@ -941,6 +941,26 @@ const HALLOWEEN_REWARDS = Object.freeze([
   { pumpkins: 7, type: 'ticket', amount: 1, icon: 'fa-ticket', title: 'Потужний квиток' },
   { pumpkins: 13, type: 'skin', skinName: 'P250 | See Ya Later', icon: 'fa-ghost', title: 'Halloween skin' }
 ]);
+// Pumpkins are the progress track. Pumpkin Coins are a separate, spendable
+// event currency, so a player never has to choose between finishing the event
+// and buying a cosmetic. All rewards below are virtual and account-bound.
+const HALLOWEEN_COIN_REWARDS = Object.freeze({ case: 2, battle: 3, arena: 3 });
+const HALLOWEEN_TREAT_COST = 3;
+const HALLOWEEN_COSMETICS = Object.freeze({
+  night_hunter_2026: { id: 'night_hunter_2026', kind: 'title', icon: 'fa-crosshairs', title: 'Нічний мисливець', note: 'Постійний титул Halloween 2026' },
+  midnight_keeper_2026: { id: 'midnight_keeper_2026', kind: 'title', icon: 'fa-moon', title: 'Сторож опівночі', note: 'Постійний титул за ритуал' },
+  halloween_night_2026: { id: 'halloween_night_2026', kind: 'frame', icon: 'fa-ghost', title: 'Гарбузова ніч', note: 'Постійна рамка профілю' }
+});
+const HALLOWEEN_SHOP_ITEMS = Object.freeze([
+  { id: 'halloween_ticket', kind: 'ticket', icon: 'fa-ticket', title: 'Потужний квиток', note: 'Одна безкоштовна прокрутка', cost: 14, limit: 2 },
+  { id: 'night_hunter_2026', kind: 'cosmetic', icon: 'fa-crosshairs', title: 'Нічний мисливець', note: 'Постійний титул профілю', cost: 32, limit: 1 },
+  { id: 'halloween_night_2026', kind: 'cosmetic', icon: 'fa-ghost', title: 'Гарбузова ніч', note: 'Постійна рамка профілю', cost: 48, limit: 1 }
+]);
+const HALLOWEEN_TREAT_OPTIONS = Object.freeze([
+  { id: 'pc', icon: 'fa-coins', title: '+180 PC', note: 'Візьми миттєву нагороду', credits: 180 },
+  { id: 'ticket', icon: 'fa-ticket', title: '+1 квиток', note: 'Відкрий кейс без PC', tickets: 1 },
+  { id: 'shard', icon: 'fa-moon', title: 'Уламок ритуалу', note: '3 уламки → титул назавжди', shard: 1 }
+]);
 const HALLOWEEN_ADMIN_PREVIEW_QUERY = 'adminPreview';
 let halloweenAdminPreviewRequested = new URLSearchParams(window.location.search).get(HALLOWEEN_ADMIN_PREVIEW_QUERY) === HALLOWEEN_EVENT.id;
 let halloweenAdminPreviewAuthorized = false;
@@ -965,6 +985,8 @@ let powerRunExpanded = false;
 let targetArenaExpanded = false;
 let battlePassExpanded = false;
 let halloweenEventDateKey = '';
+let halloweenShopExpanded = false;
+let halloweenTreatExpanded = false;
 
 // Battle Pass rewards deliberately reuse the real skins already present in
 // the catalogue. This keeps their artwork, name, rarity and inventory data
@@ -1118,7 +1140,18 @@ function createDefaultPowerRun() {
 }
 
 function createDefaultHalloweenEvent() {
-  return { pumpkins: 0, claimed: [], dailyDate: '', dailySources: { case: 0, battle: 0, arena: 0 } };
+  return {
+    pumpkins: 0,
+    pumpkinCoins: 0,
+    claimed: [],
+    dailyDate: '',
+    dailySources: { case: 0, battle: 0, arena: 0 },
+    treatDate: '',
+    treatChoice: '',
+    ritualShards: 0,
+    purchases: [],
+    cosmetics: { titles: [], frames: [], activeTitle: '', activeFrame: '' }
+  };
 }
 
 function createDefaultTargetArena() {
@@ -1327,11 +1360,26 @@ async function enableHalloweenAdminPreview() {
 function getHalloweenEventState() {
   if (!gameState) return createDefaultHalloweenEvent();
   const stored = gameState.halloweenEvent && typeof gameState.halloweenEvent === 'object' ? gameState.halloweenEvent : {};
+  const defaults = createDefaultHalloweenEvent();
+  const storedCosmetics = stored.cosmetics && typeof stored.cosmetics === 'object' ? stored.cosmetics : {};
+  const normalizeCosmeticIds = (value, kind) => Array.isArray(value)
+    ? [...new Set(value.map(String).filter(id => HALLOWEEN_COSMETICS[id]?.kind === kind))]
+    : [];
+  const titles = normalizeCosmeticIds(storedCosmetics.titles, 'title');
+  const frames = normalizeCosmeticIds(storedCosmetics.frames, 'frame');
+  const activeTitle = titles.includes(String(storedCosmetics.activeTitle || '')) ? String(storedCosmetics.activeTitle) : '';
+  const activeFrame = frames.includes(String(storedCosmetics.activeFrame || '')) ? String(storedCosmetics.activeFrame) : '';
   const state = {
     pumpkins: clampNumber(stored.pumpkins, 0, 999, 0),
+    pumpkinCoins: clampNumber(stored.pumpkinCoins, 0, 9_999, 0),
     claimed: Array.isArray(stored.claimed) ? [...new Set(stored.claimed.map(Number).filter(Number.isInteger))] : [],
     dailyDate: /^\d{4}-\d{2}-\d{2}$/.test(String(stored.dailyDate || '')) ? String(stored.dailyDate) : '',
-    dailySources: { ...createDefaultHalloweenEvent().dailySources, ...(stored.dailySources || {}) }
+    dailySources: { ...defaults.dailySources, ...(stored.dailySources || {}) },
+    treatDate: /^\d{4}-\d{2}-\d{2}$/.test(String(stored.treatDate || '')) ? String(stored.treatDate) : '',
+    treatChoice: HALLOWEEN_TREAT_OPTIONS.some(item => item.id === stored.treatChoice) ? stored.treatChoice : '',
+    ritualShards: clampNumber(stored.ritualShards, 0, 3, 0),
+    purchases: Array.isArray(stored.purchases) ? stored.purchases.map(String).filter(id => HALLOWEEN_SHOP_ITEMS.some(item => item.id === id)).slice(0, 8) : [],
+    cosmetics: { titles, frames, activeTitle, activeFrame }
   };
   for (const source of Object.keys(HALLOWEEN_EVENT.dailyCaps)) state.dailySources[source] = clampNumber(state.dailySources[source], 0, HALLOWEEN_EVENT.dailyCaps[source], 0);
   gameState.halloweenEvent = state;
@@ -1354,6 +1402,96 @@ function awardHalloweenPumpkins(source, amount = 1) {
   return granted;
 }
 
+function awardHalloweenProgress(source, amount = 1) {
+  const pumpkins = awardHalloweenPumpkins(source, amount);
+  if (!pumpkins) return { pumpkins: 0, coins: 0 };
+  const state = getHalloweenEventState();
+  const coins = Math.max(0, Math.round(Number(HALLOWEEN_COIN_REWARDS[source]) || 0)) * pumpkins;
+  state.pumpkinCoins = clampNumber(state.pumpkinCoins + coins, 0, 9_999, 0);
+  return { pumpkins, coins };
+}
+
+function getHalloweenCosmetics() {
+  const state = getHalloweenEventState();
+  const activeTitle = HALLOWEEN_COSMETICS[state.cosmetics.activeTitle] || null;
+  const activeFrame = HALLOWEEN_COSMETICS[state.cosmetics.activeFrame] || null;
+  return { state, activeTitle, activeFrame, titles: state.cosmetics.titles.map(id => HALLOWEEN_COSMETICS[id]).filter(Boolean), frames: state.cosmetics.frames.map(id => HALLOWEEN_COSMETICS[id]).filter(Boolean) };
+}
+
+function renderProfileCosmeticsSummary() {
+  const button = document.getElementById('profileCosmeticsButton');
+  const label = document.getElementById('profileCosmeticsLabel');
+  const portrait = document.querySelector('.profile-portrait');
+  if (!button || !label) return;
+  const cosmetics = getHalloweenCosmetics();
+  const hasCosmetics = cosmetics.titles.length || cosmetics.frames.length;
+  button.classList.toggle('hidden', !hasCosmetics);
+  if (!hasCosmetics) return;
+  button.classList.toggle('has-frame', Boolean(cosmetics.activeFrame));
+  label.textContent = cosmetics.activeTitle?.title || cosmetics.activeFrame?.title || 'Колекція Halloween';
+  if (portrait) portrait.classList.toggle('is-halloween-frame', Boolean(cosmetics.activeFrame));
+}
+
+function renderProfileCosmeticsModal() {
+  const content = document.getElementById('profileCosmeticsContent');
+  if (!content) return;
+  const cosmetics = getHalloweenCosmetics();
+  const renderGroup = (entries, activeId, kind, empty) => entries.length
+    ? entries.map(entry => `<button type="button" class="halloween-cosmetic-choice ${entry.id === activeId ? 'is-active' : ''}" data-halloween-equip="${entry.id}"><i class="fa-solid ${entry.icon}"></i><span><b>${escapeHtml(entry.title)}</b><small>${escapeHtml(entry.note)}</small></span><em>${entry.id === activeId ? 'Активно' : 'Обрати'}</em></button>`).join('')
+    : `<p class="halloween-cosmetic-empty"><i class="fa-solid ${kind === 'title' ? 'fa-crosshairs' : 'fa-ghost'}"></i>${empty}</p>`;
+  content.innerHTML = `<div class="halloween-cosmetics-heading"><p>ПРОФІЛЬ · HALLOWEEN</p><h3>ТИТУЛ І РАМКА</h3><span>Обери активну косметику. Вона збережеться у Cloud Profile та буде видима в публічному профілі.</span></div><section class="halloween-cosmetic-group"><h4><i class="fa-solid fa-id-badge"></i> Титули</h4>${renderGroup(cosmetics.titles, cosmetics.activeTitle?.id, 'title', 'Пройди Halloween-ритуал або знайди титул у Нічній крамниці.')}</section><section class="halloween-cosmetic-group"><h4><i class="fa-solid fa-border-all"></i> Рамки</h4>${renderGroup(cosmetics.frames, cosmetics.activeFrame?.id, 'frame', 'Рамка з’явиться в Нічній крамниці під час події.')}</section>`;
+  content.querySelectorAll('[data-halloween-equip]').forEach(button => button.addEventListener('click', () => setHalloweenCosmetic(button.dataset.halloweenEquip)));
+}
+
+function openProfileCosmeticsModal() {
+  const cosmetics = getHalloweenCosmetics();
+  if (!cosmetics.titles.length && !cosmetics.frames.length) return;
+  renderProfileCosmeticsModal();
+  openModal('profileCosmeticsModal');
+}
+
+function setHalloweenCosmetic(id) {
+  const cosmetic = HALLOWEEN_COSMETICS[id];
+  if (!cosmetic) return;
+  const state = getHalloweenEventState();
+  const collection = cosmetic.kind === 'title' ? state.cosmetics.titles : state.cosmetics.frames;
+  if (!collection.includes(id)) return;
+  if (cosmetic.kind === 'title') state.cosmetics.activeTitle = state.cosmetics.activeTitle === id ? '' : id;
+  else state.cosmetics.activeFrame = state.cosmetics.activeFrame === id ? '' : id;
+  saveState();
+  renderProfileCosmeticsSummary();
+  renderProfileCosmeticsModal();
+  showToast(state.cosmetics[cosmetic.kind === 'title' ? 'activeTitle' : 'activeFrame'] ? 'Косметику активовано в профілі.' : 'Косметику вимкнено в профілі.', 'success');
+}
+
+function getHalloweenPurchaseCount(state, itemId) {
+  return state.purchases.filter(id => id === itemId).length;
+}
+
+function renderHalloweenShop(state, status) {
+  const items = HALLOWEEN_SHOP_ITEMS.map(item => {
+    const bought = getHalloweenPurchaseCount(state, item.id);
+    const soldOut = bought >= item.limit;
+    const canBuy = status.scheduledActive && !soldOut && state.pumpkinCoins >= item.cost;
+    const action = status.preview ? 'Лише перегляд' : soldOut ? 'Вже є' : state.pumpkinCoins < item.cost ? `Ще ${item.cost - state.pumpkinCoins} 🪙` : 'Взяти';
+    return `<button type="button" class="halloween-shop-item ${soldOut ? 'is-owned' : ''}" ${canBuy ? `data-halloween-buy="${item.id}"` : 'disabled'}><i class="fa-solid ${item.icon}"></i><span><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.note)}</small></span><em>${soldOut ? '✓' : `${item.cost} 🪙`}</em><strong>${action}</strong></button>`;
+  }).join('');
+  return `<div class="halloween-shop" aria-label="Нічна крамниця"><div class="halloween-shop-heading"><div><i class="fa-solid fa-store"></i><b>НІЧНА КРАМНИЦЯ</b><span>Нагороди прив’язані до профілю назавжди</span></div><strong>${state.pumpkinCoins} 🪙</strong></div><div class="halloween-shop-list">${items}</div></div>`;
+}
+
+function renderHalloweenTreat(state, status) {
+  const todayClaimed = state.treatDate === status.date;
+  const options = HALLOWEEN_TREAT_OPTIONS.map(option => {
+    const isSelected = todayClaimed && state.treatChoice === option.id;
+    const ready = status.scheduledActive && !todayClaimed && state.pumpkinCoins >= HALLOWEEN_TREAT_COST;
+    return `<button type="button" class="halloween-treat-option ${isSelected ? 'is-selected' : ''}" ${ready ? `data-halloween-treat="${option.id}"` : 'disabled'}><i class="fa-solid ${option.icon}"></i><b>${escapeHtml(option.title)}</b><small>${escapeHtml(option.note)}</small>${isSelected ? '<em>Забрано</em>' : ''}</button>`;
+  }).join('');
+  const ritual = state.cosmetics.titles.includes('midnight_keeper_2026')
+    ? 'Титул «Сторож опівночі» вже у колекції'
+    : `Ритуал: ${state.ritualShards} / 3 уламки`;
+  return `<div class="halloween-treat" aria-label="Trick or Treat"><div class="halloween-treat-heading"><div><i class="fa-solid fa-candy-cane"></i><b>TRICK OR TREAT</b><span>${todayClaimed ? 'Твій вибір на сьогодні вже зроблено' : `Обери одну чесну нагороду за ${HALLOWEEN_TREAT_COST} 🪙`}</span></div><em>${ritual}</em></div><div class="halloween-treat-options">${options}</div></div>`;
+}
+
 function renderHalloweenEvent() {
   const root = document.getElementById('halloweenEvent');
   if (!root) return;
@@ -1372,8 +1510,20 @@ function renderHalloweenEvent() {
     return `<button type="button" class="halloween-reward ${claimed ? 'is-claimed' : ready ? 'is-ready' : ''}" ${ready ? `data-halloween-claim="${reward.pumpkins}"` : 'disabled'}><span>${reward.pumpkins} 🎃</span><i class="fa-solid ${reward.icon}"></i><b>${escapeHtml(reward.title)}</b><em>${statusText}</em></button>`;
   }).join('');
   const previewNotice = status.preview ? '<div class="halloween-preview-notice"><i class="fa-solid fa-eye"></i> ПРИВАТНИЙ ПЕРЕГЛЯД АДМІНА · ГРАВЦЯМ ПОДІЯ ДОСІ НЕДОСТУПНА</div>' : '';
-  root.innerHTML = `<article class="halloween-event-card ${status.preview ? 'is-admin-preview' : ''}" aria-label="Halloween: Нічний дроп"><div class="halloween-event-top"><div class="halloween-pumpkin">🎃</div><div><p>18 ЖОВТНЯ — 3 ЛИСТОПАДА · КИЇВ</p><h2>HALLOWEEN: НІЧНИЙ ДРОП</h2><span>Збирай гарбузи за гру й забирай сезонні віртуальні нагороди.</span></div><div class="halloween-progress"><span>${progress} / 13 🎃</span><div><i style="width:${Math.round((progress / 13) * 100)}%"></i></div><small>Щоденний ліміт: 4</small></div></div>${previewNotice}<div class="halloween-event-body"><div class="halloween-sources"><span>${sourceLabel('case', 'Кейси')}</span><span>${sourceLabel('battle', 'Перемога в бою')}</span><span>${sourceLabel('arena', 'Тир 13+')}</span></div><div class="halloween-rewards">${rewards}</div></div></article>`;
+  const shopToggle = `<button type="button" class="halloween-utility-button" data-halloween-shop-toggle><i class="fa-solid fa-store"></i>${halloweenShopExpanded ? 'Сховати крамницю' : 'Нічна крамниця'} <b>${state.pumpkinCoins} 🪙</b></button>`;
+  const treatToggle = `<button type="button" class="halloween-utility-button" data-halloween-treat-toggle><i class="fa-solid fa-candy-cane"></i>${halloweenTreatExpanded ? 'Сховати Trick or Treat' : 'Trick or Treat'} <b>${state.treatDate === status.date ? '✓ сьогодні' : `${HALLOWEEN_TREAT_COST} 🪙`}</b></button>`;
+  root.innerHTML = `<article class="halloween-event-card ${status.preview ? 'is-admin-preview' : ''}" aria-label="Halloween: Нічний дроп"><div class="halloween-event-top"><div class="halloween-pumpkin">🎃</div><div><p>18 ЖОВТНЯ — 3 ЛИСТОПАДА · КИЇВ</p><h2>HALLOWEEN: НІЧНИЙ ДРОП</h2><span>Гарбузи — прогрес. Гарбузові монетки — окрема валюта Нічної крамниці.</span></div><div class="halloween-progress"><span>${progress} / 13 🎃</span><div><i style="width:${Math.round((progress / 13) * 100)}%"></i></div><small>До ${Object.values(HALLOWEEN_EVENT.dailyCaps).reduce((sum, cap) => sum + cap, 0)} 🎃 / день</small></div></div>${previewNotice}<div class="halloween-event-body"><div class="halloween-sources"><span>${sourceLabel('case', 'Кейси')} · +${HALLOWEEN_COIN_REWARDS.case} 🪙</span><span>${sourceLabel('battle', 'Перемога в бою')} · +${HALLOWEEN_COIN_REWARDS.battle} 🪙</span><span>${sourceLabel('arena', 'Тир 13+')} · +${HALLOWEEN_COIN_REWARDS.arena} 🪙</span></div><div class="halloween-rewards">${rewards}</div><div class="halloween-utility-row">${shopToggle}${treatToggle}</div>${halloweenShopExpanded ? renderHalloweenShop(state, status) : ''}${halloweenTreatExpanded ? renderHalloweenTreat(state, status) : ''}</div></article>`;
   root.querySelectorAll('[data-halloween-claim]').forEach(button => button.addEventListener('click', () => claimHalloweenReward(Number(button.dataset.halloweenClaim))));
+  root.querySelector('[data-halloween-shop-toggle]')?.addEventListener('click', () => {
+    halloweenShopExpanded = !halloweenShopExpanded;
+    renderHalloweenEvent();
+  });
+  root.querySelector('[data-halloween-treat-toggle]')?.addEventListener('click', () => {
+    halloweenTreatExpanded = !halloweenTreatExpanded;
+    renderHalloweenEvent();
+  });
+  root.querySelectorAll('[data-halloween-buy]').forEach(button => button.addEventListener('click', () => buyHalloweenShopItem(button.dataset.halloweenBuy)));
+  root.querySelectorAll('[data-halloween-treat]').forEach(button => button.addEventListener('click', () => chooseHalloweenTreat(button.dataset.halloweenTreat)));
 }
 
 function claimHalloweenReward(pumpkins) {
@@ -1401,6 +1551,73 @@ function claimHalloweenReward(pumpkins) {
   renderHalloweenEvent();
   soundWin();
   showToast(`Halloween: нагороду «${reward.title}» додано.`, 'success');
+}
+
+function buyHalloweenShopItem(itemId) {
+  const status = getHalloweenEventStatus();
+  const item = HALLOWEEN_SHOP_ITEMS.find(entry => entry.id === itemId);
+  const state = getHalloweenEventState();
+  if (!status.scheduledActive || !item || !currentUser) return;
+  if (getHalloweenPurchaseCount(state, item.id) >= item.limit) {
+    showToast('Ця нагорода вже є у твоїй колекції.', 'info');
+    return;
+  }
+  if (state.pumpkinCoins < item.cost) {
+    showToast(`Потрібно ще ${item.cost - state.pumpkinCoins} гарбузових монеток.`, 'warn');
+    return;
+  }
+  state.pumpkinCoins -= item.cost;
+  state.purchases.push(item.id);
+  if (item.kind === 'ticket') gameState.caseTickets = getCaseTicketCount() + 1;
+  if (item.kind === 'cosmetic') {
+    const cosmetic = HALLOWEEN_COSMETICS[item.id];
+    if (cosmetic.kind === 'title') {
+      state.cosmetics.titles.push(cosmetic.id);
+      state.cosmetics.activeTitle = cosmetic.id;
+    } else {
+      state.cosmetics.frames.push(cosmetic.id);
+      state.cosmetics.activeFrame = cosmetic.id;
+    }
+  }
+  saveState();
+  updateCaseTicketOption();
+  renderGameHub();
+  soundWin();
+  showToast(`Нічна крамниця: «${item.title}» додано.`, 'success');
+}
+
+function chooseHalloweenTreat(optionId) {
+  const status = getHalloweenEventStatus();
+  const option = HALLOWEEN_TREAT_OPTIONS.find(entry => entry.id === optionId);
+  const state = getHalloweenEventState();
+  if (!status.scheduledActive || !option || !currentUser) return;
+  if (state.treatDate === status.date) {
+    showToast('Trick or Treat уже забрано сьогодні.', 'info');
+    return;
+  }
+  if (state.pumpkinCoins < HALLOWEEN_TREAT_COST) {
+    showToast(`Для Trick or Treat потрібно ${HALLOWEEN_TREAT_COST} гарбузові монетки.`, 'warn');
+    return;
+  }
+  state.pumpkinCoins -= HALLOWEEN_TREAT_COST;
+  state.treatDate = status.date;
+  state.treatChoice = option.id;
+  if (option.credits) currentUser.balance = clampNumber(currentUser.balance + option.credits, 0, MAX_STORED_BALANCE, DEMO_STARTING_BALANCE);
+  if (option.tickets) gameState.caseTickets = getCaseTicketCount() + option.tickets;
+  if (option.shard) {
+    state.ritualShards = Math.min(3, state.ritualShards + option.shard);
+    if (state.ritualShards >= 3 && !state.cosmetics.titles.includes('midnight_keeper_2026')) {
+      state.cosmetics.titles.push('midnight_keeper_2026');
+      state.cosmetics.activeTitle = 'midnight_keeper_2026';
+      showToast('Ритуал завершено: титул «Сторож опівночі» назавжди твій.', 'success');
+    }
+  }
+  saveState();
+  updateBalanceUI();
+  updateCaseTicketOption();
+  renderGameHub();
+  soundCoin();
+  showToast(`Trick or Treat: «${option.title}» додано.`, 'success');
 }
 
 function getPowerRunState() {
@@ -1624,18 +1841,18 @@ function finishTargetArena() {
   arena.totalSpent = clampNumber(arena.totalSpent + session.stake, 0, MAX_STORED_BALANCE, 0);
   arena.totalPayout = clampNumber(arena.totalPayout + payout, 0, MAX_STORED_BALANCE, 0);
   arena.lastPlayedAt = Date.now();
-  const halloweenPumpkins = session.score >= 13 ? awardHalloweenPumpkins('arena') : 0;
+  const halloweenProgress = session.score >= 13 ? awardHalloweenProgress('arena') : { pumpkins: 0, coins: 0 };
   currentUser.balance = clampNumber(currentUser.balance + payout, 0, MAX_STORED_BALANCE, DEMO_STARTING_BALANCE);
   targetArenaSession = null;
   clearTargetArenaTimers();
   saveState();
   updateBalanceUI();
   renderTargetArena();
-  if (halloweenPumpkins) renderHalloweenEvent();
+  if (halloweenProgress.pumpkins) renderHalloweenEvent();
   if (payout > session.stake) soundWin(); else soundLose();
   const net = payout - session.stake;
   const netLabel = net > 0 ? `прибуток +${formatCredits(net)}` : net < 0 ? `втрачено ${formatCredits(Math.abs(net))}` : 'повернення внеску';
-  showToast(`Тир: ${session.score} влучань · ${tier.label} · ${netLabel}${halloweenPumpkins ? ' · +1 🎃' : ''}.`, payout >= session.stake ? 'success' : 'warn');
+  showToast(`Тир: ${session.score} влучань · ${tier.label} · ${netLabel}${halloweenProgress.pumpkins ? ` · +${halloweenProgress.pumpkins} 🎃 · +${halloweenProgress.coins} 🪙` : ''}.`, payout >= session.stake ? 'success' : 'warn');
 }
 
 function getBattlePassProgress() {
@@ -1950,12 +2167,14 @@ function isPublicProfileIdentity(value) {
 
 function buildPublicProfilePayload() {
   const stats = gameState?.stats || {};
+  const cosmetics = getHalloweenCosmetics();
   return {
     name: cleanText(account?.nick || currentUser?.name || 'Гравець', 24) || 'Гравець',
     avatar: cleanImageUrl(currentUser?.avatar || account?.steamProfile?.avatar),
     level: getPlayerLevel(),
     prestige: clampNumber(gameState?.prestige, 0, 99, 0),
     steamConnected: Boolean(currentUser?.steamId),
+    cosmetics: { title: cosmetics.activeTitle?.id || '', frame: cosmetics.activeFrame?.id || '' },
     stats: {
       rounds: clampNumber(stats.rounds, 0, 9_999_999, 0),
       cases: clampNumber(stats.cases, 0, 9_999_999, 0),
@@ -2070,11 +2289,13 @@ function renderPublicProfileModal(profile, { demo = false } = {}) {
   const prestige = clampNumber(profile.prestige, 0, 99, 0);
   const avatar = getPublicAvatarSource(profile);
   const safeName = escapeHtml(cleanText(profile.name, 24) || 'Гравець');
+  const publicTitle = HALLOWEEN_COSMETICS[profile?.cosmetics?.title] || null;
+  const publicFrame = HALLOWEEN_COSMETICS[profile?.cosmetics?.frame] || null;
   const isOwnProfile = profile.id && profile.id === account?.publicProfile?.id;
   content.innerHTML = `
-    <div class="public-profile-hero">
+    <div class="public-profile-hero ${publicFrame ? 'is-halloween-frame' : ''}">
       <img src="${escapeHtml(avatar)}" alt="Аватар ${safeName}" onerror="handleSteamAvatarError(this)">
-      <div class="min-w-0"><p class="public-profile-kicker">${demo ? 'ДЕМО-АКТИВНІСТЬ' : 'ПРОФІЛЬ ГРАВЦЯ'}</p><h3>${safeName}</h3><p class="public-profile-level">LVL ${level}${prestige ? ` · P${prestige}` : ''}${profile.steamConnected ? ' · <i class="fa-brands fa-steam"></i> Steam' : ''}</p></div>
+      <div class="min-w-0"><p class="public-profile-kicker">${demo ? 'ДЕМО-АКТИВНІСТЬ' : 'ПРОФІЛЬ ГРАВЦЯ'}</p><h3>${safeName}</h3><p class="public-profile-level">LVL ${level}${prestige ? ` · P${prestige}` : ''}${profile.steamConnected ? ' · <i class="fa-brands fa-steam"></i> Steam' : ''}</p>${publicTitle ? `<span class="public-profile-title"><i class="fa-solid ${publicTitle.icon}"></i>${escapeHtml(publicTitle.title)}</span>` : ''}</div>
     </div>
     <div class="public-profile-stats">
       <div><span>Роллів</span><strong>${Math.round(Number(stats.rounds) || 0).toLocaleString('uk-UA')}</strong></div>
@@ -3232,6 +3453,7 @@ function renderProfileProgress() {
   if (ss) ss.textContent = String(s.currentStreak);
   const sb = document.getElementById('statBestValue');
   if (sb) sb.textContent = formatCredits(s.bestValue);
+  renderProfileCosmeticsSummary();
 }
 
 function renderDailyTasks() {
@@ -6192,7 +6414,7 @@ async function startCaseReel() {
   gameState.stats.cases += mult;
   gameState.daily.cases += mult;
   gameState.weekly.cases = (gameState.weekly.cases || 0) + mult;
-  const halloweenPumpkins = awardHalloweenPumpkins('case', mult);
+  const halloweenProgress = awardHalloweenProgress('case', mult);
   updateAllTimeOnCase();
   wonItems.forEach(it => {
     if ((it.price || 0) >= 50000) gameState.allTime.legendaryDrops = (gameState.allTime.legendaryDrops || 0) + 1;
@@ -6206,7 +6428,7 @@ async function startCaseReel() {
   updateAvatarBadge();
   saveState();
   renderGameHub();
-  if (halloweenPumpkins) showToast(`Halloween: +${halloweenPumpkins} 🎃 за кейс.`, 'success');
+  if (halloweenProgress.pumpkins) showToast(`Halloween: +${halloweenProgress.pumpkins} 🎃 і +${halloweenProgress.coins} 🪙 за кейс.`, 'success');
 
   if (isFast) {
     soundCase();
@@ -6853,7 +7075,7 @@ function startBattle() {
       pSlot?.classList.add('is-loser');
       addXp(XP_BATTLE_LOSS);
     }
-    const halloweenPumpkins = isPlayerWin ? awardHalloweenPumpkins('battle') : 0;
+    const halloweenProgress = isPlayerWin ? awardHalloweenProgress('battle') : { pumpkins: 0, coins: 0 };
 
     gameState.rounds.unshift({
       at: Date.now(),
@@ -6873,7 +7095,7 @@ function startBattle() {
     renderProfileInventory();
     updateAvatarBadge();
     renderGameHub();
-    if (halloweenPumpkins) showToast('Halloween: +1 🎃 за перемогу в бою.', 'success');
+    if (halloweenProgress.pumpkins) showToast(`Halloween: +${halloweenProgress.pumpkins} 🎃 і +${halloweenProgress.coins} 🪙 за перемогу в бою.`, 'success');
     void syncCommunity();
 
     if (startBtn) startBtn.innerHTML = '<i class="fa-solid fa-coins mr-2"></i>КИНУТИ МОНЕТКУ';
