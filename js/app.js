@@ -1941,6 +1941,7 @@ async function createCloudProfile({ silent = false, keepalive = false } = {}) {
     account.cloud = { ...cloud, updatedAt: Number(data.updatedAt) || Date.now(), revision: Number(data.revision) || 1 };
     cloudAutoSyncLastError = '';
     saveState({ skipCloudAutoSync: true });
+    void syncCommunity();
     renderCloudSyncUI();
     if (!silent) {
       openCloudRecoveryModal();
@@ -3058,10 +3059,12 @@ function getCommunityPlayerPayload() {
   return {
     name: cleanText(account?.nick || currentUser?.name || 'Гравець', 24) || 'Гравець',
     profileId: account?.publicProfile?.enabled ? account.publicProfile.id : '',
+    cloudProfileId: isCloudProfile(account?.cloud) ? account.cloud.id : '',
     xp: clampNumber(gameState?.xp, 0, 9_999_999, 0),
     wins: clampNumber(stats.wins, 0, 9_999_999, 0),
     rounds: clampNumber(stats.rounds, 0, 9_999_999, 0),
     collectionValue: clampNumber(collectionValue, 0, MAX_STORED_ITEM_VALUE * 10_000, 0),
+    inventoryTotal: clampNumber(userInventory.length, 0, 10_000, 0),
     level: getPlayerLevel(),
     prestige: clampNumber(gameState?.prestige, 0, 99, 0)
   };

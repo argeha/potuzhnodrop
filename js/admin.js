@@ -195,7 +195,19 @@
   function fallbackGameCapabilities(roleId) {
     if (roleId === 'owner' || roleId === 'full_admin') return { read: true, grant: true, configure: true, inventory: true }
     if (roleId === 'admin') return { read: true, grant: true, configure: false, inventory: false }
+    if (roleId === 'moderator') return { read: true, grant: false, configure: false, inventory: false }
     return { read: false, grant: false, configure: false, inventory: false }
+  }
+
+  function resolveGameCapabilities(reported, roleId) {
+    const fallback = fallbackGameCapabilities(roleId)
+    if (!reported || typeof reported !== 'object') return fallback
+    const fields = ['read', 'grant', 'configure', 'inventory']
+    if (!fields.some(field => typeof reported[field] === 'boolean')) return fallback
+    // During a Worker rollout, an older Durable Object can briefly return an
+    // incomplete capability object. The server remains authoritative for every
+    // request; this only prevents an eligible role from seeing a false red lock.
+    return Object.fromEntries(fields.map(field => [field, reported[field] === true || fallback[field] === true]))
   }
 
   function setOptions(element, options, selected = '') {
@@ -274,10 +286,20 @@
     $('#playerDirectoryCount').textContent = `${compact(state.playersTotal)} ${state.playersTotal === 1 ? 'гравець' : state.playersTotal < 5 ? 'гравці' : 'гравців'}`
     const players = Array.isArray(state.players) ? state.players : []
     if (!players.length) {
-      playerDirectoryList.innerHTML = '<p class="empty-line">Поки що немає синхронізованих Cloud Profile. Гравець з’явиться тут після «Створити», «Зберегти» або «Відновити» у резервній копії.</p>'
+      playerDirectoryList.innerHTML = '<p class="empty-line">Поки що немає відвідувачів. Гравець з’явиться тут автоматично після першого відкриття сайту.</p>'
       return
     }
-    playerDirectoryList.innerHTML = players.map(player => `<button type="button" class="directory-player${state.player?.accountId === player.accountId ? ' is-active' : ''}" data-player-id="${escapeHtml(player.accountId)}"><i class="fa-solid fa-user"></i><span><strong>${escapeHtml(player.name)}</strong><small>LVL ${compact(player.level)}${player.prestige ? ` · P${compact(player.prestige)}` : ''} · ${compact(player.inventoryTotal)} скінів</small></span><i class="fa-solid fa-chevron-right directory-open"></i></button>`).join('')
+    playerDirectoryList.innerHTML = players.map(player => {
+      const cloudProfile = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(String(player.accountId || ''))
+      const detail = cloudProfile
+        ? `Cloud Profile · LVL ${compact(player.level)}${player.prestige ? ` · P${compact(player.prestige)}` : ''} · ${compact(player.inventoryTotal)} скінів`
+        : `Відвідувач · LVL ${compact(player.level)}${player.prestige ? ` · P${compact(player.prestige)}` : ''} · останній вхід ${formatTime(player.updatedAt)}`
+      const active = cloudProfile && state.player?.accountId === player.accountId ? ' is-active' : ''
+      const card = `<i class="fa-solid ${cloudProfile ? 'fa-cloud' : 'fa-user-clock'}"></i><span><strong>${escapeHtml(player.name)}</strong><small>${escapeHtml(detail)}</small></span>${cloudProfile ? '<i class="fa-solid fa-chevron-right directory-open"></i>' : '<i class="fa-solid fa-eye directory-open"></i>'}`
+      return cloudProfile
+        ? `<button type="button" class="directory-player${active}" data-player-id="${escapeHtml(player.accountId)}">${card}</button>`
+        : `<article class="directory-player is-visitor" title="Локальний профіль: зібрано мінімальні дані входу, без віддаленого редагування.">${card}</article>`
+    }).join('')
   }
 
   async function loadPlayerDirectory({ quiet = false } = {}) {
@@ -352,9 +374,7 @@
       state.members = team.members || []
       state.assignableRoles = team.assignableRoles || me.assignableRoles || []
       state.audit = audit.audit || []
-      state.gameCapabilities = me.gameCapabilities && typeof me.gameCapabilities === 'object'
-        ? me.gameCapabilities
-        : fallbackGameCapabilities(me.me?.role?.id)
+      state.gameCapabilities = resolveGameCapabilities(me.gameCapabilities, me.me?.role?.id)
       renderAll()
       showPanel()
       setHeader('Захищена сесія', 'ready')
