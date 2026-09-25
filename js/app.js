@@ -712,6 +712,7 @@ function createCaseSVG(theme) {
 }
 
 const CASE_ARTWORK = Object.freeze({
+  halloween_night:  '/assets/cases/halloween-night-v1.png',
   dragon_lair:      '/assets/cases/dragon-lair-v3.png',
   covert_ops:       '/assets/cases/covert-ops-v3.png',
   beast_mode:       '/assets/cases/beast-mode-v3.png',
