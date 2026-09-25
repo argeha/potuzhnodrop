@@ -1552,24 +1552,30 @@ function renderHalloweenSeasonShell() {
 
 async function enableHalloweenAdminPreview() {
   if ((!halloweenAdminPreviewRequested && !winterAdminPreviewRequested) || (halloweenAdminPreviewAuthorized || winterAdminPreviewAuthorized)) return;
-  try {
-    const response = await fetch('/api/admin/me', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
-    if (!response.ok) return;
-    const data = await response.json();
-    const roleId = String(data?.me?.role?.id || data?.me?.roleId || data?.me?.role || '');
-    const canPreview = data?.gameCapabilities?.configure === true || roleId === 'owner' || roleId === 'full_admin';
-    if (!canPreview) return;
-    if (halloweenAdminPreviewRequested) halloweenAdminPreviewAuthorized = true;
-    if (winterAdminPreviewRequested) winterAdminPreviewAuthorized = true;
+  const requestedEvent = winterAdminPreviewRequested ? 'ICEWIRE' : 'Nightfall';
+  const clearPreviewParameter = () => {
     const url = new URL(window.location.href);
     url.searchParams.delete(HALLOWEEN_ADMIN_PREVIEW_QUERY);
     window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
+  };
+  try {
+    const response = await fetch('/api/admin/me', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error('admin-session-missing');
+    const data = await response.json();
+    const roleId = String(data?.me?.role?.id || data?.me?.roleId || data?.me?.role || '');
+    const canPreview = data?.gameCapabilities?.configure === true || roleId === 'owner' || roleId === 'full_admin';
+    if (!canPreview) throw new Error('admin-role-insufficient');
+    if (halloweenAdminPreviewRequested) halloweenAdminPreviewAuthorized = true;
+    if (winterAdminPreviewRequested) winterAdminPreviewAuthorized = true;
+    clearPreviewParameter();
     renderHalloweenSeasonShell();
     renderGameHub();
     if (currentPage) document.title = `${getPageDisplayTitle(currentPage)} · ${getActiveBrandName()}`;
     showToast(winterAdminPreviewRequested ? 'ICEWIRE відкрито лише для твого приватного перегляду.' : 'Halloween відкрито лише для твого приватного перегляду.', 'info');
   } catch {
-    // The public site stays in its scheduled state if the protected check fails.
+    // Do not leave a shareable preview URL behind if the protected check fails.
+    clearPreviewParameter();
+    showToast(`${requestedEvent} не відкрито: повернись в адмін-панель і онови захищену сесію.`, 'error');
   }
 }
 

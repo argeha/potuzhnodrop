@@ -1,6 +1,6 @@
 {
   "name": "potuzhno-drop-demo",
-  "version": "6.5.0",
+  "version": "6.5.1",
   "private": true,
   "description": "Potuzhno Drop — transparent virtual CS2 collection game on Cloudflare Workers.",
   "type": "module",

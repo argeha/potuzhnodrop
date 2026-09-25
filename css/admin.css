@@ -119,16 +119,29 @@ button { cursor: pointer; }
 .audit-row p { margin: 3px 0 0; color: #7f8fa4; font-size: 10px; line-height: 1.4; }
 .audit-row time { color: #718096; font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .game-panel { margin-top: 16px; padding: 24px; }
-.event-preview-panel { display: grid; grid-template-columns: 58px minmax(0, 1fr) minmax(230px, .7fr); align-items: center; gap: 16px; margin-top: 16px; padding: 18px; border-color: rgba(251, 146, 60, .45); background: radial-gradient(circle at 94% 5%, rgba(249, 115, 22, .17), transparent 25%), linear-gradient(112deg, rgba(53, 22, 18, .78), rgba(28, 15, 42, .84)); }
+.event-preview-panel { display: grid; grid-template-columns: 50px minmax(0, 1fr) minmax(305px, .9fr); align-items: center; gap: 16px; margin-top: 16px; padding: 18px; border-color: rgba(56, 189, 248, .31); background: radial-gradient(circle at 100% 0%, rgba(56, 189, 248, .1), transparent 34%), radial-gradient(circle at 0% 100%, rgba(249, 115, 22, .1), transparent 35%), linear-gradient(112deg, rgba(11, 26, 39, .92), rgba(20, 14, 35, .92)); }
 .event-preview-panel.hidden { display: none; }
-.event-preview-icon { display: grid; width: 56px; height: 56px; place-items: center; border: 1px solid rgba(251, 146, 60, .58); border-radius: 16px; background: rgba(124, 45, 18, .28); font-size: 29px; }
+.event-preview-icon { display: grid; width: 50px; height: 50px; place-items: center; border: 1px solid rgba(56, 189, 248, .48); border-radius: 15px; color: #a5f3fc; background: linear-gradient(145deg, rgba(8, 145, 178, .28), rgba(79, 70, 229, .2)); box-shadow: inset 0 1px rgba(255, 255, 255, .1), 0 9px 22px rgba(0, 0, 0, .2); font-size: 20px; }
 .event-preview-copy h2 { font-size: 30px; line-height: .9; }
-.event-preview-copy > p:last-child { max-width: 620px; margin: 8px 0 0; color: #c6b8bc; font-size: 11px; line-height: 1.55; }
+.event-preview-copy > p:last-child { max-width: 550px; margin: 8px 0 0; color: #a8b7ca; font-size: 11px; line-height: 1.55; }
 .event-preview-action { display: grid; gap: 8px; }
-.event-preview-action > span { color: #fed7aa; font-size: 10px; font-weight: 850; text-align: center; }
-.event-preview-action > span i { margin-right: 4px; color: #f8c344; }
-.event-preview-action .primary-button { margin: 0; }
-.event-preview-action small { color: #a99aa3; font-size: 9px; line-height: 1.4; text-align: center; }
+.event-preview-action > span { color: #a8dff1; font-size: 9px; font-weight: 850; letter-spacing: .04em; text-align: left; text-transform: uppercase; }
+.event-preview-action > span i { margin-right: 4px; color: #67e8f9; }
+.event-preview-buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.event-preview-button { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px; align-items: center; min-height: 52px; padding: 8px 9px; border: 1px solid rgba(148, 163, 184, .25); border-radius: 11px; color: #eff6ff; background: rgba(3, 10, 18, .48); text-align: left; transition: border-color .16s ease, background .16s ease, transform .16s ease; }
+.event-preview-button:hover { transform: translateY(-1px); }
+.event-preview-button:disabled { cursor: wait; opacity: .72; transform: none; }
+.event-preview-button > i:first-child { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 9px; background: rgba(255, 255, 255, .06); font-size: 12px; }
+.event-preview-button > span { min-width: 0; }
+.event-preview-button b, .event-preview-button small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event-preview-button b { font-size: 11px; font-weight: 850; }
+.event-preview-button small { margin-top: 2px; color: #8fa2b8; font-size: 8px; font-weight: 700; }
+.event-preview-button > i:last-child { color: #6b7e95; font-size: 10px; }
+.event-preview-button.is-nightfall:hover { border-color: rgba(251, 146, 60, .67); background: rgba(124, 45, 18, .19); }
+.event-preview-button.is-nightfall > i:first-child { color: #fdba74; }
+.event-preview-button.is-icewire:hover { border-color: rgba(34, 211, 238, .67); background: rgba(8, 145, 178, .16); }
+.event-preview-button.is-icewire > i:first-child { color: #a5f3fc; }
+.event-preview-action > small { color: #8190a4; font-size: 8px; line-height: 1.35; }
 .game-note { margin: 13px 0 0; color: #8fa0b4; font-size: 12px; line-height: 1.58; }
 .game-note b { color: #d8e7f5; }
 .player-directory { margin-top: 16px; padding: 16px; border: 1px solid rgba(34, 211, 238, .22); border-radius: 15px; background: rgba(6, 182, 212, .035); }
@@ -250,6 +263,7 @@ button { cursor: pointer; }
   .header-status span:last-child { display: none; }
   .logout-button span { display: none; }
   .roles-overview { grid-template-columns: 1fr; }
+  .event-preview-buttons { grid-template-columns: 1fr; }
   .game-controls, .player-stats, .skin-search-results, .admin-inventory, .player-directory-list { grid-template-columns: 1fr; }
   .admin-hero h1 { font-size: 44px; }
 }

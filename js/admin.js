@@ -642,19 +642,20 @@
     void mutateGame('site_show', {}, { confirmText: 'Повернути профіль у рейтинг та live-стрічку сайту?' })
   })
 
-  $('#openHalloweenPreviewButton').addEventListener('click', () => {
+  function openSeasonPreview(eventId, label, button) {
     if (!canGame('configure')) return showToast('Твоя роль не має доступу до приватного перегляду подій.', 'error')
     const previewUrl = new URL('/', window.location.origin)
-    previewUrl.searchParams.set('adminPreview', 'halloween-2026')
-    window.open(previewUrl.toString(), '_blank', 'noopener')
-  })
+    previewUrl.searchParams.set('adminPreview', eventId)
+    previewUrl.hash = 'tasks'
+    button.disabled = true
+    button.setAttribute('aria-busy', 'true')
+    button.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i><span><b>Відкриваю ${label}…</b><small>Підтверджуємо твою сесію</small></span>`
+    // Navigation in the same tab cannot be blocked by a browser popup policy.
+    window.location.assign(previewUrl.toString())
+  }
 
-  $('#openIcewirePreviewButton').addEventListener('click', () => {
-    if (!canGame('configure')) return showToast('Твоя роль не має доступу до приватного перегляду подій.', 'error')
-    const previewUrl = new URL('/', window.location.origin)
-    previewUrl.searchParams.set('adminPreview', 'icewire-2026')
-    window.open(previewUrl.toString(), '_blank', 'noopener')
-  })
+  $('#openHalloweenPreviewButton').addEventListener('click', event => openSeasonPreview('halloween-2026', 'Nightfall', event.currentTarget))
+  $('#openIcewirePreviewButton').addEventListener('click', event => openSeasonPreview('icewire-2026', 'ICEWIRE', event.currentTarget))
 
   $('#skinSearch').addEventListener('input', event => {
     const query = event.target.value.trim()
