@@ -916,6 +916,21 @@ const POWER_RUN_REWARDS = Object.freeze([
   { credits: 400, xp: 75, tickets: 1, icon: 'fa-ticket', label: '+400 PC · квиток' }
 ]);
 
+const TARGET_ARENA_STAKES = Object.freeze([2_500, 10_000, 25_000]);
+const TARGET_ARENA_DURATION_MS = 15_000;
+const TARGET_ARENA_PAYOUTS = Object.freeze([
+  { minimumScore: 21, multiplier: 1.35, label: 'ЕЛІТА · 135%' },
+  { minimumScore: 17, multiplier: 1.10, label: 'МАЙСТЕР · 110%' },
+  { minimumScore: 13, multiplier: 0.75, label: 'СТАБІЛЬНО · 75%' },
+  { minimumScore: 9, multiplier: 0.40, label: 'ЧАСТКОВО · 40%' },
+  { minimumScore: 5, multiplier: 0.15, label: 'РОЗІГРІВ · 15%' },
+  { minimumScore: 0, multiplier: 0, label: 'ПРОМАХ · 0%' }
+]);
+let targetArenaSelectedStake = TARGET_ARENA_STAKES[0];
+let targetArenaSession = null;
+let targetArenaTimer = 0;
+let targetArenaMoveTimer = 0;
+
 // Battle Pass rewards deliberately reuse the real skins already present in
 // the catalogue. This keeps their artwork, name, rarity and inventory data
 // consistent with the shop and case pools instead of creating fake variants.
@@ -1067,6 +1082,10 @@ function createDefaultPowerRun() {
   return { lastClaimDate: '', streak: 0, totalClaims: 0 };
 }
 
+function createDefaultTargetArena() {
+  return { rounds: 0, bestScore: 0, totalSpent: 0, totalPayout: 0, lastPlayedAt: 0 };
+}
+
 function createDefaultAllTime() {
   return { rounds: 0, wins: 0, cases: 0, battles: 0, battleWins: 0, contracts: 0, sells: 0, sellValue: 0, freeCases: 0, biggestWin: 0, legendaryDrops: 0, multiInputs: 0, creditInputs: 0, royaleWins: 0 };
 }
@@ -1080,6 +1099,7 @@ function createDefaultGameState() {
     daily: createDefaultDaily(),
     weekly: createDefaultWeekly(),
     powerRun: createDefaultPowerRun(),
+    targetArena: createDefaultTargetArena(),
     allTime: createDefaultAllTime(),
     achievements: {},
     favorites: [],
@@ -1125,6 +1145,7 @@ function loadGameState() {
       daily: { ...createDefaultDaily(), ...(s.daily || {}) },
       weekly: { ...createDefaultWeekly(), ...(s.weekly || {}) },
       powerRun: { ...createDefaultPowerRun(), ...(s.powerRun || {}) },
+      targetArena: { ...createDefaultTargetArena(), ...(s.targetArena || {}) },
       allTime: { ...createDefaultAllTime(), ...(s.allTime || {}) },
       achievements: s.achievements || {},
       favorites: Array.isArray(s.favorites) ? s.favorites.map(String) : [],
@@ -1309,6 +1330,126 @@ function claimPowerRun() {
   renderGameHub();
   soundWin();
   showToast(`Power Run: ${reward.label} і +${reward.xp} XP додано.`, 'success');
+}
+
+function getTargetArenaState() {
+  if (!gameState) return createDefaultTargetArena();
+  const stored = gameState.targetArena && typeof gameState.targetArena === 'object' ? gameState.targetArena : {};
+  const arena = {
+    rounds: clampNumber(stored.rounds, 0, 1_000_000, 0),
+    bestScore: clampNumber(stored.bestScore, 0, 999, 0),
+    totalSpent: clampNumber(stored.totalSpent, 0, MAX_STORED_BALANCE, 0),
+    totalPayout: clampNumber(stored.totalPayout, 0, MAX_STORED_BALANCE, 0),
+    lastPlayedAt: clampNumber(stored.lastPlayedAt, 0, Number.MAX_SAFE_INTEGER, 0)
+  };
+  gameState.targetArena = arena;
+  return arena;
+}
+
+function getTargetArenaPayout(score) {
+  return TARGET_ARENA_PAYOUTS.find(tier => score >= tier.minimumScore) || TARGET_ARENA_PAYOUTS[TARGET_ARENA_PAYOUTS.length - 1];
+}
+
+function clearTargetArenaTimers() {
+  if (targetArenaTimer) window.clearTimeout(targetArenaTimer);
+  if (targetArenaMoveTimer) window.clearInterval(targetArenaMoveTimer);
+  targetArenaTimer = 0;
+  targetArenaMoveTimer = 0;
+}
+
+function renderTargetArena() {
+  const root = document.getElementById('targetArena');
+  if (!root || !gameState) return;
+  if (targetArenaSession) {
+    renderActiveTargetArena(root);
+    return;
+  }
+  const arena = getTargetArenaState();
+  root.innerHTML = `<article class="target-arena-card" aria-label="Елітний тир">
+    <div class="target-arena-head"><div class="target-arena-icon"><i class="fa-solid fa-crosshairs"></i></div><div><p>ДЛЯ ВЕЛИКОГО БАЛАНСУ</p><h2>ЕЛІТНИЙ ТИР</h2><span>15 секунд на рухомі мішені. Чим краща точність — тим більша частина ставки повертається.</span></div><div class="target-arena-record"><span>РЕКОРД</span><b>${arena.bestScore}</b><small>${arena.rounds} спроб</small></div></div>
+    <div class="target-arena-body"><div class="target-arena-stakes"><span>ОБЕРИ ВНЕСОК</span><div>${TARGET_ARENA_STAKES.map(stake => `<button type="button" data-arena-stake="${stake}" class="${targetArenaSelectedStake === stake ? 'is-selected' : ''}">${formatCredits(stake)}</button>`).join('')}</div><small>Невдала спроба не повертає PC. Тут немає реальних грошей чи призів.</small></div><div class="target-arena-rules"><span>ВИПЛАТА ЗА ВЛУЧАННЯ</span><div><b>0–8</b><b>9–12</b><b>13–16</b><b>17–20</b><b>21+</b></div><div><em>0%</em><em>40%</em><em>75%</em><em>110%</em><em>135%</em></div></div><button type="button" class="target-arena-start" data-arena-start><i class="fa-solid fa-play"></i>ПОЧАТИ ЗА ${formatCredits(targetArenaSelectedStake)}<small>без cooldown</small></button></div>
+  </article>`;
+  root.querySelectorAll('[data-arena-stake]').forEach(button => button.addEventListener('click', () => {
+    targetArenaSelectedStake = Number(button.dataset.arenaStake);
+    renderTargetArena();
+  }));
+  root.querySelector('[data-arena-start]')?.addEventListener('click', () => startTargetArena(targetArenaSelectedStake));
+}
+
+function renderActiveTargetArena(root) {
+  clearTargetArenaTimers();
+  root.innerHTML = `<article class="target-arena-card is-active" aria-label="Елітний тир, активна спроба"><div class="target-arena-live-head"><div><p><i class="fa-solid fa-crosshairs"></i> ЕЛІТНИЙ ТИР · СПРОБА ТРИВАЄ</p><strong id="targetArenaTimer">15.0 с</strong></div><div><span>ВНЕСОК</span><b>${formatCredits(targetArenaSession.stake)}</b></div><div><span>ВЛУЧАННЯ</span><b id="targetArenaScore">0</b></div></div><div class="target-arena-board" id="targetArenaBoard"><span class="target-arena-board-copy">Тисни по мішені</span><button type="button" class="target-arena-target" id="targetArenaTarget" aria-label="Влучити в мішень"><i class="fa-solid fa-crosshairs"></i></button></div><p class="target-arena-live-note">9 влучань повертають лише 40% внеску. Для прибутку потрібно щонайменше 17.</p></article>`;
+  const board = root.querySelector('#targetArenaBoard');
+  const target = root.querySelector('#targetArenaTarget');
+  const moveTarget = () => {
+    if (!targetArenaSession || !board || !target) return;
+    const maxLeft = Math.max(8, board.clientWidth - target.offsetWidth - 8);
+    const maxTop = Math.max(8, board.clientHeight - target.offsetHeight - 8);
+    target.style.left = `${8 + Math.random() * Math.max(0, maxLeft - 8)}px`;
+    target.style.top = `${8 + Math.random() * Math.max(0, maxTop - 8)}px`;
+  };
+  target?.addEventListener('click', () => {
+    if (!targetArenaSession) return;
+    targetArenaSession.score += 1;
+    const score = root.querySelector('#targetArenaScore');
+    if (score) score.textContent = String(targetArenaSession.score);
+    target.classList.remove('is-hit');
+    void target.offsetWidth;
+    target.classList.add('is-hit');
+    beep(720 + Math.min(420, targetArenaSession.score * 14), 0.035, 'square');
+    moveTarget();
+  });
+  moveTarget();
+  targetArenaMoveTimer = window.setInterval(moveTarget, 690);
+  const updateTimer = () => {
+    if (!targetArenaSession) return;
+    const remaining = Math.max(0, targetArenaSession.endsAt - Date.now());
+    const timer = root.querySelector('#targetArenaTimer');
+    if (timer) timer.textContent = `${(remaining / 1000).toFixed(1)} с`;
+    if (remaining <= 0) {
+      finishTargetArena();
+      return;
+    }
+    targetArenaTimer = window.setTimeout(updateTimer, 60);
+  };
+  updateTimer();
+}
+
+function startTargetArena(stake) {
+  const safeStake = TARGET_ARENA_STAKES.includes(Number(stake)) ? Number(stake) : TARGET_ARENA_STAKES[0];
+  if (targetArenaSession || !currentUser || !gameState) return;
+  if (currentUser.balance < safeStake) {
+    showToast(`Для Елітного тиру потрібно ${formatCredits(safeStake)}.`, 'warn');
+    return;
+  }
+  currentUser.balance -= safeStake;
+  targetArenaSession = { stake: safeStake, score: 0, endsAt: Date.now() + TARGET_ARENA_DURATION_MS };
+  saveState();
+  updateBalanceUI();
+  renderTargetArena();
+}
+
+function finishTargetArena() {
+  if (!targetArenaSession || !currentUser || !gameState) return;
+  const session = targetArenaSession;
+  const tier = getTargetArenaPayout(session.score);
+  const payout = Math.round(session.stake * tier.multiplier);
+  const arena = getTargetArenaState();
+  arena.rounds += 1;
+  arena.bestScore = Math.max(arena.bestScore, session.score);
+  arena.totalSpent = clampNumber(arena.totalSpent + session.stake, 0, MAX_STORED_BALANCE, 0);
+  arena.totalPayout = clampNumber(arena.totalPayout + payout, 0, MAX_STORED_BALANCE, 0);
+  arena.lastPlayedAt = Date.now();
+  currentUser.balance = clampNumber(currentUser.balance + payout, 0, MAX_STORED_BALANCE, DEMO_STARTING_BALANCE);
+  targetArenaSession = null;
+  clearTargetArenaTimers();
+  saveState();
+  updateBalanceUI();
+  renderTargetArena();
+  if (payout > session.stake) soundWin(); else soundLose();
+  const net = payout - session.stake;
+  const netLabel = net > 0 ? `прибуток +${formatCredits(net)}` : net < 0 ? `втрачено ${formatCredits(Math.abs(net))}` : 'повернення внеску';
+  showToast(`Тир: ${session.score} влучань · ${tier.label} · ${netLabel}.`, payout >= session.stake ? 'success' : 'warn');
 }
 
 function getBattlePassProgress() {
@@ -2036,6 +2177,7 @@ function applyPortableSave(data, { skipCloudAutoSync = false } = {}) {
     daily: { ...createDefaultDaily(), ...(portable.gameState.daily || {}) },
     weekly: { ...createDefaultWeekly(), ...(portable.gameState.weekly || {}) },
     powerRun: { ...createDefaultPowerRun(), ...(portable.gameState.powerRun || {}) },
+    targetArena: { ...createDefaultTargetArena(), ...(portable.gameState.targetArena || {}) },
     allTime: { ...createDefaultAllTime(), ...(portable.gameState.allTime || {}) },
     collectionRewards: portable.gameState.collectionRewards || {}
   };
@@ -3438,6 +3580,7 @@ function renderGameHub() {
   if (!gameState) return;
   renderProfileProgress();
   renderPowerRun();
+  renderTargetArena();
   renderBattlePass();
   renderDailyTasks();
   renderWeeklyTasks();
