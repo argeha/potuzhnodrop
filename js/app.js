@@ -23,6 +23,7 @@ const PAGES = ['upgrader', 'case', 'battle', 'royale', 'contract', 'tasks', 'pro
 
 let currentPage = null;
 function showPage(id) {
+  renderHalloweenSeasonShell();
   if (!PAGES.includes(id)) id = 'upgrader';
   if (currentPage === id && document.querySelector(`[data-page="${id}"]:not(.hidden)`)) {
     return;
@@ -41,11 +42,7 @@ function showPage(id) {
     el.setAttribute('aria-current', active ? 'page' : 'false');
   });
 
-  const pageTitles = {
-    upgrader: 'Апгрейд', case: 'Кейси', battle: 'Бій', royale: 'Battle Royale',
-    contract: 'Контракт', tasks: 'Завдання', profile: 'Профіль', about: 'Про гру'
-  };
-  document.title = `${pageTitles[id] || 'Гра'} · ПОТУЖНО DROP`;
+  document.title = `${getPageDisplayTitle(id)} · ПОТУЖНО DROP`;
 
   localStorage.setItem(STORAGE.page, id);
   if (location.hash.replace('#', '') !== id) {
@@ -972,6 +969,16 @@ const PULSE_CIRCUIT = Object.freeze({
     { id: 'arena', icon: 'fa-tower-broadcast', title: 'Вежа сигналу', note: 'Набери 13 влучань у тирі', action: 'До вежі', page: 'tasks', district: 'tower' }
   ])
 });
+const HALLOWEEN_PAGE_COPY = Object.freeze({
+  upgrader: { nav: 'Алхімія', title: 'Алхімія тіней', eyebrow: 'НІЧНА АЛХІМІЯ', heading: 'Пробуди <em>силу тіней</em>', description: 'Поєднуй віртуальні предмети та PC у ритуалі Nightfall. Ти завжди бачиш шанс перед запуском.' },
+  case: { nav: 'Ліхтарі', title: 'Ліхтарі Nightfall', eyebrow: 'СВІТЛО В ТУМАНІ', heading: 'Сховище <em>Nightfall</em>', description: 'Відкривай тематичні кейси Нічного міста та шукай рідкісні сигнали в кожному дропі.' },
+  battle: { nav: 'Дуелі', title: 'Дуель примар', eyebrow: 'АРЕНА ПРИМАР', heading: 'Дуель <em>примар</em>', description: 'Кинь виклик іншому гравцю під світлом повного місяця. Пошук і результат лишаються чесною віртуальною грою.' },
+  royale: { nav: 'Місячний круг', title: 'Місячний круг', eyebrow: 'КОЛО ПОВНОГО МІСЯЦЯ', heading: 'Коло <em>повного місяця</em>', description: 'Збери віртуальний банк, займи місце в колі й дивись, кого обере ніч.' },
+  contract: { nav: 'Ритуал', title: 'Ритуал ночі', eyebrow: 'РИТУАЛ ОБМІНУ', heading: 'Ритуал <em>обміну</em>', description: 'П’ять предметів входять у коло — один результат виходить з туману.' },
+  tasks: { nav: 'Нічна мапа', title: 'Карта Нічного міста', eyebrow: 'МІСТО ПРОКИНУЛОСЯ', heading: 'Карта <em>Нічного міста</em>', description: 'Йди за сигналами, відкривай райони та збирай сезонний прогрес щодня.' },
+  profile: { nav: 'Досьє', title: 'Нічне досьє' },
+  about: { nav: 'Кодекс', title: 'Кодекс Nightfall', eyebrow: 'ПРАВИЛА НІЧНОГО МІСТА', heading: 'Кодекс <em>Nightfall</em>', description: 'Сезонна пригода лишається віртуальною грою: без ставок, платежів чи реальних призів.' }
+});
 const HALLOWEEN_ADMIN_PREVIEW_QUERY = 'adminPreview';
 let halloweenAdminPreviewRequested = new URLSearchParams(window.location.search).get(HALLOWEEN_ADMIN_PREVIEW_QUERY) === HALLOWEEN_EVENT.id;
 let halloweenAdminPreviewAuthorized = false;
@@ -1354,9 +1361,52 @@ function getHalloweenEventStatus() {
   return { date, active: scheduledActive || preview, scheduledActive, preview, upcoming: date < HALLOWEEN_EVENT.startDate, ended: date > HALLOWEEN_EVENT.endDate };
 }
 
+function getPageDisplayTitle(id) {
+  const standard = {
+    upgrader: 'Апгрейд', case: 'Кейси', battle: 'Бій', royale: 'Battle Royale',
+    contract: 'Контракт', tasks: 'Завдання', profile: 'Профіль', about: 'Про гру'
+  };
+  return getHalloweenEventStatus().active ? (HALLOWEEN_PAGE_COPY[id]?.title || standard[id] || 'Гра') : (standard[id] || 'Гра');
+}
+
+function setSeasonalText(element, seasonalText, active) {
+  if (!element || !seasonalText) return;
+  const textNode = [...element.childNodes].find(node => node.nodeType === 3 && node.textContent.trim());
+  if (!textNode) return;
+  if (!Object.prototype.hasOwnProperty.call(element.dataset, 'normalText')) element.dataset.normalText = textNode.textContent.trim();
+  textNode.textContent = ` ${active ? seasonalText : element.dataset.normalText}`;
+}
+
+function setSeasonalHtml(element, seasonalHtml, active) {
+  if (!element || !seasonalHtml) return;
+  if (!Object.prototype.hasOwnProperty.call(element.dataset, 'normalHtml')) element.dataset.normalHtml = element.innerHTML;
+  element.innerHTML = active ? seasonalHtml : element.dataset.normalHtml;
+}
+
+function setSeasonalParagraph(element, seasonalText, active) {
+  if (!element || !seasonalText) return;
+  if (!Object.prototype.hasOwnProperty.call(element.dataset, 'normalText')) element.dataset.normalText = element.textContent;
+  element.textContent = active ? seasonalText : element.dataset.normalText;
+}
+
+function applyHalloweenSeasonCopy(active) {
+  Object.entries(HALLOWEEN_PAGE_COPY).forEach(([id, copy]) => {
+    document.querySelectorAll(`[data-nav="${id}"], [data-mobile-nav="${id}"]`).forEach(element => setSeasonalText(element, copy.nav, active));
+    const section = document.querySelector(`[data-page="${id}"]`);
+    const intro = section?.querySelector('.mode-intro');
+    if (!intro) return;
+    setSeasonalHtml(intro.querySelector('h1'), copy.heading, active);
+    setSeasonalText(intro.querySelector('span'), copy.eyebrow, active);
+    setSeasonalParagraph(intro.querySelector('p'), copy.description, active);
+  });
+  const release = document.getElementById('brandRelease');
+  if (release) release.textContent = active ? 'NIGHTFALL' : '6.3';
+}
+
 function renderHalloweenSeasonShell() {
   const status = getHalloweenEventStatus();
   document.body.classList.toggle('halloween-season', status.active);
+  applyHalloweenSeasonCopy(status.active);
   const signal = document.getElementById('seasonSignal');
   const label = document.getElementById('liveFeedLabelText');
   const labelWrap = document.getElementById('liveFeedLabel');
@@ -8455,6 +8505,8 @@ window.addEventListener('DOMContentLoaded', () => {
     if (halloweenEventDateKey !== halloweenDate) {
       halloweenEventDateKey = halloweenDate;
       renderGameHub();
+      renderCaseCatalog();
+      if (currentPage) document.title = `${getPageDisplayTitle(currentPage)} · ПОТУЖНО DROP`;
     }
     const prevD = gameState.daily.date;
     const today = getTodayKey();
