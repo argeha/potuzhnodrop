@@ -918,6 +918,8 @@ const POWER_RUN_REWARDS = Object.freeze([
 
 const TARGET_ARENA_STAKES = Object.freeze([2_500, 10_000, 25_000]);
 const TARGET_ARENA_DURATION_MS = 15_000;
+const TARGET_ARENA_HIT_BONUS_MS = 220;
+const TARGET_ARENA_MAX_BONUS_MS = 5_000;
 const TARGET_ARENA_PAYOUTS = Object.freeze([
   { minimumScore: 21, multiplier: 1.35, label: 'ЕЛІТА · 135%' },
   { minimumScore: 17, multiplier: 1.10, label: 'МАЙСТЕР · 110%' },
@@ -930,6 +932,9 @@ let targetArenaSelectedStake = TARGET_ARENA_STAKES[0];
 let targetArenaSession = null;
 let targetArenaTimer = 0;
 let targetArenaMoveTimer = 0;
+let powerRunExpanded = false;
+let targetArenaExpanded = false;
+let battlePassExpanded = false;
 
 // Battle Pass rewards deliberately reuse the real skins already present in
 // the catalogue. This keeps their artwork, name, rarity and inventory data
@@ -1296,17 +1301,20 @@ function renderPowerRun() {
     ? '<div class="power-run-complete"><i class="fa-solid fa-circle-check"></i><span>Сьогодні забрано</span><small>Нова нагорода опівночі</small></div>'
     : `<button type="button" class="power-run-claim" data-power-run-claim><i class="fa-solid fa-gift"></i>Забрати: ${reward.label}<small>+${reward.xp} XP</small></button>`;
 
-  root.innerHTML = `<article class="power-run-card" aria-label="Power Run, щоденна серія">
+  root.innerHTML = `<article class="power-run-card ${powerRunExpanded ? 'is-expanded' : 'is-compact'}" aria-label="Power Run, щоденна серія">
     <div class="power-run-top">
       <div class="power-run-mark"><i class="fa-solid fa-bolt"></i><b>6.0</b></div>
-      <div class="power-run-copy"><p>ПОВЕРНЕННЯ В ГРУ</p><h2>POWER RUN</h2><span>Забирай одну нагороду щодня. Пропустив день — серія починається знову.</span></div>
+      <div class="power-run-copy"><p>ПОВЕРНЕННЯ В ГРУ</p><h2>POWER RUN</h2><span>Забирай одну нагороду щодня. Пропустив день — серія починається знову.</span><button type="button" class="power-run-toggle" data-power-run-toggle><i class="fa-solid fa-calendar-days"></i>${powerRunExpanded ? 'Сховати графік' : 'Графік на 7 днів'}</button></div>
       <div class="power-run-streak"><span>ПОТОЧНА СЕРІЯ</span><b>${progress.alreadyClaimed ? progress.powerRun.streak : Math.max(0, progress.nextDay - 1)} <small>/ ${POWER_RUN_REWARDS.length}</small></b><em>${progress.powerRun.totalClaims} всього</em></div>
       ${action}
     </div>
-    <div class="power-run-days">${dayCards}</div>
-    <div class="power-run-footer"><span><i class="fa-solid fa-cloud"></i> Прогрес зберігається у Cloud Profile</span><div><button type="button" data-power-run-go="case"><i class="fa-solid fa-box-open"></i> Кейси</button><button type="button" data-power-run-go="upgrader"><i class="fa-solid fa-bolt"></i> Апгрейд</button><button type="button" data-power-run-go="battle"><i class="fa-solid fa-swords"></i> Бій</button></div></div>
+    <div class="power-run-details"><div class="power-run-days">${dayCards}</div><div class="power-run-footer"><span><i class="fa-solid fa-cloud"></i> Прогрес зберігається у Cloud Profile</span><div><button type="button" data-power-run-go="case"><i class="fa-solid fa-box-open"></i> Кейси</button><button type="button" data-power-run-go="upgrader"><i class="fa-solid fa-bolt"></i> Апгрейд</button><button type="button" data-power-run-go="battle"><i class="fa-solid fa-swords"></i> Бій</button></div></div></div>
   </article>`;
   root.querySelector('[data-power-run-claim]')?.addEventListener('click', claimPowerRun);
+  root.querySelector('[data-power-run-toggle]')?.addEventListener('click', () => {
+    powerRunExpanded = !powerRunExpanded;
+    renderPowerRun();
+  });
   root.querySelectorAll('[data-power-run-go]').forEach(button => button.addEventListener('click', () => showPage(button.dataset.powerRunGo)));
 }
 
@@ -1365,10 +1373,20 @@ function renderTargetArena() {
     return;
   }
   const arena = getTargetArenaState();
-  root.innerHTML = `<article class="target-arena-card" aria-label="Елітний тир">
+  const compactAction = `<div class="target-arena-compact"><span><i class="fa-solid fa-coins"></i> Внески від ${formatCredits(TARGET_ARENA_STAKES[0])} · +220 мс за влучання</span><button type="button" data-arena-open><i class="fa-solid fa-crosshairs"></i> Відкрити тир</button></div>`;
+  const fullControls = `<div class="target-arena-body"><div class="target-arena-stakes"><span>ОБЕРИ ВНЕСОК</span><div>${TARGET_ARENA_STAKES.map(stake => `<button type="button" data-arena-stake="${stake}" class="${targetArenaSelectedStake === stake ? 'is-selected' : ''}">${formatCredits(stake)}</button>`).join('')}</div><small>Невдала спроба не повертає PC. Тут немає реальних грошей чи призів.</small></div><div class="target-arena-rules"><span>ВИПЛАТА ЗА ВЛУЧАННЯ</span><div><b>0–8</b><b>9–12</b><b>13–16</b><b>17–20</b><b>21+</b></div><div><em>0%</em><em>40%</em><em>75%</em><em>110%</em><em>135%</em></div></div><div class="target-arena-actions"><button type="button" class="target-arena-start" data-arena-start><i class="fa-solid fa-play"></i>ПОЧАТИ ЗА ${formatCredits(targetArenaSelectedStake)}<small>без cooldown</small></button><button type="button" class="target-arena-collapse" data-arena-close>Згорнути</button></div></div>`;
+  root.innerHTML = `<article class="target-arena-card ${targetArenaExpanded ? 'is-expanded' : 'is-compact'}" aria-label="Елітний тир">
     <div class="target-arena-head"><div class="target-arena-icon"><i class="fa-solid fa-crosshairs"></i></div><div><p>ДЛЯ ВЕЛИКОГО БАЛАНСУ</p><h2>ЕЛІТНИЙ ТИР</h2><span>15 секунд на рухомі мішені. Чим краща точність — тим більша частина ставки повертається.</span></div><div class="target-arena-record"><span>РЕКОРД</span><b>${arena.bestScore}</b><small>${arena.rounds} спроб</small></div></div>
-    <div class="target-arena-body"><div class="target-arena-stakes"><span>ОБЕРИ ВНЕСОК</span><div>${TARGET_ARENA_STAKES.map(stake => `<button type="button" data-arena-stake="${stake}" class="${targetArenaSelectedStake === stake ? 'is-selected' : ''}">${formatCredits(stake)}</button>`).join('')}</div><small>Невдала спроба не повертає PC. Тут немає реальних грошей чи призів.</small></div><div class="target-arena-rules"><span>ВИПЛАТА ЗА ВЛУЧАННЯ</span><div><b>0–8</b><b>9–12</b><b>13–16</b><b>17–20</b><b>21+</b></div><div><em>0%</em><em>40%</em><em>75%</em><em>110%</em><em>135%</em></div></div><button type="button" class="target-arena-start" data-arena-start><i class="fa-solid fa-play"></i>ПОЧАТИ ЗА ${formatCredits(targetArenaSelectedStake)}<small>без cooldown</small></button></div>
+    ${targetArenaExpanded ? fullControls : compactAction}
   </article>`;
+  root.querySelector('[data-arena-open]')?.addEventListener('click', () => {
+    targetArenaExpanded = true;
+    renderTargetArena();
+  });
+  root.querySelector('[data-arena-close]')?.addEventListener('click', () => {
+    targetArenaExpanded = false;
+    renderTargetArena();
+  });
   root.querySelectorAll('[data-arena-stake]').forEach(button => button.addEventListener('click', () => {
     targetArenaSelectedStake = Number(button.dataset.arenaStake);
     renderTargetArena();
@@ -1378,7 +1396,7 @@ function renderTargetArena() {
 
 function renderActiveTargetArena(root) {
   clearTargetArenaTimers();
-  root.innerHTML = `<article class="target-arena-card is-active" aria-label="Елітний тир, активна спроба"><div class="target-arena-live-head"><div><p><i class="fa-solid fa-crosshairs"></i> ЕЛІТНИЙ ТИР · СПРОБА ТРИВАЄ</p><strong id="targetArenaTimer">15.0 с</strong></div><div><span>ВНЕСОК</span><b>${formatCredits(targetArenaSession.stake)}</b></div><div><span>ВЛУЧАННЯ</span><b id="targetArenaScore">0</b></div></div><div class="target-arena-board" id="targetArenaBoard"><span class="target-arena-board-copy">Тисни по мішені</span><button type="button" class="target-arena-target" id="targetArenaTarget" aria-label="Влучити в мішень"><i class="fa-solid fa-crosshairs"></i></button></div><p class="target-arena-live-note">9 влучань повертають лише 40% внеску. Для прибутку потрібно щонайменше 17.</p></article>`;
+  root.innerHTML = `<article class="target-arena-card is-active" aria-label="Елітний тир, активна спроба"><div class="target-arena-live-head"><div><p><i class="fa-solid fa-crosshairs"></i> ЕЛІТНИЙ ТИР · СПРОБА ТРИВАЄ</p><strong id="targetArenaTimer">15.0 с</strong></div><div><span>ВНЕСОК</span><b>${formatCredits(targetArenaSession.stake)}</b></div><div><span>ВЛУЧАННЯ</span><b id="targetArenaScore">${targetArenaSession.score}</b><small id="targetArenaBonus">+${(Number(targetArenaSession.bonusMs) || 0) / 1000} с</small></div></div><div class="target-arena-board" id="targetArenaBoard"><span class="target-arena-board-copy">Тисни по мішені</span><button type="button" class="target-arena-target" id="targetArenaTarget" aria-label="Влучити в мішень"><i class="fa-solid fa-crosshairs"></i></button></div><p class="target-arena-live-note">Кожне влучання додає +220 мс (до +5 с). Для прибутку потрібно щонайменше 17.</p></article>`;
   const board = root.querySelector('#targetArenaBoard');
   const target = root.querySelector('#targetArenaTarget');
   const moveTarget = () => {
@@ -1390,9 +1408,18 @@ function renderActiveTargetArena(root) {
   };
   target?.addEventListener('click', () => {
     if (!targetArenaSession) return;
+    if (Date.now() >= targetArenaSession.endsAt) {
+      finishTargetArena();
+      return;
+    }
     targetArenaSession.score += 1;
+    const previousEnd = targetArenaSession.endsAt;
+    targetArenaSession.endsAt = Math.min(targetArenaSession.maxEndsAt, targetArenaSession.endsAt + TARGET_ARENA_HIT_BONUS_MS);
+    targetArenaSession.bonusMs = clampNumber((Number(targetArenaSession.bonusMs) || 0) + (targetArenaSession.endsAt - previousEnd), 0, TARGET_ARENA_MAX_BONUS_MS, 0);
     const score = root.querySelector('#targetArenaScore');
     if (score) score.textContent = String(targetArenaSession.score);
+    const bonus = root.querySelector('#targetArenaBonus');
+    if (bonus) bonus.textContent = `+${(targetArenaSession.bonusMs / 1000).toFixed(2)} с`;
     target.classList.remove('is-hit');
     void target.offsetWidth;
     target.classList.add('is-hit');
@@ -1423,7 +1450,8 @@ function startTargetArena(stake) {
     return;
   }
   currentUser.balance -= safeStake;
-  targetArenaSession = { stake: safeStake, score: 0, endsAt: Date.now() + TARGET_ARENA_DURATION_MS };
+  const startedAt = Date.now();
+  targetArenaSession = { stake: safeStake, score: 0, bonusMs: 0, endsAt: startedAt + TARGET_ARENA_DURATION_MS, maxEndsAt: startedAt + TARGET_ARENA_DURATION_MS + TARGET_ARENA_MAX_BONUS_MS };
   saveState();
   updateBalanceUI();
   renderTargetArena();
@@ -1504,10 +1532,10 @@ function renderBattlePass() {
     </button>`;
   };
   const tierNumbers = BATTLE_PASS_REWARDS.map(entry => `<span class="bp-tier-number ${entry.tier === currentTier ? 'is-current' : entry.tier <= unlocked ? 'is-open' : ''}">${entry.tier}</span>`).join('');
-  root.innerHTML = `<article class="battle-pass-card" aria-label="Бойовий пропуск ${BATTLE_PASS_SEASON.name}">
+  root.innerHTML = `<article class="battle-pass-card ${battlePassExpanded ? 'is-expanded' : 'is-compact'}" aria-label="Бойовий пропуск ${BATTLE_PASS_SEASON.name}">
     <div class="battle-pass-hero">
       <div class="bp-coin-mark"><i class="fa-solid fa-coins"></i><b>PC</b></div>
-      <div class="bp-hero-copy"><p>${BATTLE_PASS_SEASON.name} · БЕЗ РЕАЛЬНИХ ОПЛАТ</p><h2>${BATTLE_PASS_SEASON.title}</h2><span>Грай, заробляй XP і забирай сезонні нагороди.</span></div>
+      <div class="bp-hero-copy"><p>${BATTLE_PASS_SEASON.name} · БЕЗ РЕАЛЬНИХ ОПЛАТ</p><h2>${BATTLE_PASS_SEASON.title}</h2><span>Грай, заробляй XP і забирай сезонні нагороди.</span><button type="button" class="bp-expand-btn" data-bp-toggle><i class="fa-solid fa-layer-group"></i>${battlePassExpanded ? 'Сховати нагороди' : 'Показати 30 рівнів'}</button></div>
       <div class="bp-progress-box"><div class="bp-progress-label"><span>LVL ${currentTier} / ${BATTLE_PASS_SEASON.tiers}</span><b>${pass.xp.toLocaleString('uk-UA')} XP</b></div><div class="bp-progress-track"><span style="width:${progress.percent}%"></span></div><small>${inTier.toLocaleString('uk-UA')} / ${BATTLE_PASS_SEASON.tierXp.toLocaleString('uk-UA')} XP до наступного рівня</small></div>
       <button type="button" id="battlePassBuyBtn" class="bp-buy-btn ${pass.premium ? 'is-owned' : ''}"><i class="fa-solid ${pass.premium ? 'fa-circle-check' : 'fa-crown'}"></i>${pass.premium ? 'POTUZHNO PASS АКТИВНИЙ' : `ВІДКРИТИ ЗА ${formatCredits(BATTLE_PASS_SEASON.price)}`}</button>
     </div>
@@ -1520,6 +1548,10 @@ function renderBattlePass() {
   </article>`;
 
   root.querySelector('#battlePassBuyBtn')?.addEventListener('click', buyBattlePass);
+  root.querySelector('[data-bp-toggle]')?.addEventListener('click', () => {
+    battlePassExpanded = !battlePassExpanded;
+    renderBattlePass();
+  });
   root.querySelectorAll('[data-bp-claim]').forEach(button => button.addEventListener('click', () => {
     const [lane, tier] = String(button.dataset.bpClaim || '').split(':');
     claimBattlePassReward(lane, Number(tier));
