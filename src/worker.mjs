@@ -65,6 +65,8 @@ const ADMIN_GAME_MAX_PRESTIGE = 99
 const ADMIN_GAME_MAX_INVENTORY = 10_000
 const ADMIN_GAME_PLAYER_LEVEL_XP = 1_200
 const ADMIN_GAME_PASS_MAX_XP = 30 * 750
+const ADMIN_PLAYER_DIRECTORY_MAX = 5_000
+const ADMIN_PLAYER_DIRECTORY_PAGE_SIZE = 600
 const ADMIN_ROLES = Object.freeze({
   owner: {
     label: 'Власник',
@@ -531,6 +533,32 @@ function adminProfileSummary(accountId, entry) {
   }
 }
 
+function adminPlayerDirectoryEntry(accountId, entry) {
+  const summary = adminProfileSummary(accountId, entry)
+  if (!summary) return null
+  return {
+    accountId: summary.accountId,
+    name: summary.name,
+    level: summary.level,
+    prestige: summary.prestige,
+    inventoryTotal: summary.inventoryTotal,
+    updatedAt: summary.updatedAt,
+  }
+}
+
+function normalizeAdminPlayerDirectoryEntry(value) {
+  const accountId = cleanText(value?.accountId, 64)
+  if (!ID.test(accountId)) return null
+  return {
+    accountId,
+    name: cleanText(value?.name, 24) || 'Гравець',
+    level: boundedInteger(value?.level, 1, 99_999, 1),
+    prestige: boundedInteger(value?.prestige, 0, ADMIN_GAME_MAX_PRESTIGE),
+    inventoryTotal: boundedInteger(value?.inventoryTotal, 0, ADMIN_GAME_MAX_INVENTORY),
+    updatedAt: boundedInteger(value?.updatedAt, 0, Number.MAX_SAFE_INTEGER),
+  }
+}
+
 function adminCatalogSkin(value) {
   if (!value || typeof value !== 'object') return null
   const id = cleanText(value.id, 128)
@@ -751,6 +779,7 @@ export class PotuzhnoState {
       if (path === '/__internal/migrate-profile') return await this.internalProfileMigration(request)
       if (path === '/__internal/migrate-public-profile') return await this.internalPublicProfileMigration(request)
       if (path === '/__internal/admin-profile') return await this.internalAdminProfile(request)
+      if (path === '/__internal/admin-player-directory') return await this.internalAdminPlayerDirectory(request)
       if (path === '/api/profile/sync') return await this.profile(request)
       if (path === '/api/public-profile') return await this.publicProfile(request)
       if (path === '/api/public-avatar') return await this.publicAvatar(request)
@@ -851,7 +880,9 @@ export class PotuzhnoState {
     if (action === 'summary') {
       const entry = await this.storage.get(key)
       const player = adminProfileSummary(accountId, entry)
-      return player ? json({ player }) : json({ error: 'Хмарний профіль не знайдено.' }, 404)
+      if (!player) return json({ error: 'Хмарний профіль не знайдено.' }, 404)
+      await this.indexCloudProfile(accountId, entry)
+      return json({ player })
     }
     if (action !== 'mutate') return json({ error: 'Невідома дія над профілем.' }, 400)
     const operation = cleanText(body?.operation, 32)
@@ -962,9 +993,68 @@ export class PotuzhnoState {
       }
       if (!isPayload(next)) return { error: 'Профіль завеликий після зміни.', status: 413 }
       await transaction.put(key, nextEntry)
-      return { player: adminProfileSummary(accountId, nextEntry), detail }
+      return { player: adminProfileSummary(accountId, nextEntry), detail, entry: nextEntry }
     })
-    return result.error ? json({ error: result.error }, result.status) : json(result)
+    if (result.error) return json({ error: result.error }, result.status)
+    await this.indexCloudProfile(accountId, result.entry)
+    return json({ player: result.player, detail: result.detail })
+  }
+
+  async internalAdminPlayerDirectory(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request, 16_384)
+    } catch {
+      return json({ error: 'Некоректний запит до каталогу гравців.' }, 400)
+    }
+    const key = 'admin:player-directory:v1'
+    const action = cleanText(body?.action, 16)
+    if (action === 'upsert') {
+      const player = normalizeAdminPlayerDirectoryEntry(body?.player)
+      if (!player) return json({ error: 'Некоректний профіль гравця.' }, 400)
+      await this.storage.transaction(async transaction => {
+        const stored = await transaction.get(key)
+        const existing = stored?.players && typeof stored.players === 'object' && !Array.isArray(stored.players) ? stored.players : {}
+        const players = Object.fromEntries(Object.entries(existing)
+          .map(([, entry]) => normalizeAdminPlayerDirectoryEntry(entry))
+          .filter(Boolean)
+          .map(entry => [entry.accountId, entry]))
+        players[player.accountId] = player
+        const trimmed = Object.values(players)
+          .sort((left, right) => right.updatedAt - left.updatedAt)
+          .slice(0, ADMIN_PLAYER_DIRECTORY_MAX)
+        await transaction.put(key, { version: 1, players: Object.fromEntries(trimmed.map(entry => [entry.accountId, entry])) })
+      })
+      return json({ indexed: true })
+    }
+    if (action === 'list') {
+      const query = cleanText(body?.query, 100).toLocaleLowerCase()
+      const stored = await this.storage.get(key)
+      const players = Object.values(stored?.players && typeof stored.players === 'object' && !Array.isArray(stored.players) ? stored.players : {})
+        .map(normalizeAdminPlayerDirectoryEntry)
+        .filter(Boolean)
+        .filter(player => !query || `${player.name} ${player.accountId}`.toLocaleLowerCase().includes(query))
+        .sort((left, right) => right.updatedAt - left.updatedAt)
+      return json({ total: players.length, players: players.slice(0, ADMIN_PLAYER_DIRECTORY_PAGE_SIZE) })
+    }
+    return json({ error: 'Невідома дія каталогу гравців.' }, 400)
+  }
+
+  async indexCloudProfile(accountId, entry) {
+    const player = adminPlayerDirectoryEntry(accountId, entry)
+    if (!player) return
+    try {
+      const global = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName('global'))
+      await global.fetch(new Request('https://internal/__internal/admin-player-directory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'upsert', player }),
+      }))
+    } catch {
+      // The profile save itself must stay reliable if the administrative index
+      // is temporarily unavailable; the next load/save will add it again.
+    }
   }
 
   async migrateLegacyProfile(accountId, recoveryHash) {
@@ -1035,12 +1125,17 @@ export class PotuzhnoState {
         await transaction.put(key, data)
         return data
       })
-      return result ? json({ updatedAt: result.updatedAt, revision: result.revision }) : json({ error: 'Профіль уже існує.' }, 409)
+      if (!result) return json({ error: 'Профіль уже існує.' }, 409)
+      await this.indexCloudProfile(accountId, result)
+      return json({ updatedAt: result.updatedAt, revision: result.revision })
     }
 
     if (!entry || !equalHash(entry.recoveryHash, recoveryHash)) return json({ error: 'Профіль не знайдено або код відновлення неправильний.' }, 403)
     const revision = Math.max(1, Math.floor(Number(entry.revision) || 1))
-    if (action === 'load') return json({ payload: entry.payload, updatedAt: entry.updatedAt, revision })
+    if (action === 'load') {
+      await this.indexCloudProfile(accountId, entry)
+      return json({ payload: entry.payload, updatedAt: entry.updatedAt, revision })
+    }
     if (action !== 'save' || !isPayload(body.payload)) return json({ error: 'Некоректне збереження.' }, 400)
     const expectedRevision = Number(body?.revision)
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1) return json({ error: 'Профіль застарів. Онови його перед збереженням.' }, 409)
@@ -1053,9 +1148,11 @@ export class PotuzhnoState {
       const updatedAt = Date.now()
       const next = { ...current, version: 2, revision: currentRevision + 1, payload: body.payload, updatedAt }
       await transaction.put(key, next)
-      return { updatedAt, revision: next.revision }
+      return { updatedAt, revision: next.revision, entry: next }
     })
-    return saved.error ? json({ error: saved.error, revision: saved.revision }, saved.status) : json(saved)
+    if (saved.error) return json({ error: saved.error, revision: saved.revision }, saved.status)
+    await this.indexCloudProfile(accountId, saved.entry)
+    return json({ updatedAt: saved.updatedAt, revision: saved.revision })
   }
 
   async publicProfile(request) {
@@ -1671,6 +1768,7 @@ export class PotuzhnoAdmin {
       if (path === '/api/admin/team' && request.method === 'GET') return this.team(state, actor)
       if (path === '/api/admin/audit' && request.method === 'GET') return this.audit(state, actor)
       if (path === '/api/admin/members' && request.method === 'POST') return await this.members(request)
+      if (path === '/api/admin/game/players' && request.method === 'GET') return await this.gamePlayers(request, actor)
       if (path === '/api/admin/game/player' && request.method === 'GET') return await this.gamePlayer(request, actor)
       if (path === '/api/admin/game/catalog' && request.method === 'GET') return await this.gameCatalog(request, actor)
       if (path === '/api/admin/game/mutate' && request.method === 'POST') return await this.gameMutation(request, actor)
@@ -1748,6 +1846,18 @@ export class PotuzhnoAdmin {
     return { ok: response.ok, status: response.status, data: data || {} }
   }
 
+  async playerDirectory(query = '') {
+    const global = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName('global'))
+    const response = await global.fetch(new Request('https://internal/__internal/admin-player-directory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'list', query }),
+    }))
+    let data = null
+    try { data = await response.json() } catch {}
+    return { ok: response.ok, status: response.status, data: data || {} }
+  }
+
   async catalogItems() {
     const catalog = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName('catalog'))
     const response = await catalog.fetch(new Request('https://internal/api/catalog/skins'))
@@ -1766,6 +1876,15 @@ export class PotuzhnoAdmin {
     if (!ID.test(accountId)) return json({ error: 'Вкажи правильний Cloud Profile ID.' }, 400)
     const response = await this.profileAdminRequest(accountId, { action: 'summary' })
     return response.ok ? json(response.data) : json({ error: response.data?.error || 'Не вдалося завантажити профіль.' }, response.status)
+  }
+
+  async gamePlayers(request, actor) {
+    if (!adminGameCapabilities(actor).read) return adminForbidden('Твоя роль не має доступу до списку гравців.')
+    const query = cleanText(new URL(request.url).searchParams.get('q'), 100)
+    const response = await this.playerDirectory(query)
+    return response.ok
+      ? json({ total: boundedInteger(response.data?.total, 0, ADMIN_PLAYER_DIRECTORY_MAX), players: Array.isArray(response.data?.players) ? response.data.players : [] })
+      : json({ error: response.data?.error || 'Не вдалося завантажити список гравців.' }, response.status)
   }
 
   async gameCatalog(request, actor) {

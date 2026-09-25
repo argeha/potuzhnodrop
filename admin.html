@@ -77,11 +77,13 @@
         <div><p class="eyebrow">ВІРТУАЛЬНА ГРА</p><h2 id="gameTitle">Керування профілем</h2></div>
         <span class="audit-lock"><i class="fa-solid fa-cloud"></i> Серверний профіль</span>
       </div>
-      <p class="game-note">Вкажи <b>Cloud Profile ID</b> з вікна відновлення у профілі гравця. Локальні профілі без синхронізації редагувати неможливо.</p>
-      <form class="profile-lookup" id="profileLookupForm">
-        <label>Cloud Profile ID<input id="profileAccountId" type="text" maxlength="64" autocomplete="off" spellcheck="false" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required></label>
-        <button class="icon-button" id="profileLookupButton" type="submit"><i class="fa-solid fa-magnifying-glass"></i><span>Відкрити</span></button>
-      </form>
+      <p class="game-note">Обери гравця зі списку. Тут з’являються всі, хто створив або синхронізував Cloud Profile; локальні профілі без синхронізації знайти неможливо.</p>
+      <section class="player-directory" aria-labelledby="playersTitle">
+        <div class="section-head"><div><p class="eyebrow">БАЗА ГРАВЦІВ</p><h3 id="playersTitle">Усі гравці</h3></div><span id="playerDirectoryCount" class="count-pill">—</span></div>
+        <div class="directory-tools"><label>Пошук<input id="playerDirectorySearch" type="search" maxlength="100" autocomplete="off" placeholder="Нікнейм або ID"></label><button id="playerDirectoryRefresh" class="small-button" type="button"><i class="fa-solid fa-rotate"></i> Оновити</button></div>
+        <div id="playerDirectoryList" class="player-directory-list" aria-live="polite"><p class="loading-line"><i class="fa-solid fa-spinner fa-spin"></i> Завантаження гравців…</p></div>
+      </section>
+      <details class="direct-player-search"><summary>Відкрити профіль за Cloud Profile ID</summary><form class="profile-lookup" id="profileLookupForm"><label>Cloud Profile ID<input id="profileAccountId" type="text" maxlength="64" autocomplete="off" spellcheck="false" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required></label><button class="icon-button" id="profileLookupButton" type="submit"><i class="fa-solid fa-magnifying-glass"></i><span>Відкрити</span></button></form></details>
       <div class="game-unavailable hidden" id="gameUnavailable"><i class="fa-solid fa-lock"></i> Твоя роль не має доступу до керування віртуальними профілями.</div>
       <div id="playerWorkspace" class="player-workspace hidden">
         <article class="player-summary" id="playerSummary"></article>

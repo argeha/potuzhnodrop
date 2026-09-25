@@ -1,7 +1,7 @@
 (() => {
   'use strict'
 
-  const state = { me: null, members: [], roles: [], assignableRoles: [], audit: [], gameCapabilities: {}, player: null, catalog: [], selectedSkinId: '' }
+  const state = { me: null, members: [], roles: [], assignableRoles: [], audit: [], gameCapabilities: {}, players: [], playersTotal: 0, player: null, catalog: [], selectedSkinId: '' }
   let inviteCode = new URLSearchParams(window.location.search).get('invite') || ''
   const $ = selector => document.querySelector(selector)
   const headerStatus = $('#headerStatus')
@@ -24,7 +24,9 @@
   const gameControls = $('#gameControls')
   const skinSearchResults = $('#skinSearchResults')
   const playerInventory = $('#playerInventory')
+  const playerDirectoryList = $('#playerDirectoryList')
   let skinSearchTimer = null
+  let playerDirectorySearchTimer = null
 
   const actionLabels = {
     access_granted: 'створив(ла) доступ',
@@ -264,8 +266,61 @@
     skinSearchResults.innerHTML = items.map(item => `<button type="button" class="catalog-skin${item.id === selected ? ' is-selected' : ''}" data-skin-id="${escapeHtml(item.id)}"><img src="${escapeHtml(skinImage(item.img))}" alt="" loading="lazy"><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.weapon)} · ${compact(item.price)} PC</small></span><i class="fa-solid ${item.id === selected ? 'fa-circle-check' : 'fa-circle'}"></i></button>`).join('')
   }
 
+  function renderPlayerDirectory() {
+    const canRead = canGame('read')
+    const directory = $('#playerDirectoryList').closest('.player-directory')
+    directory.classList.toggle('hidden', !canRead)
+    if (!canRead) return
+    $('#playerDirectoryCount').textContent = `${compact(state.playersTotal)} ${state.playersTotal === 1 ? 'гравець' : state.playersTotal < 5 ? 'гравці' : 'гравців'}`
+    const players = Array.isArray(state.players) ? state.players : []
+    if (!players.length) {
+      playerDirectoryList.innerHTML = '<p class="empty-line">Поки що немає синхронізованих Cloud Profile. Гравець з’явиться тут після «Створити», «Зберегти» або «Відновити» у резервній копії.</p>'
+      return
+    }
+    playerDirectoryList.innerHTML = players.map(player => `<button type="button" class="directory-player${state.player?.accountId === player.accountId ? ' is-active' : ''}" data-player-id="${escapeHtml(player.accountId)}"><i class="fa-solid fa-user"></i><span><strong>${escapeHtml(player.name)}</strong><small>LVL ${compact(player.level)}${player.prestige ? ` · P${compact(player.prestige)}` : ''} · ${compact(player.inventoryTotal)} скінів</small></span><i class="fa-solid fa-chevron-right directory-open"></i></button>`).join('')
+  }
+
+  async function loadPlayerDirectory({ quiet = false } = {}) {
+    if (!canGame('read')) return
+    const query = $('#playerDirectorySearch').value.trim()
+    if (!quiet) playerDirectoryList.innerHTML = '<p class="loading-line"><i class="fa-solid fa-spinner fa-spin"></i> Завантаження гравців…</p>'
+    try {
+      const data = await api(`/api/admin/game/players?q=${encodeURIComponent(query)}`)
+      if ($('#playerDirectorySearch').value.trim() !== query) return
+      state.players = data.players || []
+      state.playersTotal = integer(data.total)
+      renderPlayerDirectory()
+    } catch (error) {
+      playerDirectoryList.innerHTML = `<p class="empty-line">${escapeHtml(error.message)}</p>`
+    }
+  }
+
+  async function loadPlayerById(accountId) {
+    const cleanId = String(accountId || '').trim()
+    if (!cleanId) return
+    $('#profileAccountId').value = cleanId
+    const button = $('#profileLookupButton')
+    button.disabled = true
+    try {
+      const data = await api(`/api/admin/game/player?accountId=${encodeURIComponent(cleanId)}`)
+      state.player = data.player || null
+      state.catalog = []
+      state.selectedSkinId = ''
+      renderGame()
+      showToast('Профіль гравця відкрито.')
+    } catch (error) {
+      state.player = null
+      renderGame()
+      if (error.status === 401) showGate()
+      showToast(error.message, 'error')
+    } finally {
+      button.disabled = false
+    }
+  }
+
   function renderGame() {
     renderGamePermissions()
+    renderPlayerDirectory()
     renderPlayer()
     renderCatalog()
   }
@@ -303,6 +358,7 @@
       renderAll()
       showPanel()
       setHeader('Захищена сесія', 'ready')
+      void loadPlayerDirectory({ quiet: true })
     } catch (error) {
       state.roles = []
       state.assignableRoles = []
@@ -425,23 +481,18 @@
     event.preventDefault()
     const accountId = $('#profileAccountId').value.trim()
     if (!accountId) return
-    const button = $('#profileLookupButton')
-    button.disabled = true
-    try {
-      const data = await api(`/api/admin/game/player?accountId=${encodeURIComponent(accountId)}`)
-      state.player = data.player || null
-      state.catalog = []
-      state.selectedSkinId = ''
-      renderGame()
-      showToast('Профіль завантажено.')
-    } catch (error) {
-      state.player = null
-      renderGame()
-      if (error.status === 401) showGate()
-      showToast(error.message, 'error')
-    } finally {
-      button.disabled = false
-    }
+    await loadPlayerById(accountId)
+  })
+
+  $('#playerDirectoryRefresh').addEventListener('click', () => void loadPlayerDirectory())
+  $('#playerDirectorySearch').addEventListener('input', () => {
+    window.clearTimeout(playerDirectorySearchTimer)
+    playerDirectorySearchTimer = window.setTimeout(() => void loadPlayerDirectory(), 260)
+  })
+  playerDirectoryList.addEventListener('click', event => {
+    const card = event.target.closest('[data-player-id]')
+    if (!card) return
+    void loadPlayerById(card.dataset.playerId)
   })
 
   $('#economyForm').addEventListener('submit', event => {
@@ -543,6 +594,8 @@
     state.assignableRoles = []
     state.audit = []
     state.gameCapabilities = {}
+    state.players = []
+    state.playersTotal = 0
     state.player = null
     state.catalog = []
     state.selectedSkinId = ''
