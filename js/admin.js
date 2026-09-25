@@ -374,7 +374,8 @@
       state.members = team.members || []
       state.assignableRoles = team.assignableRoles || me.assignableRoles || []
       state.audit = audit.audit || []
-      state.gameCapabilities = resolveGameCapabilities(me.gameCapabilities, me.me?.role?.id)
+      const roleId = me.me?.role?.id || me.me?.roleId || (typeof me.me?.role === 'string' ? me.me.role : '')
+      state.gameCapabilities = resolveGameCapabilities(me.gameCapabilities, roleId)
       renderAll()
       showPanel()
       setHeader('Захищена сесія', 'ready')

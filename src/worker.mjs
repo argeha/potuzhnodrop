@@ -1929,7 +1929,7 @@ export class PotuzhnoAdmin {
   async playerDirectory(query = '') {
     const global = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName('global'))
     const community = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName('community'))
-    const [response, communityResponse] = await Promise.all([
+    const [directoryResult, communityResult] = await Promise.allSettled([
       global.fetch(new Request('https://internal/__internal/admin-player-directory', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1937,16 +1937,21 @@ export class PotuzhnoAdmin {
       })),
       community.fetch(new Request('https://internal/__internal/admin-community-players', { method: 'POST' })),
     ])
+    if (directoryResult.status !== 'fulfilled') {
+      return { ok: false, status: 503, data: { error: 'Каталог гравців тимчасово недоступний.' } }
+    }
+    const response = directoryResult.value
+    const communityResponse = communityResult.status === 'fulfilled' ? communityResult.value : null
     let data = null
     let communityData = null
     try { data = await response.json() } catch {}
-    try { communityData = await communityResponse.json() } catch {}
+    try { communityData = communityResponse ? await communityResponse.json() : null } catch {}
     if (!response.ok) return { ok: false, status: response.status, data: data || {} }
     const players = new Map((Array.isArray(data?.players) ? data.players : [])
       .map(normalizeAdminPlayerDirectoryEntry)
       .filter(Boolean)
       .map(player => [player.accountId || `visitor:${player.visitorId}`, player]))
-    if (communityResponse.ok) {
+    if (communityResponse?.ok) {
       for (const communityPlayer of Array.isArray(communityData?.players) ? communityData.players : []) {
         const visitor = adminVisitorDirectoryEntry(communityPlayer?.id, communityPlayer, communityPlayer?.updatedAt)
         if (!visitor) continue
