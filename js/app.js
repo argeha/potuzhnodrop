@@ -961,6 +961,17 @@ const HALLOWEEN_TREAT_OPTIONS = Object.freeze([
   { id: 'ticket', icon: 'fa-ticket', title: '+1 квиток', note: 'Відкрий кейс без PC', tickets: 1 },
   { id: 'shard', icon: 'fa-moon', title: 'Уламок ритуалу', note: '3 уламки → титул назавжди', shard: 1 }
 ]);
+// Nightfall is deliberately not a roll or a wager. It turns three real game
+// actions into one co-operative route through the Halloween city.
+const PULSE_CIRCUIT = Object.freeze({
+  dailyXp: 90,
+  badgeAt: 3,
+  steps: Object.freeze([
+    { id: 'case', icon: 'fa-box-open', title: 'Ліхтарний базар', note: 'Відкрий будь-який звичайний кейс', action: 'До кейсів', page: 'case', district: 'market' },
+    { id: 'battle', icon: 'fa-hand-fist', title: 'Арена примар', note: 'Виграй один бій 1v1', action: 'До бою', page: 'battle', district: 'arena' },
+    { id: 'arena', icon: 'fa-tower-broadcast', title: 'Вежа сигналу', note: 'Набери 13 влучань у тирі', action: 'До вежі', page: 'tasks', district: 'tower' }
+  ])
+});
 const HALLOWEEN_ADMIN_PREVIEW_QUERY = 'adminPreview';
 let halloweenAdminPreviewRequested = new URLSearchParams(window.location.search).get(HALLOWEEN_ADMIN_PREVIEW_QUERY) === HALLOWEEN_EVENT.id;
 let halloweenAdminPreviewAuthorized = false;
@@ -1154,6 +1165,10 @@ function createDefaultHalloweenEvent() {
   };
 }
 
+function createDefaultPulseCircuit() {
+  return { date: '', step: 0, completed: 0, completedDate: '', badgeUnlocked: false, lastCompletedAt: 0 };
+}
+
 function createDefaultTargetArena() {
   return { rounds: 0, bestScore: 0, totalSpent: 0, totalPayout: 0, lastPlayedAt: 0 };
 }
@@ -1172,6 +1187,7 @@ function createDefaultGameState() {
     weekly: createDefaultWeekly(),
     powerRun: createDefaultPowerRun(),
     halloweenEvent: createDefaultHalloweenEvent(),
+    pulseCircuit: createDefaultPulseCircuit(),
     targetArena: createDefaultTargetArena(),
     allTime: createDefaultAllTime(),
     achievements: {},
@@ -1219,6 +1235,7 @@ function loadGameState() {
       weekly: { ...createDefaultWeekly(), ...(s.weekly || {}) },
       powerRun: { ...createDefaultPowerRun(), ...(s.powerRun || {}) },
       halloweenEvent: { ...createDefaultHalloweenEvent(), ...(s.halloweenEvent || {}) },
+      pulseCircuit: { ...createDefaultPulseCircuit(), ...(s.pulseCircuit || {}) },
       targetArena: { ...createDefaultTargetArena(), ...(s.targetArena || {}) },
       allTime: { ...createDefaultAllTime(), ...(s.allTime || {}) },
       achievements: s.achievements || {},
@@ -1432,6 +1449,17 @@ function renderProfileCosmeticsSummary() {
   if (portrait) portrait.classList.toggle('is-halloween-frame', Boolean(cosmetics.activeFrame));
 }
 
+function renderSignalForgeProfile() {
+  const state = getPulseCircuitState();
+  const badge = document.getElementById('profileSignalForgeBadge');
+  const portrait = document.querySelector('.profile-portrait');
+  if (badge) {
+    badge.classList.toggle('hidden', !state.badgeUnlocked);
+    badge.title = state.badgeUnlocked ? `Signal Forge · ${state.completed} маршрут(ів) Nightfall` : '';
+  }
+  if (portrait) portrait.classList.toggle('is-signal-forge-frame', state.badgeUnlocked);
+}
+
 function renderProfileCosmeticsModal() {
   const content = document.getElementById('profileCosmeticsContent');
   if (!content) return;
@@ -1512,7 +1540,7 @@ function renderHalloweenEvent() {
   const previewNotice = status.preview ? '<div class="halloween-preview-notice"><i class="fa-solid fa-eye"></i> ПРИВАТНИЙ ПЕРЕГЛЯД АДМІНА · ГРАВЦЯМ ПОДІЯ ДОСІ НЕДОСТУПНА</div>' : '';
   const shopToggle = `<button type="button" class="halloween-utility-button" data-halloween-shop-toggle><i class="fa-solid fa-store"></i>${halloweenShopExpanded ? 'Сховати крамницю' : 'Нічна крамниця'} <b>${state.pumpkinCoins} 🪙</b></button>`;
   const treatToggle = `<button type="button" class="halloween-utility-button" data-halloween-treat-toggle><i class="fa-solid fa-candy-cane"></i>${halloweenTreatExpanded ? 'Сховати Trick or Treat' : 'Trick or Treat'} <b>${state.treatDate === status.date ? '✓ сьогодні' : `${HALLOWEEN_TREAT_COST} 🪙`}</b></button>`;
-  root.innerHTML = `<article class="halloween-event-card ${status.preview ? 'is-admin-preview' : ''}" aria-label="Halloween: Нічний дроп"><div class="halloween-event-top"><div class="halloween-pumpkin">🎃</div><div><p>18 ЖОВТНЯ — 3 ЛИСТОПАДА · КИЇВ</p><h2>HALLOWEEN: НІЧНИЙ ДРОП</h2><span>Гарбузи — прогрес. Гарбузові монетки — окрема валюта Нічної крамниці.</span></div><div class="halloween-progress"><span>${progress} / 13 🎃</span><div><i style="width:${Math.round((progress / 13) * 100)}%"></i></div><small>До ${Object.values(HALLOWEEN_EVENT.dailyCaps).reduce((sum, cap) => sum + cap, 0)} 🎃 / день</small></div></div>${previewNotice}<div class="halloween-event-body"><div class="halloween-sources"><span>${sourceLabel('case', 'Кейси')} · +${HALLOWEEN_COIN_REWARDS.case} 🪙</span><span>${sourceLabel('battle', 'Перемога в бою')} · +${HALLOWEEN_COIN_REWARDS.battle} 🪙</span><span>${sourceLabel('arena', 'Тир 13+')} · +${HALLOWEEN_COIN_REWARDS.arena} 🪙</span></div><div class="halloween-rewards">${rewards}</div><div class="halloween-utility-row">${shopToggle}${treatToggle}</div>${halloweenShopExpanded ? renderHalloweenShop(state, status) : ''}${halloweenTreatExpanded ? renderHalloweenTreat(state, status) : ''}</div></article>`;
+  root.innerHTML = `<article class="halloween-event-card ${status.preview ? 'is-admin-preview' : ''}" aria-label="Halloween: Нічний дроп"><div class="halloween-event-top"><div class="halloween-pumpkin">🎃</div><div><p>18 ЖОВТНЯ — 3 ЛИСТОПАДА · КИЇВ</p><h2>HALLOWEEN: НІЧНИЙ ДРОП</h2><span>Гарбузи — прогрес. Гарбузові монетки — окрема валюта Нічної крамниці.</span></div><div class="halloween-progress"><span>${progress} / 13 🎃</span><div><i style="width:${Math.round((progress / 13) * 100)}%"></i></div><small>До ${Object.values(HALLOWEEN_EVENT.dailyCaps).reduce((sum, cap) => sum + cap, 0)} 🎃 / день</small></div></div>${previewNotice}<div class="halloween-event-body"><div class="halloween-sources"><span>${sourceLabel('case', 'Кейси')} · +${HALLOWEEN_COIN_REWARDS.case} 🪙</span><span>${sourceLabel('battle', 'Перемога в бою')} · +${HALLOWEEN_COIN_REWARDS.battle} 🪙</span><span>${sourceLabel('arena', 'Тир 13+')} · +${HALLOWEEN_COIN_REWARDS.arena} 🪙</span></div><div class="halloween-rewards">${rewards}</div><div class="halloween-utility-row">${shopToggle}${treatToggle}</div>${halloweenShopExpanded ? renderHalloweenShop(state, status) : ''}${halloweenTreatExpanded ? renderHalloweenTreat(state, status) : ''}<div id="pulseCircuit" class="halloween-nightfall-slot" aria-live="polite"></div></div></article>`;
   root.querySelectorAll('[data-halloween-claim]').forEach(button => button.addEventListener('click', () => claimHalloweenReward(Number(button.dataset.halloweenClaim))));
   root.querySelector('[data-halloween-shop-toggle]')?.addEventListener('click', () => {
     halloweenShopExpanded = !halloweenShopExpanded;
@@ -1524,6 +1552,7 @@ function renderHalloweenEvent() {
   });
   root.querySelectorAll('[data-halloween-buy]').forEach(button => button.addEventListener('click', () => buyHalloweenShopItem(button.dataset.halloweenBuy)));
   root.querySelectorAll('[data-halloween-treat]').forEach(button => button.addEventListener('click', () => chooseHalloweenTreat(button.dataset.halloweenTreat)));
+  renderPulseCircuit();
 }
 
 function claimHalloweenReward(pumpkins) {
@@ -1618,6 +1647,128 @@ function chooseHalloweenTreat(optionId) {
   renderGameHub();
   soundCoin();
   showToast(`Trick or Treat: «${option.title}» додано.`, 'success');
+}
+
+function getPulseCircuitState() {
+  if (!gameState) return createDefaultPulseCircuit();
+  const stored = gameState.pulseCircuit && typeof gameState.pulseCircuit === 'object' ? gameState.pulseCircuit : {};
+  const today = getTodayKey();
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(stored.date || '')) ? String(stored.date) : '';
+  const completedDate = /^\d{4}-\d{2}-\d{2}$/.test(String(stored.completedDate || '')) ? String(stored.completedDate) : '';
+  const state = {
+    date,
+    step: date === today ? clampNumber(stored.step, 0, PULSE_CIRCUIT.steps.length, 0) : 0,
+    completed: clampNumber(stored.completed, 0, 9_999, 0),
+    completedDate,
+    badgeUnlocked: stored.badgeUnlocked === true || clampNumber(stored.completed, 0, 9_999, 0) >= PULSE_CIRCUIT.badgeAt,
+    lastCompletedAt: clampNumber(stored.lastCompletedAt, 0, Number.MAX_SAFE_INTEGER, 0)
+  };
+  gameState.pulseCircuit = state;
+  return state;
+}
+
+function getPulseCircuitCommunity() {
+  const circuit = communitySnapshot?.circuit && typeof communitySnapshot.circuit === 'object' ? communitySnapshot.circuit : {};
+  const phaseSize = clampNumber(circuit.phaseSize, 1, 100, 18);
+  const total = clampNumber(circuit.total, 0, 999_999, 0);
+  const phase = clampNumber(circuit.phase, 1, 4, Math.min(4, Math.floor(total / phaseSize) + 1));
+  const phaseProgress = clampNumber(circuit.phaseProgress, 0, phaseSize, total % phaseSize);
+  const recent = Array.isArray(circuit.recent) ? circuit.recent.slice(0, 6) : [];
+  return { total, phaseSize, phase, phaseProgress, recent, week: cleanText(circuit.week, 16) };
+}
+
+function renderPulseCircuit() {
+  const root = document.getElementById('pulseCircuit');
+  if (!root || !gameState) return;
+  const eventStatus = getHalloweenEventStatus();
+  if (!eventStatus.active) {
+    root.innerHTML = '';
+    return;
+  }
+  const state = getPulseCircuitState();
+  const community = getPulseCircuitCommunity();
+  const doneToday = state.completedDate === getTodayKey();
+  const expected = PULSE_CIRCUIT.steps[state.step] || null;
+  const districts = PULSE_CIRCUIT.steps.map((step, index) => {
+    const completed = !doneToday && index < state.step;
+    const active = !doneToday && index === state.step;
+    const status = doneToday ? 'is-resting' : completed ? 'is-complete' : active ? 'is-active' : 'is-locked';
+    const copy = doneToday ? 'Маршрут уже збережено' : completed ? 'Сигнал прийнято' : active ? step.note : 'Чекає на сигнал';
+    return `<article class="nightfall-district nightfall-district-${step.district} ${status}"><div class="nightfall-district-icon"><i class="fa-solid ${completed ? 'fa-check' : step.icon}"></i></div><div class="nightfall-district-copy"><span>РАЙОН 0${index + 1}</span><h3>${escapeHtml(step.title)}</h3><p>${escapeHtml(copy)}</p></div><button type="button" data-nightfall-go="${step.id}" aria-label="${escapeHtml(step.action)}: ${escapeHtml(step.title)}"><i class="fa-solid ${active ? 'fa-location-arrow' : 'fa-arrow-up-right-from-square'}"></i>${escapeHtml(step.action)}</button></article>`;
+  }).join('');
+  const recent = community.recent.length
+    ? community.recent.map(entry => `<span><i class="fa-solid fa-bolt"></i>${escapeHtml(cleanText(entry?.name, 24) || 'Гравець')}</span>`).join('')
+    : '<span class="is-empty">Перший маршрут Нічного міста може бути твоїм.</span>';
+  const percent = Math.round((community.phaseProgress / community.phaseSize) * 100);
+  const status = doneToday
+    ? 'Маршрут на сьогодні збережено. Завтра місто знову покличе.'
+    : expected
+      ? `Наступна точка: ${expected.title}`
+      : 'Сховище готове прийняти твій маршрут.';
+  const routeProgress = doneToday ? 3 : state.step;
+  const rewardCopy = state.badgeUnlocked
+    ? 'Відбиток Signal Forge у профілі назавжди'
+    : `Ще ${Math.max(0, PULSE_CIRCUIT.badgeAt - state.completed)} маршрут(и) до рамки Signal Forge`;
+  const shareButton = state.completed > 0 ? '<button type="button" class="nightfall-share" data-nightfall-share><i class="fa-solid fa-share-nodes"></i>Показати маршрут</button>' : '';
+  root.innerHTML = `<section class="nightfall-map ${eventStatus.preview ? 'is-preview' : ''}" aria-label="Nightfall: карта Нічного міста"><div class="nightfall-map-head"><div><p><i class="fa-solid fa-map"></i> NIGHTFALL · ЖИВА МАПА ПОДІЇ</p><h2>КАРТА НІЧНОГО МІСТА</h2><span>${status}</span></div><div class="nightfall-map-meter"><span>ТВІЙ МАРШРУТ</span><strong>${routeProgress} <small>/ 3</small></strong><em>${doneToday ? 'ЗАВЕРШЕНО' : 'СЬОГОДНІ'}</em></div></div><div class="nightfall-map-scene"><div class="nightfall-map-atmosphere" aria-hidden="true"></div><div class="nightfall-route-line" aria-hidden="true"><i style="width:${doneToday ? 100 : routeProgress * 33.333}%"></i></div><div class="nightfall-city-signal"><span>СИГНАЛ МІСТА</span><strong>${community.total.toLocaleString('uk-UA')}</strong><small>Фаза ${community.phase} · ${community.phaseProgress} / ${community.phaseSize}</small><div><i style="width:${percent}%"></i></div></div><div class="nightfall-map-districts">${districts}</div><div class="nightfall-vault ${doneToday ? 'is-open' : ''} ${state.badgeUnlocked ? 'is-forged' : ''}"><i class="fa-solid ${doneToday ? 'fa-vault' : 'fa-lock'}"></i><span>${doneToday ? 'СХОВИЩЕ ВІДКРИТО' : 'СХОВИЩЕ НІЧНОГО МІСТА'}</span><b>${state.badgeUnlocked ? 'SIGNAL FORGE · ВІДБИТОК ЗБЕРЕЖЕНО' : `+${PULSE_CIRCUIT.dailyXp} XP · МАРШРУТ №${state.completed + 1}`}</b></div><div class="nightfall-player-pin ${doneToday ? 'is-at-vault' : ''}"><i class="fa-solid fa-user"></i><span>ТИ</span></div></div><div class="nightfall-map-foot"><p><i class="fa-solid fa-shield-heart"></i> Один маршрут на день. Жодних ставок: лише гра, шлях і спільне місто.</p><div class="nightfall-map-live"><b><i class="fa-solid fa-satellite-dish"></i> СВІЖІ СИГНАЛИ</b>${recent}</div><div class="nightfall-map-reward ${state.badgeUnlocked ? 'is-unlocked' : ''}"><i class="fa-solid ${state.badgeUnlocked ? 'fa-wand-magic-sparkles' : 'fa-border-all'}"></i><span>${state.completed} / ${PULSE_CIRCUIT.badgeAt}</span><small>${rewardCopy}</small>${shareButton}</div></div></section>`;
+  root.querySelectorAll('[data-nightfall-go]').forEach(button => button.addEventListener('click', () => goToNightfallDistrict(button.dataset.nightfallGo)));
+  root.querySelector('[data-nightfall-share]')?.addEventListener('click', () => { void shareNightfallRoute(); });
+}
+
+function goToNightfallDistrict(stepId) {
+  const step = PULSE_CIRCUIT.steps.find(entry => entry.id === stepId);
+  if (!step) return;
+  showPage(step.page);
+  if (step.id === 'arena') {
+    window.setTimeout(() => document.getElementById('targetArena')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 220);
+  }
+}
+
+async function shareNightfallRoute() {
+  const state = getPulseCircuitState();
+  if (!state.completed) return;
+  const player = cleanText(account?.nick || currentUser?.name || 'Гравець', 24) || 'Гравець';
+  const text = `${player} запалив ${state.completed} маршрут(ів) на карті Nightfall у ПОТУЖНО DROP. Сховище Нічного міста вже чекає. 🎃⚡`;
+  const shareData = { title: 'Nightfall · ПОТУЖНО DROP', text, url: location.href.split('#')[0] };
+  try {
+    if (navigator.share) {
+      await navigator.share(shareData);
+      return;
+    }
+    await navigator.clipboard.writeText(`${text}\n${shareData.url}`);
+    showToast('Текст для посту скопійовано — додай свій скрін карти.', 'success');
+  } catch (error) {
+    if (error?.name !== 'AbortError') showToast('Не вдалося підготувати пост. Спробуй ще раз.', 'warn');
+  }
+}
+
+function recordPulseCircuitStep(stepId) {
+  if (!gameState || !currentUser) return { progressed: false, completed: false };
+  if (!getHalloweenEventStatus().scheduledActive) return { progressed: false, completed: false };
+  const state = getPulseCircuitState();
+  const today = getTodayKey();
+  if (state.completedDate === today) return { progressed: false, completed: false };
+  const expected = PULSE_CIRCUIT.steps[state.step];
+  if (!expected || expected.id !== stepId) return { progressed: false, completed: false };
+  state.date = today;
+  state.step += 1;
+  if (state.step < PULSE_CIRCUIT.steps.length) {
+    saveState();
+    renderPulseCircuit();
+    return { progressed: true, completed: false, step: state.step };
+  }
+  state.step = 0;
+  state.completedDate = today;
+  state.completed += 1;
+  state.lastCompletedAt = Date.now();
+  state.badgeUnlocked = state.completed >= PULSE_CIRCUIT.badgeAt;
+  addXp(PULSE_CIRCUIT.dailyXp);
+  void syncCommunity(null, { id: makeUuid() });
+  saveState();
+  renderPulseCircuit();
+  renderProfileProgress();
+  showToast(`Nightfall: маршрут завершено. +${PULSE_CIRCUIT.dailyXp} XP і живий сигнал для міста.`, 'success');
+  return { progressed: true, completed: true, badgeUnlocked: state.badgeUnlocked };
 }
 
 function getPowerRunState() {
@@ -1841,6 +1992,7 @@ function finishTargetArena() {
   arena.totalSpent = clampNumber(arena.totalSpent + session.stake, 0, MAX_STORED_BALANCE, 0);
   arena.totalPayout = clampNumber(arena.totalPayout + payout, 0, MAX_STORED_BALANCE, 0);
   arena.lastPlayedAt = Date.now();
+  recordPulseCircuitStep(session.score >= 13 ? 'arena' : '');
   const halloweenProgress = session.score >= 13 ? awardHalloweenProgress('arena') : { pumpkins: 0, coins: 0 };
   currentUser.balance = clampNumber(currentUser.balance + payout, 0, MAX_STORED_BALANCE, DEMO_STARTING_BALANCE);
   targetArenaSession = null;
@@ -2168,6 +2320,7 @@ function isPublicProfileIdentity(value) {
 function buildPublicProfilePayload() {
   const stats = gameState?.stats || {};
   const cosmetics = getHalloweenCosmetics();
+  const signalForge = getPulseCircuitState();
   return {
     name: cleanText(account?.nick || currentUser?.name || 'Гравець', 24) || 'Гравець',
     avatar: cleanImageUrl(currentUser?.avatar || account?.steamProfile?.avatar),
@@ -2175,6 +2328,7 @@ function buildPublicProfilePayload() {
     prestige: clampNumber(gameState?.prestige, 0, 99, 0),
     steamConnected: Boolean(currentUser?.steamId),
     cosmetics: { title: cosmetics.activeTitle?.id || '', frame: cosmetics.activeFrame?.id || '' },
+    signal: { forged: signalForge.badgeUnlocked === true, routes: clampNumber(signalForge.completed, 0, 9_999, 0) },
     stats: {
       rounds: clampNumber(stats.rounds, 0, 9_999_999, 0),
       cases: clampNumber(stats.cases, 0, 9_999_999, 0),
@@ -2291,10 +2445,12 @@ function renderPublicProfileModal(profile, { demo = false } = {}) {
   const safeName = escapeHtml(cleanText(profile.name, 24) || 'Гравець');
   const publicTitle = HALLOWEEN_COSMETICS[profile?.cosmetics?.title] || null;
   const publicFrame = HALLOWEEN_COSMETICS[profile?.cosmetics?.frame] || null;
+  const signalForge = profile?.signal?.forged === true;
+  const signalRoutes = clampNumber(profile?.signal?.routes, 0, 9_999, 0);
   const isOwnProfile = profile.id && profile.id === account?.publicProfile?.id;
   content.innerHTML = `
-    <div class="public-profile-hero ${publicFrame ? 'is-halloween-frame' : ''}">
-      <img src="${escapeHtml(avatar)}" alt="Аватар ${safeName}" onerror="handleSteamAvatarError(this)">
+    <div class="public-profile-hero">
+      <div class="public-profile-avatar-shell ${publicFrame ? 'is-halloween-frame' : ''} ${signalForge ? 'is-signal-forge-frame' : ''}"><img src="${escapeHtml(avatar)}" alt="Аватар ${safeName}" onerror="handleSteamAvatarError(this)"></div>
       <div class="min-w-0"><p class="public-profile-kicker">${demo ? 'ДЕМО-АКТИВНІСТЬ' : 'ПРОФІЛЬ ГРАВЦЯ'}</p><h3>${safeName}</h3><p class="public-profile-level">LVL ${level}${prestige ? ` · P${prestige}` : ''}${profile.steamConnected ? ' · <i class="fa-brands fa-steam"></i> Steam' : ''}</p>${publicTitle ? `<span class="public-profile-title"><i class="fa-solid ${publicTitle.icon}"></i>${escapeHtml(publicTitle.title)}</span>` : ''}</div>
     </div>
     <div class="public-profile-stats">
@@ -2303,6 +2459,7 @@ function renderPublicProfileModal(profile, { demo = false } = {}) {
       <div><span>Боїв</span><strong>${Math.round(Number(stats.battles) || 0).toLocaleString('uk-UA')}</strong></div>
       <div><span>Рекорд</span><strong>${formatCredits(Number(stats.bestValue) || 0)}</strong></div>
     </div>
+    ${signalForge ? `<p class="public-profile-signal"><i class="fa-solid fa-tower-broadcast"></i><span><b>SIGNAL FORGE</b><small>Nightfall-маршрутів: ${signalRoutes}</small></span></p>` : ''}
     <p class="public-profile-note"><i class="fa-solid fa-shield-halved"></i>${demo ? ' Це візуальна демонстрація стрічки: дані не належать реальному користувачу.' : ' Видимі лише публічні дані. Баланс, інвентар і дані Steam приховані.'}</p>
     ${!demo && !isOwnProfile ? '<button type="button" onclick="joinPublicProfileBattle()" class="public-profile-battle"><i class="fa-solid fa-dice"></i> Приєднатися до 1v1</button>' : ''}
     ${!demo && isOwnProfile ? '<button type="button" onclick="openOwnBattleRoom()" class="public-profile-battle"><i class="fa-solid fa-dice"></i> Відкрити мою кімнату 1v1</button>' : ''}`;
@@ -2589,6 +2746,7 @@ function applyPortableSave(data, { skipCloudAutoSync = false } = {}) {
     weekly: { ...createDefaultWeekly(), ...(portable.gameState.weekly || {}) },
     powerRun: { ...createDefaultPowerRun(), ...(portable.gameState.powerRun || {}) },
     halloweenEvent: { ...createDefaultHalloweenEvent(), ...(portable.gameState.halloweenEvent || {}) },
+    pulseCircuit: { ...createDefaultPulseCircuit(), ...(portable.gameState.pulseCircuit || {}) },
     targetArena: { ...createDefaultTargetArena(), ...(portable.gameState.targetArena || {}) },
     allTime: { ...createDefaultAllTime(), ...(portable.gameState.allTime || {}) },
     collectionRewards: portable.gameState.collectionRewards || {}
@@ -3454,6 +3612,7 @@ function renderProfileProgress() {
   const sb = document.getElementById('statBestValue');
   if (sb) sb.textContent = formatCredits(s.bestValue);
   renderProfileCosmeticsSummary();
+  renderSignalForgeProfile();
 }
 
 function renderDailyTasks() {
@@ -3784,7 +3943,7 @@ function toggleFavorite(k) {
   if (document.getElementById('shopModal')?.classList.contains('flex')) filterShop();
 }
 
-let communitySnapshot = { leaderboard: [], events: [], rank: null, season: '' };
+let communitySnapshot = { leaderboard: [], events: [], rank: null, season: '', circuit: null };
 let communitySyncStarted = false;
 let communitySyncInFlight = false;
 let queuedCommunityEvents = [];
@@ -3875,16 +4034,18 @@ function applyCommunitySnapshot(data) {
     leaderboard: Array.isArray(data?.leaderboard) ? data.leaderboard : [],
     events: Array.isArray(data?.events) ? data.events : [],
     rank: Number.isSafeInteger(data?.rank) ? data.rank : null,
-    season: cleanText(data?.season, 16)
+    season: cleanText(data?.season, 16),
+    circuit: data?.circuit && typeof data.circuit === 'object' ? data.circuit : null
   };
   renderLeaderboard();
   renderCommunityFeed(communitySnapshot.events);
+  renderPulseCircuit();
 }
 
-async function syncCommunity(event = null) {
+async function syncCommunity(event = null, circuitPulse = null) {
   if (!account?.communityId || !gameState || document.hidden || isProfileBlocked()) return;
   if (communitySyncInFlight) {
-    if (event) queuedCommunityEvents = [...queuedCommunityEvents, event].slice(-8);
+    if (event || circuitPulse) queuedCommunityEvents = [...queuedCommunityEvents, { event, circuitPulse }].slice(-8);
     return;
   }
   communitySyncInFlight = true;
@@ -3892,7 +4053,7 @@ async function syncCommunity(event = null) {
     const data = await requestJson('/api/community', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: account.communityId, player: getCommunityPlayerPayload(), ...(event ? { event } : {}) })
+      body: JSON.stringify({ id: account.communityId, player: getCommunityPlayerPayload(), ...(event ? { event } : {}), ...(circuitPulse ? { circuitPulse } : {}) })
     }, 6_000);
     applyCommunitySnapshot(data);
   } catch {
@@ -3900,7 +4061,7 @@ async function syncCommunity(event = null) {
   } finally {
     communitySyncInFlight = false;
     const nextEvent = queuedCommunityEvents.shift();
-    if (nextEvent) void syncCommunity(nextEvent);
+    if (nextEvent) void syncCommunity(nextEvent.event, nextEvent.circuitPulse);
   }
 }
 
@@ -3994,6 +4155,7 @@ function renderGameHub() {
   renderProfileProgress();
   renderPowerRun();
   renderHalloweenEvent();
+  renderPulseCircuit();
   renderTargetArena();
   renderBattlePass();
   renderDailyTasks();
@@ -6414,6 +6576,7 @@ async function startCaseReel() {
   gameState.stats.cases += mult;
   gameState.daily.cases += mult;
   gameState.weekly.cases = (gameState.weekly.cases || 0) + mult;
+  recordPulseCircuitStep('case');
   const halloweenProgress = awardHalloweenProgress('case', mult);
   updateAllTimeOnCase();
   wonItems.forEach(it => {
@@ -7075,6 +7238,7 @@ function startBattle() {
       pSlot?.classList.add('is-loser');
       addXp(XP_BATTLE_LOSS);
     }
+    if (isPlayerWin) recordPulseCircuitStep('battle');
     const halloweenProgress = isPlayerWin ? awardHalloweenProgress('battle') : { pumpkins: 0, coins: 0 };
 
     gameState.rounds.unshift({

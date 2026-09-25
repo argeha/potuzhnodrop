@@ -35,7 +35,7 @@
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-<link rel="stylesheet" href="/css/style.css?v=6.0.6">
+<link rel="stylesheet" href="/css/style.css?v=6.1.0">
 </head>
 <body class="min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -454,9 +454,9 @@
 <div class="mode-intro mode-intro-tasks flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-2">
 <div><span class="text-xs font-extrabold uppercase tracking-[.2em] text-amber-400">Щодня + щотижня</span><h1 class="font-heading mt-1 text-4xl sm:text-5xl font-extrabold uppercase tracking-wider text-white">Завдання й цілі</h1></div>
 <p class="max-w-lg text-sm leading-6 text-gray-400">Щодня 5 завдань, щотижня 3 місії, Power Run і 23 досягнення.</p>
-</div>
-<section id="powerRun" aria-live="polite"></section>
-<section id="halloweenEvent" aria-live="polite"></section>
+  </div>
+  <section id="powerRun" aria-live="polite"></section>
+  <section id="halloweenEvent" aria-live="polite"></section>
 <section id="targetArena" aria-live="polite"></section>
 <section id="battlePass" aria-live="polite"></section>
 <article class="glass-panel rounded-2xl border border-brand-border p-5">
@@ -497,7 +497,7 @@
 <article id="profileOverview" class="profile-command-center">
 <div class="profile-command-main">
 <div class="profile-portrait"><img id="profileAvatarLarge" alt="Аватар профілю" onerror="handleSteamAvatarError(this)"><span id="profileConnectionIcon" class="profile-connection-icon" title="Профіль гри"><i class="fa-solid fa-gamepad"></i></span></div>
-<div class="profile-identity"><p id="profileConnectionText" class="profile-kicker">ПРОФІЛЬ ГРИ</p><h3 class="profile-player-name"><span id="profileName">Гість</span><span id="prestigeBadge" class="prestige-badge hidden"><i class="fa-solid fa-crown text-[8px]"></i><span id="prestigeLevelLabel">P1</span></span></h3><p class="profile-steam-id"><i class="fa-brands fa-steam"></i><span id="accountSteamId" class="font-mono">не підключено</span></p><div class="profile-identity-actions"><span id="profileRankBadge" class="profile-social-chip">—</span><span id="profileDailyStreak" class="profile-social-chip profile-social-chip-streak">—</span><span id="profilePassBadge" class="profile-social-chip profile-social-chip-pass hidden"><i class="fa-solid fa-crown"></i>PASS S1</span><button id="profileCosmeticsButton" onclick="openProfileCosmeticsModal()" class="profile-cosmetics-button hidden"><i class="fa-solid fa-ghost"></i><span id="profileCosmeticsLabel">Halloween</span></button><button onclick="openModal('accountModal')" class="profile-edit-button"><i class="fa-solid fa-sliders"></i>Налаштування</button></div></div>
+<div class="profile-identity"><p id="profileConnectionText" class="profile-kicker">ПРОФІЛЬ ГРИ</p><h3 class="profile-player-name"><span id="profileName">Гість</span><span id="prestigeBadge" class="prestige-badge hidden"><i class="fa-solid fa-crown text-[8px]"></i><span id="prestigeLevelLabel">P1</span></span></h3><p class="profile-steam-id"><i class="fa-brands fa-steam"></i><span id="accountSteamId" class="font-mono">не підключено</span></p><div class="profile-identity-actions"><span id="profileRankBadge" class="profile-social-chip">—</span><span id="profileDailyStreak" class="profile-social-chip profile-social-chip-streak">—</span><span id="profilePassBadge" class="profile-social-chip profile-social-chip-pass hidden"><i class="fa-solid fa-crown"></i>PASS S1</span><span id="profileSignalForgeBadge" class="profile-social-chip profile-signal-forge-badge hidden"><i class="fa-solid fa-tower-broadcast"></i><span>Signal Forge</span></span><button id="profileCosmeticsButton" onclick="openProfileCosmeticsModal()" class="profile-cosmetics-button hidden"><i class="fa-solid fa-ghost"></i><span id="profileCosmeticsLabel">Halloween</span></button><button onclick="openModal('accountModal')" class="profile-edit-button"><i class="fa-solid fa-sliders"></i>Налаштування</button></div></div>
 <div class="profile-level-panel"><span class="profile-level-label">РІВЕНЬ</span><strong id="profileLevel">LVL 1</strong><button onclick="openModal('prestigeModal')" id="prestigeBtn" class="profile-prestige-button" title="Престиж (LVL 30+)"><i class="fa-solid fa-crown"></i>Престиж</button></div>
 <div class="profile-wallet"><span>ІГРОВИЙ БАЛАНС</span><strong id="profileBalance">0 PC</strong><button onclick="openModal('topupModal')" title="Заробити віртуальні Potuzhno Coin" aria-label="Заробити віртуальні Potuzhno Coin"><i class="fa-solid fa-plus"></i></button></div>
 </div>
@@ -733,6 +733,6 @@
 
 <div id="toastContainer" class="fixed bottom-6 right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm"></div>
 
-<script src="/js/app.js?v=6.0.6" defer></script>
+<script src="/js/app.js?v=6.1.0" defer></script>
 </body>
 </html>

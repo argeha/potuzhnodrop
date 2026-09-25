@@ -50,6 +50,10 @@ const COMMUNITY_PLAYER_TTL = 45 * 24 * 60 * 60_000
 const COMMUNITY_EVENT_TTL = 48 * 60 * 60_000
 const COMMUNITY_MAX_PLAYERS = 1_000
 const COMMUNITY_MAX_EVENTS = 24
+const COMMUNITY_CIRCUIT_PHASE_SIZE = 18
+const COMMUNITY_CIRCUIT_PHASES = 4
+const COMMUNITY_CIRCUIT_DAILY_LIMIT = 1
+const COMMUNITY_CIRCUIT_RECENT_LIMIT = 8
 const ADMIN_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const ADMIN_MAX_MEMBERS = 200
 const ADMIN_MAX_AUDIT_EVENTS = 500
@@ -232,6 +236,7 @@ function publicProfilePayload(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const stats = value.stats && typeof value.stats === 'object' && !Array.isArray(value.stats) ? value.stats : {}
   const cosmetics = value.cosmetics && typeof value.cosmetics === 'object' && !Array.isArray(value.cosmetics) ? value.cosmetics : {}
+  const signal = value.signal && typeof value.signal === 'object' && !Array.isArray(value.signal) ? value.signal : {}
   const name = cleanText(value.name, 24)
   if (!name) return null
   return {
@@ -243,6 +248,10 @@ function publicProfilePayload(value) {
     cosmetics: {
       title: PUBLIC_PROFILE_TITLES.has(String(cosmetics.title || '')) ? String(cosmetics.title) : '',
       frame: PUBLIC_PROFILE_FRAMES.has(String(cosmetics.frame || '')) ? String(cosmetics.frame) : '',
+    },
+    signal: {
+      forged: signal.forged === true,
+      routes: Math.round(Math.min(9_999, Math.max(0, Number(signal.routes) || 0))),
     },
     stats: {
       rounds: Math.round(Math.min(9_999_999, Math.max(0, Number(stats.rounds) || 0))),
@@ -388,6 +397,60 @@ function communitySeasonKey() {
   return new Date().toISOString().slice(0, 7)
 }
 
+function communityCircuitWeekKey() {
+  const date = new Date()
+  date.setUTCHours(0, 0, 0, 0)
+  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7))
+  return date.toISOString().slice(0, 10)
+}
+
+function communityCircuitDayKey() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function normalizeCommunityCircuit(value, now) {
+  const week = communityCircuitWeekKey()
+  const source = value?.week === week && value && typeof value === 'object' ? value : {}
+  const today = communityCircuitDayKey()
+  const daily = Object.fromEntries(Object.entries(source.daily && typeof source.daily === 'object' ? source.daily : {})
+    .map(([visitorHash, entry]) => {
+      const validHash = /^[a-f0-9]{64}$/i.test(visitorHash)
+      const count = boundedInteger(entry?.count, 0, COMMUNITY_CIRCUIT_DAILY_LIMIT)
+      return validHash && entry?.date === today && count ? [visitorHash, { date: today, count }] : null
+    })
+    .filter(Boolean)
+    .slice(0, COMMUNITY_MAX_PLAYERS))
+  const recent = (Array.isArray(source.recent) ? source.recent : [])
+    .map(entry => {
+      const playerId = cleanText(entry?.playerId, 64)
+      const name = cleanText(entry?.name, 24)
+      const at = boundedInteger(entry?.at, now - 8 * 24 * 60 * 60_000, now, now)
+      return /^[a-f0-9]{64}$/i.test(playerId) && name ? { id: cleanText(entry?.id, 48) || randomHex(12), playerId, name, at } : null
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.at - left.at)
+    .slice(0, COMMUNITY_CIRCUIT_RECENT_LIMIT)
+  return {
+    week,
+    total: boundedInteger(source.total, 0, 999_999),
+    daily,
+    recent,
+  }
+}
+
+function applyCommunityCircuitPulse(circuit, visitorHash, player, pulse, now) {
+  const id = cleanText(pulse?.id, 48)
+  if (!id) return false
+  const today = communityCircuitDayKey()
+  const previous = circuit.daily[visitorHash]
+  if (previous?.date === today && previous.count >= COMMUNITY_CIRCUIT_DAILY_LIMIT) return false
+  if (circuit.recent.some(entry => entry.id === id)) return false
+  circuit.daily[visitorHash] = { date: today, count: Math.min(COMMUNITY_CIRCUIT_DAILY_LIMIT, (previous?.date === today ? previous.count : 0) + 1) }
+  circuit.total = Math.min(999_999, circuit.total + 1)
+  circuit.recent = [{ id, playerId: visitorHash, name: player.name, at: now }, ...circuit.recent].slice(0, COMMUNITY_CIRCUIT_RECENT_LIMIT)
+  return true
+}
+
 function normalizeCommunityPlayer(value, visitorHash, now) {
   const name = cleanText(value?.name, 24)
   if (!name) return null
@@ -451,7 +514,7 @@ function normalizeCommunityState(value, now) {
     .filter(event => event && now - event.at < COMMUNITY_EVENT_TTL)
     .sort((left, right) => right.at - left.at)
     .slice(0, COMMUNITY_MAX_EVENTS)
-  return { season, players: Object.fromEntries(players), events }
+  return { season, players: Object.fromEntries(players), events, circuit: normalizeCommunityCircuit(source.circuit, now) }
 }
 
 function communityResponse(state, visitorHash) {
@@ -472,7 +535,25 @@ function communityResponse(state, visitorHash) {
   }))
   const ownRank = rows.findIndex(player => player.id === visitorHash) + 1
   const events = state.events.filter(event => state.players[event.playerId]?.hidden !== true)
-  return { season: state.season, leaderboard, rank: ownRank || null, events }
+  const circuit = normalizeCommunityCircuit(state.circuit, Date.now())
+  const recent = circuit.recent
+    .filter(entry => state.players[entry.playerId]?.hidden !== true)
+    .map(entry => ({ name: entry.name, at: entry.at }))
+  const phase = Math.min(COMMUNITY_CIRCUIT_PHASES, Math.floor(circuit.total / COMMUNITY_CIRCUIT_PHASE_SIZE) + 1)
+  return {
+    season: state.season,
+    leaderboard,
+    rank: ownRank || null,
+    events,
+    circuit: {
+      week: circuit.week,
+      total: circuit.total,
+      phase,
+      phaseSize: COMMUNITY_CIRCUIT_PHASE_SIZE,
+      phaseProgress: circuit.total % COMMUNITY_CIRCUIT_PHASE_SIZE,
+      recent,
+    },
+  }
 }
 
 function adminRoleRank(role) {
@@ -1614,10 +1695,12 @@ export class PotuzhnoState {
       ? { ...body.event, playerId: visitorHash, name: player.name, profileId: player.profileId, level: player.level, prestige: player.prestige, at: now }
       : null
     const event = rawEvent ? normalizeCommunityEvent(rawEvent, now) : null
+    const circuitPulse = body?.circuitPulse && typeof body.circuitPulse === 'object' ? body.circuitPulse : null
     const result = await this.storage.transaction(async transaction => {
       const state = normalizeCommunityState(await transaction.get('community:season'), now)
       state.players[visitorHash] = player
       if (event) state.events = [event, ...state.events.filter(entry => entry.id !== event.id)].slice(0, COMMUNITY_MAX_EVENTS)
+      if (circuitPulse && player.hidden !== true) applyCommunityCircuitPulse(state.circuit, visitorHash, player, circuitPulse, now)
       await transaction.put('community:season', state)
       return communityResponse(state, visitorHash)
     })
