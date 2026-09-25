@@ -1681,10 +1681,12 @@ function renderCloudSyncUI() {
   const save = document.getElementById('cloudSaveBtn');
   const load = document.getElementById('cloudLoadBtn');
   const code = document.getElementById('cloudRecoveryBtn');
-  if (status) status.textContent = connected ? 'Серверний профіль підключено' : 'Лише локальне збереження';
+  if (status) status.textContent = connected
+    ? (cloudAutoSyncLastError ? 'Автозбереження очікує повторної спроби' : 'Автозбереження увімкнено')
+    : (cloudAutoSyncStarted ? 'Готуємо автозбереження…' : 'Лише локальне збереження');
   if (details) details.textContent = connected
-    ? `Остання синхронізація: ${formatSyncTime(account.cloud.updatedAt)}. Код відновлення зберігається лише у твоєму браузері.`
-    : 'Створи профіль, щоб зберігати прогрес у Cloudflare та відновити його кодом на іншому пристрої.';
+    ? `${cloudAutoSyncLastError ? 'Попередня копія збережена; повторимо автоматично. ' : ''}Остання синхронізація: ${formatSyncTime(account.cloud.updatedAt)}. Прогрес зберігається після гри та при закритті вкладки. Код потрібен лише для іншого пристрою.`
+    : 'Першу серверну копію буде створено автоматично. Код відновлення потрібен лише, якщо захочеш перенести профіль на інший пристрій.';
   if (create) create.classList.toggle('hidden', connected);
   if (save) save.classList.toggle('hidden', !connected);
   if (load) load.classList.toggle('hidden', !connected);
@@ -1777,6 +1779,17 @@ function startPresenceTracking() {
 
 const CLOUD_PROFILE_MAX_BYTES = 1_700_000;
 const CLOUD_INVENTORY_ENCODING = 'compact-v1';
+const CLOUD_AUTOSAVE_DEBOUNCE_MS = 8_000;
+const CLOUD_AUTOSAVE_MIN_INTERVAL_MS = 18_000;
+const CLOUD_AUTOSAVE_RETRY_MS = 45_000;
+let cloudAutoSyncStarted = false;
+let cloudAutoSyncDirty = false;
+let cloudAutoSyncTimer = null;
+let cloudAutoSyncInFlight = false;
+let cloudAutoSyncPending = false;
+let cloudAutoSyncVersion = 0;
+let cloudAutoSyncLastAt = 0;
+let cloudAutoSyncLastError = '';
 
 function compactCloudInventoryItem(item, index = 0) {
   const normalized = normalizeStoredItem(item, index);
@@ -1848,7 +1861,7 @@ function expandCloudSave(data) {
   return { ...data, inventory: data.inventory.map(expandCloudInventoryItem).filter(Boolean) };
 }
 
-function applyPortableSave(data) {
+function applyPortableSave(data, { skipCloudAutoSync = false } = {}) {
   const portable = expandCloudSave(data);
   if (!portable || typeof portable !== 'object' || !Array.isArray(portable.inventory) || !portable.gameState || typeof portable.gameState !== 'object') {
     throw new Error('Bad format');
@@ -1902,7 +1915,7 @@ function applyPortableSave(data) {
   }
   ensureDailyState();
   ensureWeeklyState();
-  saveState();
+  saveState({ skipCloudAutoSync });
   updateBalanceUI();
   renderInventoryGrid();
   renderProfileInventory();
@@ -1912,71 +1925,167 @@ function applyPortableSave(data) {
   updateAccountUI();
 }
 
-async function createCloudProfile() {
-  if (isCloudProfile(account?.cloud)) return;
+async function createCloudProfile({ silent = false, keepalive = false } = {}) {
+  if (isCloudProfile(account?.cloud)) return true;
   const cloud = { id: makeUuid(), recoveryCode: makeRandomSecret(32), updatedAt: 0, revision: 0 };
-  setCloudBusy(true);
+  if (!silent) setCloudBusy(true);
   try {
+    const body = JSON.stringify({ action: 'create', accountId: cloud.id, recoveryCode: cloud.recoveryCode, payload: buildCloudSave() });
+    const canKeepAlive = keepalive && new TextEncoder().encode(body).byteLength <= 60_000;
     const data = await requestJson('/api/profile/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'create', accountId: cloud.id, recoveryCode: cloud.recoveryCode, payload: buildCloudSave() })
+      body,
+      ...(canKeepAlive ? { keepalive: true } : {})
     });
     account.cloud = { ...cloud, updatedAt: Number(data.updatedAt) || Date.now(), revision: Number(data.revision) || 1 };
-    saveState();
+    cloudAutoSyncLastError = '';
+    saveState({ skipCloudAutoSync: true });
     renderCloudSyncUI();
-    openCloudRecoveryModal();
-    showToast('Серверний профіль створено. Збережи код відновлення.', 'success');
+    if (!silent) {
+      openCloudRecoveryModal();
+      showToast('Серверний профіль створено. Збережи код відновлення.', 'success');
+    }
+    return true;
   } catch (error) {
-    showToast(error?.message || 'Не вдалося створити серверний профіль.', 'error');
+    if (!silent) showToast(error?.message || 'Не вдалося створити серверний профіль.', 'error');
+    return false;
   } finally {
-    setCloudBusy(false);
+    if (!silent) setCloudBusy(false);
   }
 }
 
-async function saveCloudProfile() {
-  if (!isCloudProfile(account?.cloud)) return openCloudConnectModal();
-  setCloudBusy(true);
+async function saveCloudProfile({ silent = false, keepalive = false } = {}) {
+  if (!isCloudProfile(account?.cloud)) {
+    if (!silent) openCloudConnectModal();
+    return false;
+  }
+  if (!silent) setCloudBusy(true);
   try {
+    const body = JSON.stringify({
+      action: 'save',
+      accountId: account.cloud.id,
+      recoveryCode: account.cloud.recoveryCode,
+      revision: Number(account.cloud.revision) || 1,
+      payload: buildCloudSave()
+    });
+    const canKeepAlive = keepalive && new TextEncoder().encode(body).byteLength <= 60_000;
     const data = await requestJson('/api/profile/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'save', accountId: account.cloud.id, recoveryCode: account.cloud.recoveryCode, revision: Number(account.cloud.revision) || 1, payload: buildCloudSave() })
+      body,
+      ...(canKeepAlive ? { keepalive: true } : {})
     });
     account.cloud.updatedAt = Number(data.updatedAt) || Date.now();
     account.cloud.revision = Number(data.revision) || (Number(account.cloud.revision) || 1) + 1;
-    saveState();
+    cloudAutoSyncLastError = '';
+    saveState({ skipCloudAutoSync: true });
     renderCloudSyncUI();
-    showToast('Прогрес збережено на сервері.', 'success');
+    if (!silent) showToast('Прогрес збережено на сервері.', 'success');
+    return true;
   } catch (error) {
-    showToast(error?.message || 'Не вдалося синхронізувати профіль.', 'error');
+    if (!silent) showToast(error?.message || 'Не вдалося синхронізувати профіль.', 'error');
+    return false;
   } finally {
-    setCloudBusy(false);
+    if (!silent) setCloudBusy(false);
   }
 }
 
-async function loadCloudProfile() {
-  if (!isCloudProfile(account?.cloud)) return openCloudConnectModal();
-  setCloudBusy(true);
+async function loadCloudProfile({ silent = false } = {}) {
+  if (!isCloudProfile(account?.cloud)) {
+    if (!silent) openCloudConnectModal();
+    return false;
+  }
+  if (!silent) setCloudBusy(true);
   try {
     const data = await requestJson('/api/profile/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'load', accountId: account.cloud.id, recoveryCode: account.cloud.recoveryCode })
     });
-    applyPortableSave(data.payload);
+    applyPortableSave(data.payload, { skipCloudAutoSync: true });
     account.cloud.updatedAt = Number(data.updatedAt) || account.cloud.updatedAt;
     account.cloud.revision = Number(data.revision) || 1;
-    saveState();
+    cloudAutoSyncLastError = '';
+    saveState({ skipCloudAutoSync: true });
     renderCloudSyncUI();
-    showToast('Прогрес відновлено із серверного профілю.', 'success');
+    if (!silent) showToast('Прогрес відновлено із серверного профілю.', 'success');
     return true;
   } catch (error) {
-    showToast(error?.message || 'Не вдалося відновити профіль.', 'error');
+    if (!silent) showToast(error?.message || 'Не вдалося відновити профіль.', 'error');
     return false;
   } finally {
-    setCloudBusy(false);
+    if (!silent) setCloudBusy(false);
   }
+}
+
+function scheduleCloudAutoSync({ urgent = false, delay = null } = {}) {
+  if (!cloudAutoSyncStarted || !cloudAutoSyncDirty || !account) return;
+  if (cloudAutoSyncTimer) window.clearTimeout(cloudAutoSyncTimer);
+  const elapsed = Date.now() - cloudAutoSyncLastAt;
+  const intervalDelay = urgent ? 0 : Math.max(CLOUD_AUTOSAVE_DEBOUNCE_MS, CLOUD_AUTOSAVE_MIN_INTERVAL_MS - elapsed);
+  const wait = Number.isFinite(delay) ? Math.max(0, delay) : intervalDelay;
+  cloudAutoSyncTimer = window.setTimeout(() => {
+    cloudAutoSyncTimer = null;
+    void syncCloudProfileAutomatically({ finalAttempt: urgent });
+  }, wait);
+}
+
+function queueCloudAutoSync() {
+  if (!cloudAutoSyncStarted || !account) return;
+  cloudAutoSyncDirty = true;
+  cloudAutoSyncVersion += 1;
+  scheduleCloudAutoSync();
+}
+
+async function syncCloudProfileAutomatically({ finalAttempt = false } = {}) {
+  if (!cloudAutoSyncStarted || !cloudAutoSyncDirty || !account) return false;
+  if (cloudAutoSyncInFlight) {
+    cloudAutoSyncPending = true;
+    return false;
+  }
+
+  cloudAutoSyncInFlight = true;
+  const snapshotVersion = cloudAutoSyncVersion;
+  let synced = false;
+  try {
+    synced = isCloudProfile(account?.cloud)
+      ? await saveCloudProfile({ silent: true, keepalive: finalAttempt })
+      : await createCloudProfile({ silent: true, keepalive: finalAttempt });
+    if (synced) {
+      cloudAutoSyncLastAt = Date.now();
+      cloudAutoSyncLastError = '';
+      if (cloudAutoSyncVersion === snapshotVersion) cloudAutoSyncDirty = false;
+      renderCloudSyncUI();
+      return true;
+    }
+    cloudAutoSyncLastError = 'Сервер тимчасово недоступний';
+    return false;
+  } finally {
+    cloudAutoSyncInFlight = false;
+    if (cloudAutoSyncPending) {
+      cloudAutoSyncPending = false;
+      scheduleCloudAutoSync({ urgent: finalAttempt });
+    } else if (!synced && cloudAutoSyncDirty) {
+      scheduleCloudAutoSync({ delay: CLOUD_AUTOSAVE_RETRY_MS });
+    } else if (cloudAutoSyncDirty) {
+      scheduleCloudAutoSync();
+    }
+  }
+}
+
+function startCloudAutoSync() {
+  if (cloudAutoSyncStarted) return;
+  cloudAutoSyncStarted = true;
+  renderCloudSyncUI();
+  queueCloudAutoSync();
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && cloudAutoSyncDirty) void syncCloudProfileAutomatically({ finalAttempt: true });
+  });
+  window.addEventListener('pagehide', () => {
+    if (cloudAutoSyncDirty) void syncCloudProfileAutomatically({ finalAttempt: true });
+  });
 }
 
 function openCloudRecoveryModal() {
@@ -2354,7 +2463,7 @@ function renderCanvas(chancePercent, pointerAngle = 0) {
   }
 }
 
-function saveState() {
+function saveState({ skipCloudAutoSync = false } = {}) {
   if (currentUser) {
     if (currentUser.steamId) localStorage.setItem(STORAGE.steamId, currentUser.steamId);
     localStorage.setItem(STORAGE.balance, String(currentUser.balance));
@@ -2364,6 +2473,7 @@ function saveState() {
   if (gameState) localStorage.setItem(STORAGE.game, JSON.stringify(gameState));
   if (account) localStorage.setItem(STORAGE.account, JSON.stringify(account));
   queuePublicProfilePublish();
+  if (!skipCloudAutoSync) queueCloudAutoSync();
 }
 
 function beginPendingWager({ inventory = [], balance = 0 }) {
@@ -7354,6 +7464,7 @@ window.addEventListener('DOMContentLoaded', () => {
   startMarketTicker();
   startLiveFeedSimulation();
   startPresenceTracking();
+  startCloudAutoSync();
   updateTopupUI();
   renderCaseTopDrops();
   updateFreeCaseBtn();
