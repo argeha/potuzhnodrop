@@ -48,6 +48,43 @@ const COMMUNITY_PLAYER_TTL = 45 * 24 * 60 * 60_000
 const COMMUNITY_EVENT_TTL = 48 * 60 * 60_000
 const COMMUNITY_MAX_PLAYERS = 1_000
 const COMMUNITY_MAX_EVENTS = 24
+const ADMIN_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const ADMIN_MAX_MEMBERS = 200
+const ADMIN_MAX_AUDIT_EVENTS = 500
+const ADMIN_ROLES = Object.freeze({
+  owner: {
+    label: 'Власник',
+    rank: 5,
+    description: 'Повний контроль і незмінний захист облікового запису.',
+  },
+  full_admin: {
+    label: 'Повний адмін',
+    rank: 4,
+    description: 'Керує сайтом і нижчими ролями, але не власником чи іншими повними адмінами.',
+  },
+  admin: {
+    label: 'Адмін',
+    rank: 3,
+    description: 'Операційне керування та модерація команди нижчого рівня.',
+  },
+  moderator: {
+    label: 'Модератор',
+    rank: 2,
+    description: 'Модерація без доступу до ролей вищого рівня.',
+  },
+  support: {
+    label: 'Підтримка',
+    rank: 1,
+    description: 'Перегляд панелі та робота з підтримкою без керування доступами.',
+  },
+})
+const ADMIN_ASSIGNABLE_ROLES = Object.freeze({
+  owner: ['full_admin', 'admin', 'moderator', 'support'],
+  full_admin: ['admin', 'moderator', 'support'],
+  admin: ['moderator', 'support'],
+  moderator: [],
+  support: [],
+})
 const RATE_LIMITS = {
   profile: { limit: 24, windowMs: 60_000 },
   publicProfile: { limit: 60, windowMs: 60_000 },
@@ -59,6 +96,7 @@ const RATE_LIMITS = {
   catalog: { limit: 20, windowMs: 60_000 },
   presence: { limit: 12, windowMs: 60_000 },
   community: { limit: 24, windowMs: 60_000 },
+  admin: { limit: 60, windowMs: 60_000 },
   api: { limit: 120, windowMs: 60_000 },
 }
 const encoder = new TextEncoder()
@@ -70,6 +108,11 @@ const json = (body, status = 200, headers = {}) => new Response(JSON.stringify(b
 
 const cleanText = (value, limit) => String(value ?? '').replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, limit)
 const dayKey = () => new Date().toISOString().slice(0, 10)
+
+function cleanEmail(value) {
+  const email = cleanText(value, 254).toLowerCase()
+  return ADMIN_EMAIL.test(email) ? email : ''
+}
 
 function hex(bytes) {
   return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
@@ -248,6 +291,7 @@ function steamSessionToken(value) {
 }
 
 function rateLimitGroup(path) {
+  if (path.startsWith('/api/admin/')) return 'admin'
   if (path === '/api/profile/sync') return 'profile'
   if (path === '/api/public-profile' || path === '/api/public-avatar') return 'publicProfile'
   if (path.startsWith('/api/fair/')) return 'fair'
@@ -383,6 +427,110 @@ function communityResponse(state, visitorHash) {
   }))
   const ownRank = rows.findIndex(player => player.id === visitorHash) + 1
   return { season: state.season, leaderboard, rank: ownRank || null, events: state.events }
+}
+
+function adminRoleRank(role) {
+  return ADMIN_ROLES[role]?.rank || 0
+}
+
+function adminRoleView(role) {
+  const definition = ADMIN_ROLES[role] || ADMIN_ROLES.support
+  return { id: role, label: definition.label, rank: definition.rank, description: definition.description }
+}
+
+function normalizeAdminMember(value, email, now) {
+  const role = Object.hasOwn(ADMIN_ROLES, value?.role) && value.role !== 'owner' ? value.role : 'support'
+  const status = value?.status === 'suspended' ? 'suspended' : 'active'
+  return {
+    email,
+    name: cleanText(value?.name, 48),
+    role,
+    status,
+    createdAt: boundedInteger(value?.createdAt, 0, now, now),
+    updatedAt: boundedInteger(value?.updatedAt, 0, now, now),
+    updatedBy: cleanEmail(value?.updatedBy),
+  }
+}
+
+function normalizeAdminAuditEntry(value, now) {
+  const action = cleanText(value?.action, 48)
+  const actorEmail = cleanEmail(value?.actorEmail)
+  if (!action || !actorEmail) return null
+  return {
+    id: cleanText(value?.id, 48) || randomHex(12),
+    at: boundedInteger(value?.at, 0, now, now),
+    actorEmail,
+    action,
+    targetEmail: cleanEmail(value?.targetEmail),
+    detail: cleanText(value?.detail, 160),
+  }
+}
+
+function normalizeAdminState(value, ownerEmail, now) {
+  const rawMembers = value?.members && typeof value.members === 'object' && !Array.isArray(value.members) ? value.members : {}
+  const members = Object.entries(rawMembers)
+    .map(([rawEmail, member]) => {
+      const email = cleanEmail(rawEmail)
+      return email && email !== ownerEmail ? [email, normalizeAdminMember(member, email, now)] : null
+    })
+    .filter(Boolean)
+    .sort(([, left], [, right]) => right.updatedAt - left.updatedAt)
+    .slice(0, ADMIN_MAX_MEMBERS)
+  const audit = (Array.isArray(value?.audit) ? value.audit : [])
+    .map(entry => normalizeAdminAuditEntry(entry, now))
+    .filter(Boolean)
+    .sort((left, right) => right.at - left.at)
+    .slice(0, ADMIN_MAX_AUDIT_EVENTS)
+  return { version: 1, members: Object.fromEntries(members), audit }
+}
+
+function adminActorFromState(state, email, ownerEmail) {
+  if (email === ownerEmail) return { email, name: 'Власник', role: 'owner', status: 'active', protected: true }
+  const member = state.members[email]
+  if (!member || member.status !== 'active') return null
+  return { ...member, protected: false }
+}
+
+function canAssignAdminRole(actor, role) {
+  return Boolean(ADMIN_ASSIGNABLE_ROLES[actor?.role]?.includes(role))
+}
+
+function canManageAdminMember(actor, target, ownerEmail) {
+  if (!actor || !target || target.email === ownerEmail || target.role === 'owner') return false
+  return canAssignAdminRole(actor, target.role) && adminRoleRank(actor.role) > adminRoleRank(target.role)
+}
+
+function publicAdminMember(member, actor, ownerEmail) {
+  const protectedAccount = member.email === ownerEmail || member.role === 'owner'
+  return {
+    email: member.email,
+    name: member.name || '',
+    role: adminRoleView(member.role),
+    status: protectedAccount ? 'active' : member.status,
+    createdAt: member.createdAt || 0,
+    updatedAt: member.updatedAt || 0,
+    protected: protectedAccount,
+    canManage: !protectedAccount && canManageAdminMember(actor, member, ownerEmail),
+    isCurrent: member.email === actor?.email,
+  }
+}
+
+function adminSnapshot(state, actor, ownerEmail) {
+  const owner = { email: ownerEmail, name: 'Власник', role: 'owner', status: 'active', createdAt: 0, updatedAt: 0 }
+  const members = [owner, ...Object.values(state.members)]
+    .sort((left, right) => adminRoleRank(right.role) - adminRoleRank(left.role) || left.email.localeCompare(right.email))
+    .map(member => publicAdminMember(member, actor, ownerEmail))
+  return {
+    me: publicAdminMember(actor, actor, ownerEmail),
+    members,
+    roles: Object.entries(ADMIN_ROLES).map(([id]) => adminRoleView(id)),
+    assignableRoles: ADMIN_ASSIGNABLE_ROLES[actor.role] || [],
+    audit: state.audit.slice(0, 80),
+  }
+}
+
+function adminForbidden(message = 'Недостатньо прав для цієї дії.') {
+  return json({ error: message }, 403)
 }
 
 function cleanMatchState(state, now) {
@@ -1198,6 +1346,152 @@ export class PotuzhnoState {
   }
 }
 
+export class PotuzhnoAdmin {
+  constructor(state, env) {
+    this.storage = state.storage
+    this.env = env
+  }
+
+  async fetch(request) {
+    const path = new URL(request.url).pathname
+    const ownerEmail = cleanEmail(this.env.OWNER_EMAIL)
+    const actorEmail = cleanEmail(request.headers.get('X-Potuzhno-Admin-Actor'))
+    if (!ownerEmail) return json({ error: 'Адмін-панель ще не налаштована.' }, 503)
+    if (!actorEmail) return adminForbidden('Потрібне підтвердження через Cloudflare Access.')
+
+    try {
+      if (path === '/api/admin/me' && request.method === 'GET') return await this.me(actorEmail, ownerEmail)
+      if (path === '/api/admin/team' && request.method === 'GET') return await this.team(actorEmail, ownerEmail)
+      if (path === '/api/admin/audit' && request.method === 'GET') return await this.audit(actorEmail, ownerEmail)
+      if (path === '/api/admin/members' && request.method === 'POST') return await this.members(request, actorEmail, ownerEmail)
+      return json({ error: 'Маршрут адмін-панелі не знайдено.' }, 404)
+    } catch (error) {
+      console.error('Admin API error', path, error)
+      return json({ error: 'Адмін-панель тимчасово недоступна. Повтори спробу.' }, 503)
+    }
+  }
+
+  async readBody(request) {
+    const raw = await request.text()
+    if (encoder.encode(raw).byteLength > 12_288) throw new RangeError('Запит завеликий.')
+    return JSON.parse(raw)
+  }
+
+  async withActor(actorEmail, ownerEmail, callback) {
+    const now = Date.now()
+    const state = normalizeAdminState(await this.storage.get('admin:state'), ownerEmail, now)
+    const actor = adminActorFromState(state, actorEmail, ownerEmail)
+    if (!actor) return adminForbidden('Твій доступ до адмін-панелі відсутній або призупинений.')
+    return callback(state, actor, now)
+  }
+
+  async me(actorEmail, ownerEmail) {
+    return this.withActor(actorEmail, ownerEmail, (state, actor) => json({
+      me: publicAdminMember(actor, actor, ownerEmail),
+      roles: Object.entries(ADMIN_ROLES).map(([id]) => adminRoleView(id)),
+      assignableRoles: ADMIN_ASSIGNABLE_ROLES[actor.role] || [],
+      protectedOwner: true,
+    }))
+  }
+
+  async team(actorEmail, ownerEmail) {
+    return this.withActor(actorEmail, ownerEmail, (state, actor) => {
+      const snapshot = adminSnapshot(state, actor, ownerEmail)
+      return json({ members: snapshot.members, roles: snapshot.roles, assignableRoles: snapshot.assignableRoles })
+    })
+  }
+
+  async audit(actorEmail, ownerEmail) {
+    return this.withActor(actorEmail, ownerEmail, (state, actor) => json({
+      audit: state.audit.slice(0, 160),
+      canView: Boolean(actor),
+    }))
+  }
+
+  async members(request, actorEmail, ownerEmail) {
+    let body
+    try {
+      body = await this.readBody(request)
+    } catch (error) {
+      return json({ error: error instanceof RangeError ? error.message : 'Некоректний запит.' }, error instanceof RangeError ? 413 : 400)
+    }
+    const action = cleanText(body?.action, 24)
+    const targetEmail = cleanEmail(body?.email)
+    if (!['grant', 'suspend', 'activate', 'revoke'].includes(action) || !targetEmail) {
+      return json({ error: 'Некоректна дія з доступом.' }, 400)
+    }
+    if (targetEmail === ownerEmail) return adminForbidden('Обліковий запис власника захищений і не змінюється через панель.')
+
+    const result = await this.storage.transaction(async transaction => {
+      const now = Date.now()
+      const state = normalizeAdminState(await transaction.get('admin:state'), ownerEmail, now)
+      const actor = adminActorFromState(state, actorEmail, ownerEmail)
+      if (!actor) return { response: adminForbidden('Твій доступ до адмін-панелі відсутній або призупинений.') }
+      const existing = state.members[targetEmail]
+
+      if (action === 'grant') {
+        const role = cleanText(body?.role, 24)
+        if (!Object.hasOwn(ADMIN_ROLES, role) || role === 'owner' || !canAssignAdminRole(actor, role)) {
+          return { response: adminForbidden('Цю роль ти не можеш призначати.') }
+        }
+        if (existing && !canManageAdminMember(actor, existing, ownerEmail)) {
+          return { response: adminForbidden('Ти не можеш змінювати цього учасника.') }
+        }
+        if (!existing && Object.keys(state.members).length >= ADMIN_MAX_MEMBERS) {
+          return { response: json({ error: 'Досягнуто ліміту команди.' }, 409) }
+        }
+        const name = cleanText(body?.name, 48)
+        state.members[targetEmail] = {
+          email: targetEmail,
+          name: name || existing?.name || '',
+          role,
+          status: 'active',
+          createdAt: existing?.createdAt || now,
+          updatedAt: now,
+          updatedBy: actor.email,
+        }
+        state.audit.unshift({
+          id: randomHex(12),
+          at: now,
+          actorEmail: actor.email,
+          action: existing ? 'role_updated' : 'access_granted',
+          targetEmail,
+          detail: `${adminRoleView(role).label}${name ? ` · ${name}` : ''}`,
+        })
+      } else {
+        if (!existing || !canManageAdminMember(actor, existing, ownerEmail)) {
+          return { response: adminForbidden('Ти не можеш змінювати цього учасника.') }
+        }
+        if (action === 'revoke') {
+          delete state.members[targetEmail]
+        } else {
+          state.members[targetEmail] = {
+            ...existing,
+            status: action === 'suspend' ? 'suspended' : 'active',
+            updatedAt: now,
+            updatedBy: actor.email,
+          }
+        }
+        state.audit.unshift({
+          id: randomHex(12),
+          at: now,
+          actorEmail: actor.email,
+          action: action === 'revoke' ? 'access_revoked' : action === 'suspend' ? 'access_suspended' : 'access_activated',
+          targetEmail,
+          detail: existing.name || adminRoleView(existing.role).label,
+        })
+      }
+
+      state.audit = state.audit.slice(0, ADMIN_MAX_AUDIT_EVENTS)
+      await transaction.put('admin:state', state)
+      const updatedActor = adminActorFromState(state, actorEmail, ownerEmail)
+      const snapshot = adminSnapshot(state, updatedActor, ownerEmail)
+      return { response: json({ ok: true, members: snapshot.members, audit: snapshot.audit, assignableRoles: snapshot.assignableRoles }) }
+    })
+    return result.response
+  }
+}
+
 export class RateLimiter {
   constructor(state) {
     this.storage = state.storage
@@ -1295,10 +1589,42 @@ async function stateForRequest(request, env, path) {
   return env.POTUZHNO_STATE.get(env.POTUZHNO_STATE.idFromName(name))
 }
 
+async function cloudflareAccessEmail(ctx) {
+  if (!ctx?.access?.getIdentity) return ''
+  try {
+    const identity = await ctx.access.getIdentity()
+    return cleanEmail(identity?.email)
+  } catch {
+    return ''
+  }
+}
+
+async function adminResponse(request, env, ctx) {
+  const ownerEmail = cleanEmail(env.OWNER_EMAIL)
+  if (!ownerEmail) return json({ error: 'Адмін-панель ще не налаштована: відсутній секрет OWNER_EMAIL.' }, 503)
+  const actorEmail = await cloudflareAccessEmail(ctx)
+  if (!actorEmail) return adminForbidden('Увійди через Cloudflare Access, щоб відкрити адмін-панель.')
+
+  const headers = new Headers(request.headers)
+  // This request is created inside the Worker and the Durable Object has no
+  // public route. Never read an identity from a browser-provided header.
+  headers.set('X-Potuzhno-Admin-Actor', actorEmail)
+  headers.set('X-Potuzhno-Admin-Request-Id', randomHex(12))
+  const admin = env.POTUZHNO_ADMIN.get(env.POTUZHNO_ADMIN.idFromName('admin:global'))
+  return admin.fetch(new Request(request, { headers }))
+}
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url)
     const path = url.pathname
+    if (path === '/admin' || path === '/admin/') {
+      if (request.method !== 'GET' && request.method !== 'HEAD') return json({ error: 'Method not allowed' }, 405)
+      return env.ASSETS.fetch(new Request(new URL('/admin.html', url), {
+        method: request.method,
+        headers: request.headers,
+      }))
+    }
     // This is a read-only, host-restricted image relay. It does not access
     // account data or mutate state, so it must not compete with game API calls
     // for the normal per-minute Durable Object rate-limit budget.
@@ -1310,6 +1636,7 @@ export default {
       }
       const limited = await rateLimitResponse(request, env, path)
       if (limited) return limited
+      if (path.startsWith('/api/admin/')) return adminResponse(request, env, ctx)
       return (await stateForRequest(request, env, path)).fetch(request)
     }
     return env.ASSETS.fetch(request)

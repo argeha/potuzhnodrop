@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="uk" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#080a0f">
+<title>Адмін-панель — ПОТУЖНО DROP</title>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="/css/tailwind.css?v=5.8.5">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/admin.css?v=1">
+</head>
+<body>
+<div class="admin-shell">
+  <header class="admin-header">
+    <a class="brand" href="/" aria-label="На головну сторінку ПОТУЖНО DROP">
+      <span class="brand-mark"><img src="/assets/brand/potuzhno-mark.svg" width="28" height="28" alt=""></span>
+      <span>ПОТУЖНО <b>DROP</b></span>
+    </a>
+    <div class="header-status" id="headerStatus"><span class="status-dot"></span><span>Перевірка доступу…</span></div>
+  </header>
+
+  <main class="admin-main">
+    <section class="admin-hero" aria-labelledby="adminTitle">
+      <div>
+        <p class="eyebrow"><i class="fa-solid fa-shield-halved"></i> ВНУТРІШНЯ ПАНЕЛЬ</p>
+        <h1 id="adminTitle">Керування командою</h1>
+        <p class="hero-copy">Права перевіряються на сервері. Власника неможливо змінити, заблокувати чи прибрати з панелі.</p>
+      </div>
+      <button class="icon-button" id="refreshButton" type="button" title="Оновити дані"><i class="fa-solid fa-rotate"></i><span>Оновити</span></button>
+    </section>
+
+    <section class="notice hidden" id="accessNotice" role="alert"></section>
+
+    <section class="dashboard-grid" aria-label="Стан доступу">
+      <article class="panel identity-card">
+        <div class="panel-label">ТВІЙ ДОСТУП</div>
+        <div class="identity-row">
+          <span class="identity-icon"><i class="fa-solid fa-user-shield"></i></span>
+          <div><strong id="myRole">—</strong><p id="myEmail">Перевіряємо Cloudflare Access…</p></div>
+        </div>
+        <p class="identity-note" id="myRoleDescription">Панель очікує підтвердження особи.</p>
+      </article>
+      <article class="panel protection-card">
+        <div class="panel-label">ЗАХИСТ ВЛАСНИКА</div>
+        <div class="protection-state"><i class="fa-solid fa-lock"></i><strong>Увімкнено</strong></div>
+        <p>Власника не можна понизити, призупинити, видалити або змінити через API — навіть повному адміну.</p>
+      </article>
+    </section>
+
+    <section class="panel team-panel" aria-labelledby="teamTitle">
+      <div class="section-head">
+        <div><p class="eyebrow">КОМАНДА</p><h2 id="teamTitle">Доступи</h2></div>
+        <span class="count-pill" id="teamCount">—</span>
+      </div>
+      <div class="grant-layout">
+        <form class="grant-form" id="memberForm">
+          <div class="form-heading"><i class="fa-solid fa-user-plus"></i><span>Додати або оновити роль</span></div>
+          <label>Пошта Cloudflare Access<input id="memberEmail" name="email" type="email" inputmode="email" autocomplete="email" required maxlength="254" placeholder="admin@example.com"></label>
+          <label>Ім’я в панелі <input id="memberName" name="name" type="text" autocomplete="name" maxlength="48" placeholder="Необов’язково"></label>
+          <label>Роль<select id="memberRole" name="role" required></select></label>
+          <button class="primary-button" id="memberSubmit" type="submit"><i class="fa-solid fa-key"></i><span>Надати доступ</span></button>
+          <p class="form-hint"><i class="fa-solid fa-circle-info"></i> Роль зберігається одразу. Для першого входу адреса також має бути дозволена у політиці Cloudflare Access.</p>
+        </form>
+        <div class="roles-overview" id="rolesOverview" aria-label="Рівні ролей"></div>
+      </div>
+      <div class="team-list-wrap">
+        <div class="table-head"><span>Учасник</span><span>Роль</span><span>Статус</span><span>Дії</span></div>
+        <div id="teamList" class="team-list" aria-live="polite"><p class="loading-line"><i class="fa-solid fa-spinner fa-spin"></i> Завантаження команди…</p></div>
+      </div>
+    </section>
+
+    <section class="panel audit-panel" aria-labelledby="auditTitle">
+      <div class="section-head"><div><p class="eyebrow">ПРОЗОРІСТЬ</p><h2 id="auditTitle">Журнал дій</h2></div><span class="audit-lock"><i class="fa-solid fa-clock-rotate-left"></i> Серверний</span></div>
+      <div id="auditList" class="audit-list" aria-live="polite"><p class="loading-line"><i class="fa-solid fa-spinner fa-spin"></i> Завантаження журналу…</p></div>
+    </section>
+  </main>
+</div>
+<div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+<script src="/js/admin.js?v=1" defer></script>
+</body>
+</html>

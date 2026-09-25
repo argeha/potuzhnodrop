@@ -19,6 +19,10 @@
       {
         "name": "POTUZHNO_RATE_LIMIT",
         "class_name": "RateLimiter"
+      },
+      {
+        "name": "POTUZHNO_ADMIN",
+        "class_name": "PotuzhnoAdmin"
       }
     ]
   },
@@ -30,6 +34,10 @@
     {
       "tag": "v2-rate-limiter",
       "new_sqlite_classes": ["RateLimiter"]
+    },
+    {
+      "tag": "v3-admin-panel",
+      "new_sqlite_classes": ["PotuzhnoAdmin"]
     }
   ]
 }
