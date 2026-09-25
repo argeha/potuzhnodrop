@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="/css/tailwind.css?v=5.8.5">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/css/admin.css?v=5">
+<link rel="stylesheet" href="/css/admin.css?v=6">
 </head>
 <body>
 <div class="admin-shell">
@@ -70,6 +70,12 @@
         <div class="protection-state"><i class="fa-solid fa-lock"></i><strong>Увімкнено</strong></div>
         <p>Власника не можна понизити, призупинити, видалити або змінити через API — навіть повному адміну.</p>
       </article>
+    </section>
+
+    <section class="panel event-preview-panel hidden" id="eventPreviewPanel" aria-labelledby="eventPreviewTitle">
+      <div class="event-preview-icon">🎃</div>
+      <div class="event-preview-copy"><p class="eyebrow">СЕЗОННИЙ КОНТРОЛЬ</p><h2 id="eventPreviewTitle">Halloween: Нічний дроп</h2><p>Заплановано на 18 жовтня — 3 листопада 2026 за Києвом. Відкрий приватний перегляд, щоб побачити картку, Нічний кейс і Гарбузовий тир до старту.</p></div>
+      <div class="event-preview-action"><span><i class="fa-solid fa-shield-halved"></i> Лише для тебе</span><button id="openHalloweenPreviewButton" class="primary-button" type="button"><i class="fa-solid fa-eye"></i> Відкрити перегляд</button><small>Нагороди та сезонний кейс у цьому режимі не активуються.</small></div>
     </section>
 
     <section class="panel game-panel" id="gamePanel" aria-labelledby="gameTitle">
@@ -168,6 +174,6 @@
   </main>
 </div>
 <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
-<script src="/js/admin.js?v=5" defer></script>
+<script src="/js/admin.js?v=6" defer></script>
 </body>
 </html>

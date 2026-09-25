@@ -940,6 +940,9 @@ const HALLOWEEN_REWARDS = Object.freeze([
   { pumpkins: 7, type: 'ticket', amount: 1, icon: 'fa-ticket', title: 'Потужний квиток' },
   { pumpkins: 13, type: 'skin', skinName: 'P250 | See Ya Later', icon: 'fa-ghost', title: 'Halloween skin' }
 ]);
+const HALLOWEEN_ADMIN_PREVIEW_QUERY = 'adminPreview';
+let halloweenAdminPreviewRequested = new URLSearchParams(window.location.search).get(HALLOWEEN_ADMIN_PREVIEW_QUERY) === HALLOWEEN_EVENT.id;
+let halloweenAdminPreviewAuthorized = false;
 
 const TARGET_ARENA_STAKES = Object.freeze([2_500, 10_000, 25_000]);
 const TARGET_ARENA_DURATION_MS = 15_000;
@@ -1295,7 +1298,29 @@ function getDateKeyInTimeZone(timeZone) {
 
 function getHalloweenEventStatus() {
   const date = getDateKeyInTimeZone(HALLOWEEN_EVENT.timeZone);
-  return { date, active: date >= HALLOWEEN_EVENT.startDate && date <= HALLOWEEN_EVENT.endDate, upcoming: date < HALLOWEEN_EVENT.startDate, ended: date > HALLOWEEN_EVENT.endDate };
+  const scheduledActive = date >= HALLOWEEN_EVENT.startDate && date <= HALLOWEEN_EVENT.endDate;
+  const preview = halloweenAdminPreviewAuthorized && !scheduledActive;
+  return { date, active: scheduledActive || preview, scheduledActive, preview, upcoming: date < HALLOWEEN_EVENT.startDate, ended: date > HALLOWEEN_EVENT.endDate };
+}
+
+async function enableHalloweenAdminPreview() {
+  if (!halloweenAdminPreviewRequested || halloweenAdminPreviewAuthorized) return;
+  try {
+    const response = await fetch('/api/admin/me', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+    if (!response.ok) return;
+    const data = await response.json();
+    const roleId = String(data?.me?.role?.id || data?.me?.roleId || data?.me?.role || '');
+    const canPreview = data?.gameCapabilities?.configure === true || roleId === 'owner' || roleId === 'full_admin';
+    if (!canPreview) return;
+    halloweenAdminPreviewAuthorized = true;
+    const url = new URL(window.location.href);
+    url.searchParams.delete(HALLOWEEN_ADMIN_PREVIEW_QUERY);
+    window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
+    renderGameHub();
+    showToast('Halloween відкрито лише для твого приватного перегляду.', 'info');
+  } catch {
+    // The public site stays in its scheduled state if the protected check fails.
+  }
 }
 
 function getHalloweenEventState() {
@@ -1314,7 +1339,7 @@ function getHalloweenEventState() {
 
 function awardHalloweenPumpkins(source, amount = 1) {
   const status = getHalloweenEventStatus();
-  if (!status.active || !Object.prototype.hasOwnProperty.call(HALLOWEEN_EVENT.dailyCaps, source)) return 0;
+  if (!status.scheduledActive || !Object.prototype.hasOwnProperty.call(HALLOWEEN_EVENT.dailyCaps, source)) return 0;
   const state = getHalloweenEventState();
   if (state.dailyDate !== status.date) {
     state.dailyDate = status.date;
@@ -1341,11 +1366,12 @@ function renderHalloweenEvent() {
   const sourceLabel = (source, label) => `${label} ${state.dailySources[source]} / ${HALLOWEEN_EVENT.dailyCaps[source]}`;
   const rewards = HALLOWEEN_REWARDS.map(reward => {
     const claimed = state.claimed.includes(reward.pumpkins);
-    const ready = state.pumpkins >= reward.pumpkins && !claimed;
-    const statusText = claimed ? 'Забрано' : ready ? 'Забрати' : `${reward.pumpkins} 🎃`;
+    const ready = state.pumpkins >= reward.pumpkins && !claimed && !status.preview;
+    const statusText = status.preview ? 'Лише перегляд' : claimed ? 'Забрано' : ready ? 'Забрати' : `${reward.pumpkins} 🎃`;
     return `<button type="button" class="halloween-reward ${claimed ? 'is-claimed' : ready ? 'is-ready' : ''}" ${ready ? `data-halloween-claim="${reward.pumpkins}"` : 'disabled'}><span>${reward.pumpkins} 🎃</span><i class="fa-solid ${reward.icon}"></i><b>${escapeHtml(reward.title)}</b><em>${statusText}</em></button>`;
   }).join('');
-  root.innerHTML = `<article class="halloween-event-card" aria-label="Halloween: Нічний дроп"><div class="halloween-event-top"><div class="halloween-pumpkin">🎃</div><div><p>18 ЖОВТНЯ — 3 ЛИСТОПАДА · КИЇВ</p><h2>HALLOWEEN: НІЧНИЙ ДРОП</h2><span>Збирай гарбузи за гру й забирай сезонні віртуальні нагороди.</span></div><div class="halloween-progress"><span>${progress} / 13 🎃</span><div><i style="width:${Math.round((progress / 13) * 100)}%"></i></div><small>Щоденний ліміт: 4</small></div></div><div class="halloween-event-body"><div class="halloween-sources"><span>${sourceLabel('case', 'Кейси')}</span><span>${sourceLabel('battle', 'Перемога в бою')}</span><span>${sourceLabel('arena', 'Тир 13+')}</span></div><div class="halloween-rewards">${rewards}</div></div></article>`;
+  const previewNotice = status.preview ? '<div class="halloween-preview-notice"><i class="fa-solid fa-eye"></i> ПРИВАТНИЙ ПЕРЕГЛЯД АДМІНА · ГРАВЦЯМ ПОДІЯ ДОСІ НЕДОСТУПНА</div>' : '';
+  root.innerHTML = `<article class="halloween-event-card ${status.preview ? 'is-admin-preview' : ''}" aria-label="Halloween: Нічний дроп"><div class="halloween-event-top"><div class="halloween-pumpkin">🎃</div><div><p>18 ЖОВТНЯ — 3 ЛИСТОПАДА · КИЇВ</p><h2>HALLOWEEN: НІЧНИЙ ДРОП</h2><span>Збирай гарбузи за гру й забирай сезонні віртуальні нагороди.</span></div><div class="halloween-progress"><span>${progress} / 13 🎃</span><div><i style="width:${Math.round((progress / 13) * 100)}%"></i></div><small>Щоденний ліміт: 4</small></div></div>${previewNotice}<div class="halloween-event-body"><div class="halloween-sources"><span>${sourceLabel('case', 'Кейси')}</span><span>${sourceLabel('battle', 'Перемога в бою')}</span><span>${sourceLabel('arena', 'Тир 13+')}</span></div><div class="halloween-rewards">${rewards}</div></div></article>`;
   root.querySelectorAll('[data-halloween-claim]').forEach(button => button.addEventListener('click', () => claimHalloweenReward(Number(button.dataset.halloweenClaim))));
 }
 
@@ -1353,7 +1379,7 @@ function claimHalloweenReward(pumpkins) {
   const status = getHalloweenEventStatus();
   const state = getHalloweenEventState();
   const reward = HALLOWEEN_REWARDS.find(item => item.pumpkins === pumpkins);
-  if (!status.active || !reward || state.claimed.includes(pumpkins) || state.pumpkins < pumpkins || !currentUser) return;
+  if (!status.scheduledActive || !reward || state.claimed.includes(pumpkins) || state.pumpkins < pumpkins || !currentUser) return;
   if (reward.type === 'credits') currentUser.balance = clampNumber(currentUser.balance + reward.amount, 0, MAX_STORED_BALANCE, DEMO_STARTING_BALANCE);
   if (reward.type === 'ticket') gameState.caseTickets = getCaseTicketCount() + reward.amount;
   if (reward.type === 'skin') {
@@ -5842,8 +5868,9 @@ function openPowerCase(caseType = 'budget_covert') {
   let cfg = CASE_TYPES[caseType] || CASE_TYPES.budget_covert;
   if (cfg.aliasTo) cfg = CASE_TYPES[cfg.aliasTo] || cfg;
 
-  if (cfg.seasonal && (cfg.seasonal !== HALLOWEEN_EVENT.id || !getHalloweenEventStatus().active)) {
-    showToast('Цей сезонний кейс зараз закритий.', 'warn');
+  const halloweenStatus = getHalloweenEventStatus();
+  if (cfg.seasonal && (cfg.seasonal !== HALLOWEEN_EVENT.id || !halloweenStatus.scheduledActive)) {
+    showToast(halloweenStatus.preview ? 'Нічний кейс показано в перегляді, але до старту події не відкривається.' : 'Цей сезонний кейс зараз закритий.', 'warn');
     return;
   }
 
@@ -7941,6 +7968,7 @@ function renderShopGrid(skins) {
 window.addEventListener('DOMContentLoaded', () => {
   initCanvas();
   loadState();
+  void enableHalloweenAdminPreview();
 
   if (localStorage.getItem(STORAGE.consent) !== 'accepted') {
     document.body.classList.add('consent-locked');

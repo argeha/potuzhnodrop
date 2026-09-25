@@ -25,6 +25,7 @@
   const skinSearchResults = $('#skinSearchResults')
   const playerInventory = $('#playerInventory')
   const playerDirectoryList = $('#playerDirectoryList')
+  const eventPreviewPanel = $('#eventPreviewPanel')
   let skinSearchTimer = null
   let playerDirectorySearchTimer = null
   const CLOUD_ACCOUNT_STORAGE = 'potuzhno_v6_account'
@@ -248,6 +249,7 @@
 
   function renderGamePermissions() {
     const canRead = canGame('read')
+    eventPreviewPanel.classList.toggle('hidden', !canGame('configure'))
     gamePanel.classList.toggle('hidden', !state.me)
     gameUnavailable.classList.toggle('hidden', canRead)
     if (!canRead) {
@@ -638,6 +640,13 @@
 
   $('#showOnSiteButton').addEventListener('click', () => {
     void mutateGame('site_show', {}, { confirmText: 'Повернути профіль у рейтинг та live-стрічку сайту?' })
+  })
+
+  $('#openHalloweenPreviewButton').addEventListener('click', () => {
+    if (!canGame('configure')) return showToast('Твоя роль не має доступу до приватного перегляду подій.', 'error')
+    const previewUrl = new URL('/', window.location.origin)
+    previewUrl.searchParams.set('adminPreview', 'halloween-2026')
+    window.open(previewUrl.toString(), '_blank', 'noopener')
   })
 
   $('#skinSearch').addEventListener('input', event => {
