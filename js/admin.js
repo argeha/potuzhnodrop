@@ -1,7 +1,7 @@
 (() => {
   'use strict'
 
-  const state = { me: null, members: [], roles: [], assignableRoles: [], audit: [] }
+  const state = { me: null, members: [], roles: [], assignableRoles: [], audit: [], gameCapabilities: {}, player: null, catalog: [], selectedSkinId: '' }
   let inviteCode = new URLSearchParams(window.location.search).get('invite') || ''
   const $ = selector => document.querySelector(selector)
   const headerStatus = $('#headerStatus')
@@ -17,6 +17,14 @@
   const loginGate = $('#loginGate')
   const inviteGate = $('#inviteGate')
   const logoutButton = $('#logoutButton')
+  const gamePanel = $('#gamePanel')
+  const gameUnavailable = $('#gameUnavailable')
+  const playerWorkspace = $('#playerWorkspace')
+  const playerSummary = $('#playerSummary')
+  const gameControls = $('#gameControls')
+  const skinSearchResults = $('#skinSearchResults')
+  const playerInventory = $('#playerInventory')
+  let skinSearchTimer = null
 
   const actionLabels = {
     access_granted: 'створив(ла) доступ',
@@ -25,6 +33,19 @@
     access_activated: 'відновив(ла) доступ',
     access_revoked: 'прибрав(ла) доступ',
     invite_accepted: 'активував(ла) запрошення',
+    game_pc_add: 'додав(ла) PC',
+    game_pc_set: 'встановив(ла) PC',
+    game_xp_add: 'додав(ла) XP',
+    game_xp_set: 'встановив(ла) XP',
+    game_tickets_add: 'додав(ла) квитки',
+    game_tickets_set: 'встановив(ла) квитки',
+    game_pass_xp_add: 'додав(ла) XP Battle Pass',
+    game_pass_xp_set: 'встановив(ла) XP Battle Pass',
+    game_premium_enable: 'активував(ла) Battle Pass',
+    game_premium_disable: 'вимкнув(ла) Battle Pass',
+    game_prestige_set: 'встановив(ла) престиж',
+    game_skin_grant: 'видав(ла) скін',
+    game_skin_remove: 'прибрав(ла) скін',
   }
 
   const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[char]))
@@ -163,12 +184,89 @@
       </article>`).join('')
   }
 
+  const canGame = capability => state.gameCapabilities?.[capability] === true
+
+  function setOptions(element, options, selected = '') {
+    if (!element) return
+    element.replaceChildren()
+    options.forEach(option => element.add(new Option(option.label, option.value, false, option.value === selected)))
+  }
+
+  function renderGamePermissions() {
+    const canRead = canGame('read')
+    gamePanel.classList.toggle('hidden', !state.me)
+    gameUnavailable.classList.toggle('hidden', canRead)
+    if (!canRead) {
+      playerWorkspace.classList.add('hidden')
+      return
+    }
+    const economyOptions = [{ value: 'pc_add', label: 'Додати PC' }]
+    const progressOptions = [{ value: 'xp_add', label: 'Додати XP' }, { value: 'tickets_add', label: 'Додати квитки' }]
+    const passOptions = [{ value: 'pass_xp_add', label: 'Додати XP' }]
+    if (canGame('configure')) {
+      economyOptions.push({ value: 'pc_set', label: 'Встановити PC' })
+      progressOptions.push({ value: 'xp_set', label: 'Встановити XP' }, { value: 'tickets_set', label: 'Встановити квитки' })
+      passOptions.push({ value: 'pass_xp_set', label: 'Встановити XP' })
+    }
+    setOptions($('#economyOperation'), economyOptions)
+    setOptions($('#progressOperation'), progressOptions)
+    setOptions($('#passOperation'), passOptions)
+    $('#premiumDisableButton').classList.toggle('hidden', !canGame('configure'))
+    $('#prestigeForm').classList.toggle('hidden', !canGame('configure'))
+    $('#skinManagerTitle').closest('.skin-manager').classList.toggle('is-readonly', !canGame('grant'))
+    $('#skinSearch').disabled = !canGame('grant')
+    $('#grantSkinButton').disabled = !canGame('grant') || !state.selectedSkinId
+  }
+
+  const integer = value => Math.max(0, Math.round(Number(value) || 0))
+  const compact = value => new Intl.NumberFormat('uk-UA').format(integer(value))
+  const skinImage = source => source ? `/api/skin-image?src=${encodeURIComponent(source)}` : ''
+
+  function renderPlayer() {
+    const player = state.player
+    playerWorkspace.classList.toggle('hidden', !player)
+    if (!player) return
+    playerSummary.innerHTML = `
+      <div class="player-heading"><div><p class="eyebrow">АКТИВНИЙ ПРОФІЛЬ</p><h3>${escapeHtml(player.name)}</h3><code>${escapeHtml(player.accountId)}</code></div><span class="profile-revision">версія ${escapeHtml(player.revision)}</span></div>
+      <div class="player-stats">
+        <div><span>БАЛАНС</span><strong>${compact(player.balance)} PC</strong></div>
+        <div><span>РІВЕНЬ</span><strong>${compact(player.level)} <small>${compact(player.xp)} XP</small></strong></div>
+        <div><span>ПРЕСТИЖ</span><strong>P${compact(player.prestige)}</strong></div>
+        <div><span>КВИТКИ</span><strong>${compact(player.caseTickets)}</strong></div>
+        <div><span>BATTLE PASS</span><strong>${compact(player.battlePass?.xp)} XP <small>${player.battlePass?.premium ? 'активний' : 'неактивний'}</small></strong></div>
+      </div>`
+    $('#inventoryCount').textContent = `${compact(player.inventoryTotal)} скінів`
+    $('#premiumEnableButton').classList.toggle('hidden', player.battlePass?.premium === true)
+    $('#premiumDisableButton').classList.toggle('hidden', !canGame('configure') || player.battlePass?.premium !== true)
+    const items = Array.isArray(player.inventory) ? player.inventory : []
+    playerInventory.innerHTML = items.length
+      ? items.map(item => `<article class="admin-skin" data-item-id="${escapeHtml(item.id)}"><img src="${escapeHtml(skinImage(item.img))}" alt="" loading="lazy"><div><strong>${escapeHtml(item.name)}</strong><span style="color:${escapeHtml(item.rarityColor || '#b0c3d9')}">${escapeHtml(item.rarity)} · ${compact(item.price)} PC</span></div>${canGame('inventory') ? '<button class="small-button danger" type="button" data-remove-skin title="Прибрати скін"><i class="fa-solid fa-trash"></i></button>' : ''}</article>`).join('')
+      : '<p class="empty-line">У профілі поки що немає скінів.</p>'
+  }
+
+  function renderCatalog() {
+    const selected = state.selectedSkinId
+    const items = state.catalog || []
+    if (!items.length) {
+      skinSearchResults.innerHTML = '<p class="empty-line">Нічого не знайдено.</p>'
+      return
+    }
+    skinSearchResults.innerHTML = items.map(item => `<button type="button" class="catalog-skin${item.id === selected ? ' is-selected' : ''}" data-skin-id="${escapeHtml(item.id)}"><img src="${escapeHtml(skinImage(item.img))}" alt="" loading="lazy"><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.weapon)} · ${compact(item.price)} PC</small></span><i class="fa-solid ${item.id === selected ? 'fa-circle-check' : 'fa-circle'}"></i></button>`).join('')
+  }
+
+  function renderGame() {
+    renderGamePermissions()
+    renderPlayer()
+    renderCatalog()
+  }
+
   function renderAll() {
     renderIdentity()
     renderRoleSelect()
     renderRoles()
     renderTeam()
     renderAudit()
+    renderGame()
   }
 
   function renderInvite(invite) {
@@ -189,12 +287,14 @@
       state.members = team.members || []
       state.assignableRoles = team.assignableRoles || me.assignableRoles || []
       state.audit = audit.audit || []
+      state.gameCapabilities = me.gameCapabilities || {}
       renderAll()
       showPanel()
       setHeader('Захищена сесія', 'ready')
     } catch (error) {
       state.roles = []
       state.assignableRoles = []
+      state.gameCapabilities = {}
       showGate()
       if (error.status !== 401 && !quiet) showToast(error.message, 'error')
     } finally {
@@ -279,6 +379,138 @@
     await mutateMember({ action, email }, `Дію виконано: ${label}.`)
   })
 
+  async function refreshAuditAfterGameAction() {
+    try {
+      const data = await api('/api/admin/audit')
+      state.audit = data.audit || state.audit
+    } catch {}
+  }
+
+  async function mutateGame(operation, extra = {}, { confirmText = '' } = {}) {
+    if (!state.player?.accountId) return showToast('Спочатку відкрий Cloud Profile ID.', 'error')
+    if (confirmText && !window.confirm(confirmText)) return
+    const buttons = [...gameControls.querySelectorAll('button'), $('#grantSkinButton')]
+    buttons.forEach(button => { if (button) button.disabled = true })
+    try {
+      const data = await api('/api/admin/game/mutate', {
+        method: 'POST',
+        body: JSON.stringify({ accountId: state.player.accountId, operation, ...extra })
+      })
+      state.player = data.player || state.player
+      await refreshAuditAfterGameAction()
+      renderAll()
+      showToast(data.detail || 'Профіль оновлено на сервері.')
+    } catch (error) {
+      if (error.status === 401) showGate()
+      showToast(error.message, 'error')
+    } finally {
+      buttons.forEach(button => { if (button) button.disabled = false })
+      renderGamePermissions()
+    }
+  }
+
+  $('#profileLookupForm').addEventListener('submit', async event => {
+    event.preventDefault()
+    const accountId = $('#profileAccountId').value.trim()
+    if (!accountId) return
+    const button = $('#profileLookupButton')
+    button.disabled = true
+    try {
+      const data = await api(`/api/admin/game/player?accountId=${encodeURIComponent(accountId)}`)
+      state.player = data.player || null
+      state.catalog = []
+      state.selectedSkinId = ''
+      renderGame()
+      showToast('Профіль завантажено.')
+    } catch (error) {
+      state.player = null
+      renderGame()
+      if (error.status === 401) showGate()
+      showToast(error.message, 'error')
+    } finally {
+      button.disabled = false
+    }
+  })
+
+  $('#economyForm').addEventListener('submit', event => {
+    event.preventDefault()
+    const operation = $('#economyOperation').value
+    const amount = integer($('#economyAmount').value)
+    if (!operation) return
+    void mutateGame(operation, { amount }, { confirmText: operation.endsWith('_set') ? `Встановити баланс на ${compact(amount)} PC?` : '' })
+  })
+
+  $('#progressForm').addEventListener('submit', event => {
+    event.preventDefault()
+    const operation = $('#progressOperation').value
+    const amount = integer($('#progressAmount').value)
+    if (!operation) return
+    void mutateGame(operation, { amount }, { confirmText: operation.endsWith('_set') ? 'Точно замінити значення прогресу?' : '' })
+  })
+
+  $('#passForm').addEventListener('submit', event => {
+    event.preventDefault()
+    const operation = $('#passOperation').value
+    const amount = integer($('#passAmount').value)
+    if (!operation) return
+    void mutateGame(operation, { amount }, { confirmText: operation.endsWith('_set') ? 'Точно замінити XP Battle Pass?' : '' })
+  })
+
+  $('#prestigeForm').addEventListener('submit', event => {
+    event.preventDefault()
+    const amount = integer($('#prestigeAmount').value)
+    void mutateGame('prestige_set', { amount }, { confirmText: `Встановити престиж P${compact(amount)}?` })
+  })
+
+  $('#premiumEnableButton').addEventListener('click', () => void mutateGame('premium_enable'))
+  $('#premiumDisableButton').addEventListener('click', () => void mutateGame('premium_disable', {}, { confirmText: 'Вимкнути Battle Pass у цього профілю?' }))
+
+  $('#skinSearch').addEventListener('input', event => {
+    const query = event.target.value.trim()
+    state.selectedSkinId = ''
+    $('#grantSkinButton').disabled = true
+    window.clearTimeout(skinSearchTimer)
+    if (query.length < 2) {
+      state.catalog = []
+      skinSearchResults.innerHTML = '<p class="empty-line">Введи щонайменше 2 символи, щоб знайти скін.</p>'
+      return
+    }
+    skinSearchResults.innerHTML = '<p class="loading-line"><i class="fa-solid fa-spinner fa-spin"></i> Шукаємо в каталозі…</p>'
+    skinSearchTimer = window.setTimeout(async () => {
+      try {
+        const data = await api(`/api/admin/game/catalog?q=${encodeURIComponent(query)}`)
+        if ($('#skinSearch').value.trim() !== query) return
+        state.catalog = data.items || []
+        renderCatalog()
+      } catch (error) {
+        skinSearchResults.innerHTML = `<p class="empty-line">${escapeHtml(error.message)}</p>`
+      }
+    }, 260)
+  })
+
+  skinSearchResults.addEventListener('click', event => {
+    const button = event.target.closest('[data-skin-id]')
+    if (!button || !canGame('grant')) return
+    state.selectedSkinId = button.dataset.skinId || ''
+    renderCatalog()
+    $('#grantSkinButton').disabled = !state.selectedSkinId
+  })
+
+  $('#grantSkinButton').addEventListener('click', () => {
+    const skin = state.catalog.find(item => item.id === state.selectedSkinId)
+    if (!skin) return showToast('Спочатку вибери скін зі списку.', 'error')
+    void mutateGame('skin_grant', { skinId: skin.id }, { confirmText: `Видати «${skin.name}» цьому профілю?` })
+  })
+
+  playerInventory.addEventListener('click', event => {
+    const button = event.target.closest('[data-remove-skin]')
+    if (!button) return
+    const item = button.closest('[data-item-id]')
+    const itemId = item?.dataset.itemId || ''
+    if (!itemId) return
+    void mutateGame('skin_remove', { itemId }, { confirmText: 'Прибрати цей скін із серверного інвентарю? Цю дію не можна скасувати.' })
+  })
+
   $('#copyInviteButton').addEventListener('click', async () => {
     const input = $('#inviteUrl')
     try {
@@ -298,6 +530,10 @@
     state.roles = []
     state.assignableRoles = []
     state.audit = []
+    state.gameCapabilities = {}
+    state.player = null
+    state.catalog = []
+    state.selectedSkinId = ''
     showGate()
   })
 

@@ -58,6 +58,13 @@ const ADMIN_SESSION_COOKIE = 'potuzhno_admin_session'
 const ADMIN_SESSION_TTL = 14 * 24 * 60 * 60_000
 const ADMIN_INVITE_TTL = 24 * 60 * 60_000
 const ADMIN_TOKEN = /^[a-f0-9]{64}$/i
+const ADMIN_GAME_MAX_BALANCE = 10_000_000
+const ADMIN_GAME_MAX_XP = 100_000_000
+const ADMIN_GAME_MAX_TICKETS = 999
+const ADMIN_GAME_MAX_PRESTIGE = 99
+const ADMIN_GAME_MAX_INVENTORY = 10_000
+const ADMIN_GAME_PLAYER_LEVEL_XP = 1_200
+const ADMIN_GAME_PASS_MAX_XP = 30 * 750
 const ADMIN_ROLES = Object.freeze({
   owner: {
     label: 'Власник',
@@ -460,6 +467,106 @@ function adminRoleView(role) {
   return { id: role, label: definition.label, rank: definition.rank, description: definition.description }
 }
 
+function adminGameCapabilities(actor) {
+  const rank = adminRoleRank(actor?.role)
+  if (rank >= 4) return { read: true, grant: true, configure: true, inventory: true }
+  if (rank === 3) return { read: true, grant: true, configure: false, inventory: false }
+  return { read: false, grant: false, configure: false, inventory: false }
+}
+
+function canRunAdminGameOperation(actor, operation) {
+  const capabilities = adminGameCapabilities(actor)
+  if (!capabilities.read) return false
+  if (['pc_add', 'xp_add', 'tickets_add', 'pass_xp_add', 'premium_enable', 'skin_grant'].includes(operation)) return capabilities.grant
+  if (['pc_set', 'xp_set', 'tickets_set', 'pass_xp_set', 'premium_disable', 'prestige_set'].includes(operation)) return capabilities.configure
+  if (operation === 'skin_remove') return capabilities.inventory
+  return false
+}
+
+function safeAdminInventoryItem(value, index = 0) {
+  if (!value || typeof value !== 'object') return null
+  const compact = Array.isArray(value) ? value : null
+  const isSteam = compact?.[0] === 1
+  const id = cleanText(compact ? (isSteam ? `steam-copy-${compact[2]}-${compact[1]}` : compact[1]) : value.id, 128)
+  const name = cleanText(compact ? compact[3] : value.name, 160)
+  if (!id || !name) return null
+  return {
+    id,
+    name,
+    sourceSkinId: cleanText(compact ? (isSteam ? compact[1] : compact[2]) : value.sourceSkinId, 128),
+    rarity: cleanText(compact ? compact[4] : value.rarity, 48) || 'CS2',
+    rarityColor: cleanColor(compact ? compact[5] : value.rarityColor),
+    img: cleanImage(compact ? compact[6] : value.img),
+    price: boundedInteger(compact ? compact[7] : (value.price ?? value.basePrice), 1, MAX_PRICE),
+    addedAt: boundedInteger(compact ? compact[11] : value.addedAt, 0, Number.MAX_SAFE_INTEGER, index),
+    exclusive: compact ? compact[10] === 1 : value.exclusive === true,
+  }
+}
+
+function adminProfileSummary(accountId, entry) {
+  const payload = entry?.payload && typeof entry.payload === 'object' && !Array.isArray(entry.payload) ? entry.payload : null
+  if (!payload) return null
+  const gameState = payload.gameState && typeof payload.gameState === 'object' && !Array.isArray(payload.gameState) ? payload.gameState : {}
+  const pass = gameState.battlePass && typeof gameState.battlePass === 'object' && !Array.isArray(gameState.battlePass) ? gameState.battlePass : {}
+  const inventory = Array.isArray(payload.inventory) ? payload.inventory : []
+  const safeItems = inventory.map(safeAdminInventoryItem).filter(Boolean)
+  const xp = boundedInteger(gameState.xp, 0, ADMIN_GAME_MAX_XP)
+  return {
+    accountId,
+    name: cleanText(payload.account?.nick, 24) || 'Гравець',
+    updatedAt: boundedInteger(entry.updatedAt, 0, Number.MAX_SAFE_INTEGER),
+    revision: boundedInteger(entry.revision, 1, Number.MAX_SAFE_INTEGER, 1),
+    balance: boundedInteger(payload.balance, 0, ADMIN_GAME_MAX_BALANCE),
+    xp,
+    level: Math.floor(xp / ADMIN_GAME_PLAYER_LEVEL_XP) + 1,
+    prestige: boundedInteger(gameState.prestige, 0, ADMIN_GAME_MAX_PRESTIGE),
+    caseTickets: boundedInteger(gameState.caseTickets, 0, ADMIN_GAME_MAX_TICKETS),
+    battlePass: {
+      season: cleanText(pass.season, 48) || 'season-01',
+      xp: boundedInteger(pass.xp, 0, ADMIN_GAME_PASS_MAX_XP),
+      premium: pass.premium === true,
+    },
+    inventoryTotal: safeItems.length,
+    inventory: safeItems.sort((left, right) => right.addedAt - left.addedAt).slice(0, 60),
+  }
+}
+
+function adminCatalogSkin(value) {
+  if (!value || typeof value !== 'object') return null
+  const id = cleanText(value.id, 128)
+  const name = cleanText(value.name, 160)
+  const weapon = cleanText(value.weapon?.name, 64)
+  const category = cleanText(value.category?.name, 64)
+  const rarity = cleanText(value.rarity?.name, 48) || 'Consumer Grade'
+  const img = cleanImage(value.image)
+  if (!id || !name || !weapon || !category || !img) return null
+  const idText = `${id}:${name}`
+  let hash = 2166136261
+  for (const char of idText) {
+    hash ^= char.charCodeAt(0)
+    hash = Math.imul(hash, 16777619)
+  }
+  const roll = (hash >>> 0) / 4_294_967_295
+  const premium = /Doppler|Fade|Marble|Gamma|Lore|Slaughter|Crimson|Tiger Tooth|Emerald|Ruby|Sapphire|Pandora|Vice/i.test(name)
+  let price
+  if (category === 'Knives') price = 650 + Math.round(Math.pow(roll, 1.75) * 12_500) + (premium ? 11_000 : 0)
+  else if (category === 'Gloves') price = 450 + Math.round(Math.pow(roll, 1.6) * 7_000) + (premium ? 6_000 : 0)
+  else {
+    const base = ({ 'Consumer Grade': 12, 'Industrial Grade': 28, 'Mil-Spec Grade': 70, Restricted: 190, Classified: 520, Covert: 1_450, Contraband: 9_000, Extraordinary: 5_000 })[rarity] || 60
+    price = base * (0.7 + roll * 1.35) + (premium ? base * 0.65 : 0)
+  }
+  return {
+    id,
+    name,
+    weapon,
+    category,
+    rarity,
+    rarityColor: cleanColor(value.rarity?.color),
+    img,
+    price: boundedInteger(price, 10, MAX_PRICE),
+  }
+}
+
 function normalizeAdminMember(value, email, now) {
   const role = Object.hasOwn(ADMIN_ROLES, value?.role) && value.role !== 'owner' ? value.role : 'support'
   const status = value?.status === 'suspended' ? 'suspended' : 'active'
@@ -643,6 +750,7 @@ export class PotuzhnoState {
       if (path === '/__internal/steam-session') return await this.internalSteamSession(request)
       if (path === '/__internal/migrate-profile') return await this.internalProfileMigration(request)
       if (path === '/__internal/migrate-public-profile') return await this.internalPublicProfileMigration(request)
+      if (path === '/__internal/admin-profile') return await this.internalAdminProfile(request)
       if (path === '/api/profile/sync') return await this.profile(request)
       if (path === '/api/public-profile') return await this.publicProfile(request)
       if (path === '/api/public-avatar') return await this.publicAvatar(request)
@@ -726,6 +834,137 @@ export class PotuzhnoState {
     // See profile migration above: retain the legacy copy until it is safe to
     // clean up asynchronously; all new traffic goes to the per-profile shard.
     return json({ migrated: true, entry })
+  }
+
+  async internalAdminProfile(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request, 16_384)
+    } catch {
+      return json({ error: 'Некоректний запит до профілю.' }, 400)
+    }
+    const accountId = String(body?.accountId || '')
+    if (!ID.test(accountId)) return json({ error: 'Некоректний Cloud Profile ID.' }, 400)
+    const key = `profile:${accountId}`
+    const action = cleanText(body?.action, 24)
+    if (action === 'summary') {
+      const entry = await this.storage.get(key)
+      const player = adminProfileSummary(accountId, entry)
+      return player ? json({ player }) : json({ error: 'Хмарний профіль не знайдено.' }, 404)
+    }
+    if (action !== 'mutate') return json({ error: 'Невідома дія над профілем.' }, 400)
+    const operation = cleanText(body?.operation, 32)
+    const result = await this.storage.transaction(async transaction => {
+      const entry = await transaction.get(key)
+      const payload = entry?.payload && typeof entry.payload === 'object' && !Array.isArray(entry.payload) ? entry.payload : null
+      if (!entry || !payload) return { error: 'Хмарний профіль не знайдено.', status: 404 }
+      const next = structuredClone(payload)
+      const gameState = next.gameState && typeof next.gameState === 'object' && !Array.isArray(next.gameState) ? next.gameState : {}
+      next.gameState = gameState
+      const integer = (minimum, maximum) => {
+        const raw = Number(body?.amount)
+        return Number.isFinite(raw) && Number.isInteger(raw) && raw >= minimum && raw <= maximum ? raw : null
+      }
+      const addOrSet = (keyName, max, allowAdd = true) => {
+        const amount = integer(0, max)
+        if (amount === null) return false
+        const add = operation.endsWith('_add')
+        if (!add && !operation.endsWith('_set')) return false
+        if (add && !allowAdd) return false
+        gameState[keyName] = add
+          ? Math.min(max, boundedInteger(gameState[keyName], 0, max) + amount)
+          : amount
+        return true
+      }
+      let detail = ''
+      if (operation === 'pc_add' || operation === 'pc_set') {
+        const amount = integer(0, ADMIN_GAME_MAX_BALANCE)
+        if (amount === null) return { error: 'Некоректна кількість PC.', status: 400 }
+        next.balance = operation === 'pc_add'
+          ? Math.min(ADMIN_GAME_MAX_BALANCE, boundedInteger(next.balance, 0, ADMIN_GAME_MAX_BALANCE) + amount)
+          : amount
+        detail = `${operation === 'pc_add' ? '+' : '='}${amount} PC`
+      } else if (operation === 'xp_add' || operation === 'xp_set') {
+        if (!addOrSet('xp', ADMIN_GAME_MAX_XP)) return { error: 'Некоректна кількість XP.', status: 400 }
+        detail = `${operation === 'xp_add' ? '+' : '='}${body.amount} XP`
+      } else if (operation === 'tickets_add' || operation === 'tickets_set') {
+        if (!addOrSet('caseTickets', ADMIN_GAME_MAX_TICKETS)) return { error: 'Некоректна кількість квитків.', status: 400 }
+        detail = `${operation === 'tickets_add' ? '+' : '='}${body.amount} квитків`
+      } else if (operation === 'pass_xp_add' || operation === 'pass_xp_set') {
+        const pass = gameState.battlePass && typeof gameState.battlePass === 'object' && !Array.isArray(gameState.battlePass) ? gameState.battlePass : {}
+        gameState.battlePass = pass
+        const amount = integer(0, ADMIN_GAME_PASS_MAX_XP)
+        if (amount === null) return { error: 'Некоректна кількість XP пропуску.', status: 400 }
+        pass.season = cleanText(pass.season, 48) || 'season-01'
+        pass.xp = operation === 'pass_xp_add'
+          ? Math.min(ADMIN_GAME_PASS_MAX_XP, boundedInteger(pass.xp, 0, ADMIN_GAME_PASS_MAX_XP) + amount)
+          : amount
+        pass.premium = pass.premium === true
+        pass.claimedFree = Array.isArray(pass.claimedFree) ? pass.claimedFree : []
+        pass.claimedPremium = Array.isArray(pass.claimedPremium) ? pass.claimedPremium : []
+        detail = `${operation === 'pass_xp_add' ? '+' : '='}${amount} XP пропуску`
+      } else if (operation === 'premium_enable' || operation === 'premium_disable') {
+        const pass = gameState.battlePass && typeof gameState.battlePass === 'object' && !Array.isArray(gameState.battlePass) ? gameState.battlePass : {}
+        gameState.battlePass = pass
+        pass.season = cleanText(pass.season, 48) || 'season-01'
+        pass.xp = boundedInteger(pass.xp, 0, ADMIN_GAME_PASS_MAX_XP)
+        pass.claimedFree = Array.isArray(pass.claimedFree) ? pass.claimedFree : []
+        pass.claimedPremium = Array.isArray(pass.claimedPremium) ? pass.claimedPremium : []
+        pass.premium = operation === 'premium_enable'
+        detail = operation === 'premium_enable' ? 'POTUZHNO PASS активовано' : 'POTUZHNO PASS вимкнено'
+      } else if (operation === 'prestige_set') {
+        const amount = integer(0, ADMIN_GAME_MAX_PRESTIGE)
+        if (amount === null) return { error: 'Некоректний престиж.', status: 400 }
+        gameState.prestige = amount
+        detail = `престиж = ${amount}`
+      } else if (operation === 'skin_grant') {
+        const skin = adminCatalogSkin(body?.skin)
+        if (!skin) return { error: 'Вибраний скін недоступний у каталозі.', status: 400 }
+        const inventory = Array.isArray(next.inventory) ? next.inventory : []
+        if (inventory.length >= ADMIN_GAME_MAX_INVENTORY) return { error: 'Інвентар профілю досяг ліміту.', status: 409 }
+        const id = `admin-${randomHex(16)}`
+        const addedAt = Date.now()
+        inventory.push(next.inventoryEncoding === 'compact-v1'
+          ? [0, id, skin.id, skin.name, skin.rarity, skin.rarityColor, skin.img, skin.price, 'FT', 1, 0, addedAt]
+          : {
+            id,
+            sourceSkinId: skin.id,
+            name: skin.name,
+            rarity: skin.rarity,
+            rarityColor: skin.rarityColor,
+            img: skin.img,
+            basePrice: skin.price,
+            wear: { code: 'FT' },
+            virtual: true,
+            exclusive: false,
+            addedAt,
+          })
+        next.inventory = inventory
+        detail = `скін: ${skin.name}`
+      } else if (operation === 'skin_remove') {
+        const itemId = cleanText(body?.itemId, 128)
+        const inventory = Array.isArray(next.inventory) ? next.inventory : []
+        const nextInventory = inventory.filter((item, index) => safeAdminInventoryItem(item, index)?.id !== itemId)
+        if (!itemId || nextInventory.length === inventory.length) return { error: 'Скін не знайдено у профілі.', status: 404 }
+        next.inventory = nextInventory
+        detail = `скін прибрано: ${itemId.slice(0, 20)}`
+      } else {
+        return { error: 'Невідома дія над профілем.', status: 400 }
+      }
+      const updatedAt = Date.now()
+      const nextEntry = {
+        ...entry,
+        version: 2,
+        revision: Math.max(1, boundedInteger(entry.revision, 1, Number.MAX_SAFE_INTEGER, 1)) + 1,
+        payload: next,
+        updatedAt,
+      }
+      if (!isPayload(next)) return { error: 'Профіль завеликий після зміни.', status: 413 }
+      await transaction.put(key, nextEntry)
+      return { player: adminProfileSummary(accountId, nextEntry), detail }
+    })
+    return result.error ? json({ error: result.error }, result.status) : json(result)
   }
 
   async migrateLegacyProfile(accountId, recoveryHash) {
@@ -1432,6 +1671,9 @@ export class PotuzhnoAdmin {
       if (path === '/api/admin/team' && request.method === 'GET') return this.team(state, actor)
       if (path === '/api/admin/audit' && request.method === 'GET') return this.audit(state, actor)
       if (path === '/api/admin/members' && request.method === 'POST') return await this.members(request)
+      if (path === '/api/admin/game/player' && request.method === 'GET') return await this.gamePlayer(request, actor)
+      if (path === '/api/admin/game/catalog' && request.method === 'GET') return await this.gameCatalog(request, actor)
+      if (path === '/api/admin/game/mutate' && request.method === 'POST') return await this.gameMutation(request, actor)
       return json({ error: 'Маршрут адмін-панелі не знайдено.' }, 404)
     } catch (error) {
       console.error('Admin API error', path, error)
@@ -1477,6 +1719,7 @@ export class PotuzhnoAdmin {
       me: publicAdminMember(actor, actor),
       roles: Object.entries(ADMIN_ROLES).map(([id]) => adminRoleView(id)),
       assignableRoles: ADMIN_ASSIGNABLE_ROLES[actor.role] || [],
+      gameCapabilities: adminGameCapabilities(actor),
       protectedOwner: true,
     })
   }
@@ -1491,6 +1734,93 @@ export class PotuzhnoAdmin {
       audit: state.audit.slice(0, 160),
       canView: Boolean(actor),
     })
+  }
+
+  async profileAdminRequest(accountId, payload) {
+    const profile = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(`profile:${accountId}`))
+    const response = await profile.fetch(new Request('https://internal/__internal/admin-profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountId, ...payload }),
+    }))
+    let data = null
+    try { data = await response.json() } catch {}
+    return { ok: response.ok, status: response.status, data: data || {} }
+  }
+
+  async catalogItems() {
+    const catalog = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName('catalog'))
+    const response = await catalog.fetch(new Request('https://internal/api/catalog/skins'))
+    if (!response.ok) return null
+    try {
+      const data = await response.json()
+      return Array.isArray(data) ? data.map(adminCatalogSkin).filter(Boolean) : null
+    } catch {
+      return null
+    }
+  }
+
+  async gamePlayer(request, actor) {
+    if (!adminGameCapabilities(actor).read) return adminForbidden('Твоя роль не має доступу до керування грою.')
+    const accountId = new URL(request.url).searchParams.get('accountId') || ''
+    if (!ID.test(accountId)) return json({ error: 'Вкажи правильний Cloud Profile ID.' }, 400)
+    const response = await this.profileAdminRequest(accountId, { action: 'summary' })
+    return response.ok ? json(response.data) : json({ error: response.data?.error || 'Не вдалося завантажити профіль.' }, response.status)
+  }
+
+  async gameCatalog(request, actor) {
+    if (!adminGameCapabilities(actor).read) return adminForbidden('Твоя роль не має доступу до каталогу.')
+    const query = cleanText(new URL(request.url).searchParams.get('q'), 100).toLocaleLowerCase()
+    if (query.length < 2) return json({ items: [] })
+    const catalog = await this.catalogItems()
+    if (!catalog) return json({ error: 'Каталог скінів тимчасово недоступний.' }, 502)
+    const items = catalog
+      .filter(item => `${item.name} ${item.weapon} ${item.category}`.toLocaleLowerCase().includes(query))
+      .slice(0, 18)
+    return json({ items })
+  }
+
+  async recordGameAudit(actor, accountId, operation, detail) {
+    await this.storage.transaction(async transaction => {
+      const now = Date.now()
+      const state = normalizeAdminState(await transaction.get('admin:state'), now)
+      state.audit.unshift({
+        id: randomHex(12),
+        at: now,
+        actor: actor.name,
+        action: `game_${operation}`,
+        target: accountId,
+        detail: cleanText(detail, 160),
+      })
+      state.audit = state.audit.slice(0, ADMIN_MAX_AUDIT_EVENTS)
+      await transaction.put('admin:state', state)
+    })
+  }
+
+  async gameMutation(request, actor) {
+    let body
+    try {
+      body = await this.readBody(request)
+    } catch (error) {
+      return json({ error: error instanceof RangeError ? error.message : 'Некоректний запит.' }, error instanceof RangeError ? 413 : 400)
+    }
+    const accountId = cleanText(body?.accountId, 64)
+    const operation = cleanText(body?.operation, 32)
+    if (!ID.test(accountId) || !canRunAdminGameOperation(actor, operation)) {
+      return adminForbidden('Твоя роль не може виконати цю дію.')
+    }
+    const payload = { action: 'mutate', operation, amount: body?.amount, itemId: body?.itemId }
+    if (operation === 'skin_grant') {
+      const skinId = cleanText(body?.skinId, 128)
+      const catalog = await this.catalogItems()
+      const skin = catalog?.find(item => item.id === skinId)
+      if (!skin) return json({ error: 'Вибраний скін не знайдено у каталозі.' }, 404)
+      payload.skin = skin
+    }
+    const response = await this.profileAdminRequest(accountId, payload)
+    if (!response.ok) return json({ error: response.data?.error || 'Не вдалося змінити профіль.' }, response.status)
+    await this.recordGameAudit(actor, accountId, operation, response.data.detail || '')
+    return json({ ok: true, player: response.data.player, detail: response.data.detail || '' })
   }
 
   async login(request) {

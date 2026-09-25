@@ -118,6 +118,56 @@ button { cursor: pointer; }
 .audit-row strong { display: block; color: #dce6f2; font-size: 11px; }
 .audit-row p { margin: 3px 0 0; color: #7f8fa4; font-size: 10px; line-height: 1.4; }
 .audit-row time { color: #718096; font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.game-panel { margin-top: 16px; padding: 24px; }
+.game-note { margin: 13px 0 0; color: #8fa0b4; font-size: 12px; line-height: 1.58; }
+.game-note b { color: #d8e7f5; }
+.profile-lookup { display: flex; align-items: end; gap: 10px; margin-top: 16px; padding: 14px; border: 1px solid rgba(56, 189, 248, .2); border-radius: 14px; background: rgba(6, 182, 212, .035); }
+.profile-lookup label, .game-card label, .skin-grant-row label { flex: 1; display: block; color: #a6b4c7; font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.profile-lookup input, .game-card input, .game-card select, .skin-grant-row input { width: 100%; height: 40px; margin-top: 6px; padding: 0 10px; border: 1px solid rgba(71, 85, 105, .68); border-radius: 9px; outline: 0; color: #e5edf7; background: #080f18; font-size: 12px; letter-spacing: normal; text-transform: none; }
+.profile-lookup input:focus, .game-card input:focus, .game-card select:focus, .skin-grant-row input:focus { border-color: rgba(56, 189, 248, .75); box-shadow: 0 0 0 3px rgba(56, 189, 248, .09); }
+.profile-lookup .icon-button { min-height: 40px; }
+.game-unavailable { display: flex; align-items: center; gap: 9px; margin-top: 16px; padding: 14px; border: 1px solid rgba(251, 113, 133, .3); border-radius: 13px; color: #fdb1be; background: rgba(136, 19, 55, .12); font-size: 12px; font-weight: 700; }
+.player-workspace { margin-top: 16px; }
+.player-summary { padding: 18px; border: 1px solid rgba(34, 211, 238, .26); border-radius: 16px; background: linear-gradient(120deg, rgba(8, 31, 44, .82), rgba(17, 14, 38, .84)); }
+.player-heading { display: flex; align-items: start; justify-content: space-between; gap: 15px; }
+.player-heading h3, .skin-manager h3 { margin: 0; color: #f1f5f9; font-family: Teko, sans-serif; font-size: 30px; letter-spacing: .04em; line-height: .95; text-transform: uppercase; }
+.player-heading code { display: block; max-width: min(100%, 430px); margin-top: 8px; overflow: hidden; color: #89a0bc; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.profile-revision { flex: 0 0 auto; padding: 6px 8px; border: 1px solid rgba(71, 85, 105, .56); border-radius: 99px; color: #8da3bd; font-size: 10px; font-weight: 800; }
+.player-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; margin-top: 17px; }
+.player-stats > div { min-height: 63px; padding: 11px; border: 1px solid rgba(87, 125, 151, .28); border-radius: 11px; background: rgba(3, 11, 19, .28); }
+.player-stats span { display: block; color: #7e90a7; font-size: 9px; font-weight: 800; letter-spacing: .07em; }
+.player-stats strong { display: block; margin-top: 6px; color: #f8c344; font-size: 13px; white-space: nowrap; }
+.player-stats small { display: block; margin-top: 2px; color: #9bacc0; font-size: 9px; font-weight: 700; }
+.game-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; margin-top: 14px; }
+.game-card { padding: 15px; border: 1px solid rgba(71, 85, 105, .45); border-radius: 14px; background: rgba(15, 25, 37, .66); }
+.game-card .form-heading { margin-bottom: 11px; }
+.game-card label + label { margin-top: 10px; }
+.game-card .primary-button { min-height: 38px; margin-top: 12px; }
+.inline-actions { display: grid; gap: 7px; margin-top: 9px; }
+.advanced-card { border-color: rgba(167, 139, 250, .32); background: rgba(91, 33, 182, .06); }
+.skin-manager { margin-top: 14px; padding: 19px; border: 1px solid rgba(71, 85, 105, .44); border-radius: 16px; background: rgba(5, 12, 20, .28); }
+.skin-manager.is-readonly { opacity: .68; }
+.skin-grant-row { display: flex; align-items: end; gap: 10px; margin-top: 15px; }
+.skin-grant-row .icon-button { min-height: 40px; }
+.skin-search-results { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; min-height: 56px; margin-top: 11px; }
+.skin-search-results .empty-line, .skin-search-results .loading-line { grid-column: 1 / -1; padding: 16px; }
+.catalog-skin { display: flex; align-items: center; min-width: 0; gap: 8px; padding: 8px; border: 1px solid rgba(71, 85, 105, .42); border-radius: 10px; color: #dce7f2; background: rgba(15, 25, 37, .75); text-align: left; }
+.catalog-skin:hover, .catalog-skin.is-selected { border-color: rgba(56, 189, 248, .67); background: rgba(8, 145, 178, .11); }
+.catalog-skin img { width: 42px; height: 32px; flex: 0 0 auto; object-fit: contain; }
+.catalog-skin span { min-width: 0; flex: 1; }
+.catalog-skin strong, .catalog-skin small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catalog-skin strong { font-size: 10px; }
+.catalog-skin small { margin-top: 3px; color: #8598ad; font-size: 9px; }
+.catalog-skin i { color: #60dff1; font-size: 12px; }
+.admin-inventory { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+.admin-inventory .empty-line { grid-column: 1 / -1; }
+.admin-skin { display: flex; align-items: center; min-width: 0; gap: 9px; padding: 9px; border: 1px solid rgba(71, 85, 105, .36); border-radius: 11px; background: rgba(15, 25, 37, .56); }
+.admin-skin img { width: 48px; height: 37px; flex: 0 0 auto; object-fit: contain; }
+.admin-skin div { min-width: 0; flex: 1; }
+.admin-skin strong, .admin-skin span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-skin strong { color: #e9eff6; font-size: 10px; }
+.admin-skin span { margin-top: 3px; font-size: 9px; font-weight: 700; }
+.admin-skin .small-button { flex: 0 0 auto; width: 28px; padding: 0; }
 .toast-region { position: fixed; right: 18px; bottom: 18px; z-index: 10; display: grid; gap: 9px; width: min(360px, calc(100vw - 36px)); }
 .toast { padding: 12px 14px; border: 1px solid rgba(74, 222, 128, .35); border-radius: 12px; color: #d1fae5; background: rgba(6, 78, 59, .94); box-shadow: 0 14px 35px rgba(0, 0, 0, .32); font-size: 12px; line-height: 1.45; animation: toast-in .2s ease-out; }
 .toast.error { border-color: rgba(251, 113, 133, .42); color: #ffe4e6; background: rgba(136, 19, 55, .95); }
@@ -133,6 +183,11 @@ button { cursor: pointer; }
   .admin-hero { align-items: start; flex-direction: column; min-height: 0; border-radius: 19px; }
   .icon-button { width: 100%; }
   .dashboard-grid, .grant-layout { grid-template-columns: 1fr; }
+  .profile-lookup, .skin-grant-row { align-items: stretch; flex-direction: column; }
+  .profile-lookup .icon-button, .skin-grant-row .icon-button { width: 100%; }
+  .game-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .player-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .skin-search-results, .admin-inventory { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .team-panel, .audit-panel { padding: 17px; }
   .roles-overview { grid-template-columns: 1fr 1fr; }
   .table-head { display: none; }
@@ -147,5 +202,6 @@ button { cursor: pointer; }
   .header-status span:last-child { display: none; }
   .logout-button span { display: none; }
   .roles-overview { grid-template-columns: 1fr; }
+  .game-controls, .player-stats, .skin-search-results, .admin-inventory { grid-template-columns: 1fr; }
   .admin-hero h1 { font-size: 44px; }
 }
