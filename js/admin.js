@@ -186,6 +186,16 @@
 
   const canGame = capability => state.gameCapabilities?.[capability] === true
 
+  // The Worker remains the only authority for every mutation. This client-side
+  // fallback merely keeps an owner/full-admin UI usable during a short
+  // Cloudflare Durable Object version transition when an older `/me` response
+  // has not started returning the new capability field yet.
+  function fallbackGameCapabilities(roleId) {
+    if (roleId === 'owner' || roleId === 'full_admin') return { read: true, grant: true, configure: true, inventory: true }
+    if (roleId === 'admin') return { read: true, grant: true, configure: false, inventory: false }
+    return { read: false, grant: false, configure: false, inventory: false }
+  }
+
   function setOptions(element, options, selected = '') {
     if (!element) return
     element.replaceChildren()
@@ -287,7 +297,9 @@
       state.members = team.members || []
       state.assignableRoles = team.assignableRoles || me.assignableRoles || []
       state.audit = audit.audit || []
-      state.gameCapabilities = me.gameCapabilities || {}
+      state.gameCapabilities = me.gameCapabilities && typeof me.gameCapabilities === 'object'
+        ? me.gameCapabilities
+        : fallbackGameCapabilities(me.me?.role?.id)
       renderAll()
       showPanel()
       setHeader('Захищена сесія', 'ready')
