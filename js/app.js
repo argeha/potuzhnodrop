@@ -485,6 +485,18 @@ function isWeaponSkin(skin) {
 
 const CASE_TYPES = {
   // HOT & LIMITED
+  halloween_night: {
+    id: 'halloween_night',
+    name: 'Нічний кейс',
+    cost: 650,
+    category: 'hot',
+    badge: 'HALLOWEEN',
+    badgeClass: 'badge-exclusive',
+    theme: 'gold',
+    seasonal: 'halloween-2026',
+    desc: 'Темна добірка: Atheris, Neo-Noir, Wildfire та рідкісні дропи',
+    filter: s => isWeaponSkin(s) && skinNameIncludes(s, 'Atheris', 'Neo-Noir', 'Wildfire', 'See Ya Later', 'Kill Confirmed', 'Printstream', 'Case Hardened', 'Redline')
+  },
   dragon_lair: {
     id: 'dragon_lair',
     name: "Dragon's Lair",
@@ -916,6 +928,19 @@ const POWER_RUN_REWARDS = Object.freeze([
   { credits: 400, xp: 75, tickets: 1, icon: 'fa-ticket', label: '+400 PC · квиток' }
 ]);
 
+const HALLOWEEN_EVENT = Object.freeze({
+  id: 'halloween-2026',
+  timeZone: 'Europe/Kyiv',
+  startDate: '2026-10-18',
+  endDate: '2026-11-03',
+  dailyCaps: Object.freeze({ case: 2, battle: 1, arena: 1 })
+});
+const HALLOWEEN_REWARDS = Object.freeze([
+  { pumpkins: 3, type: 'credits', amount: 450, icon: 'fa-coins', title: '450 PC' },
+  { pumpkins: 7, type: 'ticket', amount: 1, icon: 'fa-ticket', title: 'Потужний квиток' },
+  { pumpkins: 13, type: 'skin', skinName: 'P250 | See Ya Later', icon: 'fa-ghost', title: 'Halloween skin' }
+]);
+
 const TARGET_ARENA_STAKES = Object.freeze([2_500, 10_000, 25_000]);
 const TARGET_ARENA_DURATION_MS = 15_000;
 const TARGET_ARENA_HIT_BONUS_MS = 220;
@@ -935,6 +960,7 @@ let targetArenaMoveTimer = 0;
 let powerRunExpanded = false;
 let targetArenaExpanded = false;
 let battlePassExpanded = false;
+let halloweenEventDateKey = '';
 
 // Battle Pass rewards deliberately reuse the real skins already present in
 // the catalogue. This keeps their artwork, name, rarity and inventory data
@@ -1087,6 +1113,10 @@ function createDefaultPowerRun() {
   return { lastClaimDate: '', streak: 0, totalClaims: 0 };
 }
 
+function createDefaultHalloweenEvent() {
+  return { pumpkins: 0, claimed: [], dailyDate: '', dailySources: { case: 0, battle: 0, arena: 0 } };
+}
+
 function createDefaultTargetArena() {
   return { rounds: 0, bestScore: 0, totalSpent: 0, totalPayout: 0, lastPlayedAt: 0 };
 }
@@ -1104,6 +1134,7 @@ function createDefaultGameState() {
     daily: createDefaultDaily(),
     weekly: createDefaultWeekly(),
     powerRun: createDefaultPowerRun(),
+    halloweenEvent: createDefaultHalloweenEvent(),
     targetArena: createDefaultTargetArena(),
     allTime: createDefaultAllTime(),
     achievements: {},
@@ -1150,6 +1181,7 @@ function loadGameState() {
       daily: { ...createDefaultDaily(), ...(s.daily || {}) },
       weekly: { ...createDefaultWeekly(), ...(s.weekly || {}) },
       powerRun: { ...createDefaultPowerRun(), ...(s.powerRun || {}) },
+      halloweenEvent: { ...createDefaultHalloweenEvent(), ...(s.halloweenEvent || {}) },
       targetArena: { ...createDefaultTargetArena(), ...(s.targetArena || {}) },
       allTime: { ...createDefaultAllTime(), ...(s.allTime || {}) },
       achievements: s.achievements || {},
@@ -1249,6 +1281,99 @@ function getDateKeyWithOffset(offset) {
   date.setDate(date.getDate() + offset);
   const timezoneOffset = date.getTimezoneOffset() * 60000;
   return new Date(date.getTime() - timezoneOffset).toISOString().slice(0, 10);
+}
+
+function getDateKeyInTimeZone(timeZone) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+  } catch {
+    return getTodayKey();
+  }
+}
+
+function getHalloweenEventStatus() {
+  const date = getDateKeyInTimeZone(HALLOWEEN_EVENT.timeZone);
+  return { date, active: date >= HALLOWEEN_EVENT.startDate && date <= HALLOWEEN_EVENT.endDate, upcoming: date < HALLOWEEN_EVENT.startDate, ended: date > HALLOWEEN_EVENT.endDate };
+}
+
+function getHalloweenEventState() {
+  if (!gameState) return createDefaultHalloweenEvent();
+  const stored = gameState.halloweenEvent && typeof gameState.halloweenEvent === 'object' ? gameState.halloweenEvent : {};
+  const state = {
+    pumpkins: clampNumber(stored.pumpkins, 0, 999, 0),
+    claimed: Array.isArray(stored.claimed) ? [...new Set(stored.claimed.map(Number).filter(Number.isInteger))] : [],
+    dailyDate: /^\d{4}-\d{2}-\d{2}$/.test(String(stored.dailyDate || '')) ? String(stored.dailyDate) : '',
+    dailySources: { ...createDefaultHalloweenEvent().dailySources, ...(stored.dailySources || {}) }
+  };
+  for (const source of Object.keys(HALLOWEEN_EVENT.dailyCaps)) state.dailySources[source] = clampNumber(state.dailySources[source], 0, HALLOWEEN_EVENT.dailyCaps[source], 0);
+  gameState.halloweenEvent = state;
+  return state;
+}
+
+function awardHalloweenPumpkins(source, amount = 1) {
+  const status = getHalloweenEventStatus();
+  if (!status.active || !Object.prototype.hasOwnProperty.call(HALLOWEEN_EVENT.dailyCaps, source)) return 0;
+  const state = getHalloweenEventState();
+  if (state.dailyDate !== status.date) {
+    state.dailyDate = status.date;
+    state.dailySources = { case: 0, battle: 0, arena: 0 };
+  }
+  const available = Math.max(0, HALLOWEEN_EVENT.dailyCaps[source] - state.dailySources[source]);
+  const granted = Math.min(Math.max(0, Math.floor(amount)), available);
+  if (!granted) return 0;
+  state.dailySources[source] += granted;
+  state.pumpkins += granted;
+  return granted;
+}
+
+function renderHalloweenEvent() {
+  const root = document.getElementById('halloweenEvent');
+  if (!root) return;
+  const status = getHalloweenEventStatus();
+  if (!status.active || !gameState) {
+    root.innerHTML = '';
+    return;
+  }
+  const state = getHalloweenEventState();
+  const progress = Math.min(13, state.pumpkins);
+  const sourceLabel = (source, label) => `${label} ${state.dailySources[source]} / ${HALLOWEEN_EVENT.dailyCaps[source]}`;
+  const rewards = HALLOWEEN_REWARDS.map(reward => {
+    const claimed = state.claimed.includes(reward.pumpkins);
+    const ready = state.pumpkins >= reward.pumpkins && !claimed;
+    const statusText = claimed ? 'Забрано' : ready ? 'Забрати' : `${reward.pumpkins} 🎃`;
+    return `<button type="button" class="halloween-reward ${claimed ? 'is-claimed' : ready ? 'is-ready' : ''}" ${ready ? `data-halloween-claim="${reward.pumpkins}"` : 'disabled'}><span>${reward.pumpkins} 🎃</span><i class="fa-solid ${reward.icon}"></i><b>${escapeHtml(reward.title)}</b><em>${statusText}</em></button>`;
+  }).join('');
+  root.innerHTML = `<article class="halloween-event-card" aria-label="Halloween: Нічний дроп"><div class="halloween-event-top"><div class="halloween-pumpkin">🎃</div><div><p>18 ЖОВТНЯ — 3 ЛИСТОПАДА · КИЇВ</p><h2>HALLOWEEN: НІЧНИЙ ДРОП</h2><span>Збирай гарбузи за гру й забирай сезонні віртуальні нагороди.</span></div><div class="halloween-progress"><span>${progress} / 13 🎃</span><div><i style="width:${Math.round((progress / 13) * 100)}%"></i></div><small>Щоденний ліміт: 4</small></div></div><div class="halloween-event-body"><div class="halloween-sources"><span>${sourceLabel('case', 'Кейси')}</span><span>${sourceLabel('battle', 'Перемога в бою')}</span><span>${sourceLabel('arena', 'Тир 13+')}</span></div><div class="halloween-rewards">${rewards}</div></div></article>`;
+  root.querySelectorAll('[data-halloween-claim]').forEach(button => button.addEventListener('click', () => claimHalloweenReward(Number(button.dataset.halloweenClaim))));
+}
+
+function claimHalloweenReward(pumpkins) {
+  const status = getHalloweenEventStatus();
+  const state = getHalloweenEventState();
+  const reward = HALLOWEEN_REWARDS.find(item => item.pumpkins === pumpkins);
+  if (!status.active || !reward || state.claimed.includes(pumpkins) || state.pumpkins < pumpkins || !currentUser) return;
+  if (reward.type === 'credits') currentUser.balance = clampNumber(currentUser.balance + reward.amount, 0, MAX_STORED_BALANCE, DEMO_STARTING_BALANCE);
+  if (reward.type === 'ticket') gameState.caseTickets = getCaseTicketCount() + reward.amount;
+  if (reward.type === 'skin') {
+    const skin = CS2_SKINS.find(item => item.name === reward.skinName);
+    if (!skin) {
+      showToast('Halloween skin ще завантажується. Спробуй за мить.', 'warn');
+      return;
+    }
+    const item = makeDemoItem(skin, `-${HALLOWEEN_EVENT.id}`);
+    item.halloweenEvent = HALLOWEEN_EVENT.id;
+    userInventory.push(item);
+    renderInventoryGrid();
+    renderProfileInventory();
+  }
+  state.claimed.push(pumpkins);
+  saveState();
+  updateBalanceUI();
+  renderHalloweenEvent();
+  soundWin();
+  showToast(`Halloween: нагороду «${reward.title}» додано.`, 'success');
 }
 
 function getPowerRunState() {
@@ -1373,10 +1498,12 @@ function renderTargetArena() {
     return;
   }
   const arena = getTargetArenaState();
-  const compactAction = `<div class="target-arena-compact"><span><i class="fa-solid fa-coins"></i> Внески від ${formatCredits(TARGET_ARENA_STAKES[0])} · +220 мс за влучання</span><button type="button" data-arena-open><i class="fa-solid fa-crosshairs"></i> Відкрити тир</button></div>`;
+  const halloweenActive = getHalloweenEventStatus().active;
+  const arenaName = halloweenActive ? 'ГАРБУЗОВИЙ ТИР' : 'ЕЛІТНИЙ ТИР';
+  const compactAction = `<div class="target-arena-compact"><span><i class="fa-solid ${halloweenActive ? 'fa-ghost' : 'fa-coins'}"></i> Внески від ${formatCredits(TARGET_ARENA_STAKES[0])} · +220 мс за влучання</span><button type="button" data-arena-open><i class="fa-solid fa-crosshairs"></i> Відкрити тир</button></div>`;
   const fullControls = `<div class="target-arena-body"><div class="target-arena-stakes"><span>ОБЕРИ ВНЕСОК</span><div>${TARGET_ARENA_STAKES.map(stake => `<button type="button" data-arena-stake="${stake}" class="${targetArenaSelectedStake === stake ? 'is-selected' : ''}">${formatCredits(stake)}</button>`).join('')}</div><small>Невдала спроба не повертає PC. Тут немає реальних грошей чи призів.</small></div><div class="target-arena-rules"><span>ВИПЛАТА ЗА ВЛУЧАННЯ</span><div><b>0–8</b><b>9–12</b><b>13–16</b><b>17–20</b><b>21+</b></div><div><em>0%</em><em>40%</em><em>75%</em><em>110%</em><em>135%</em></div></div><div class="target-arena-actions"><button type="button" class="target-arena-start" data-arena-start><i class="fa-solid fa-play"></i>ПОЧАТИ ЗА ${formatCredits(targetArenaSelectedStake)}<small>без cooldown</small></button><button type="button" class="target-arena-collapse" data-arena-close>Згорнути</button></div></div>`;
-  root.innerHTML = `<article class="target-arena-card ${targetArenaExpanded ? 'is-expanded' : 'is-compact'}" aria-label="Елітний тир">
-    <div class="target-arena-head"><div class="target-arena-icon"><i class="fa-solid fa-crosshairs"></i></div><div><p>ДЛЯ ВЕЛИКОГО БАЛАНСУ</p><h2>ЕЛІТНИЙ ТИР</h2><span>15 секунд на рухомі мішені. Чим краща точність — тим більша частина ставки повертається.</span></div><div class="target-arena-record"><span>РЕКОРД</span><b>${arena.bestScore}</b><small>${arena.rounds} спроб</small></div></div>
+  root.innerHTML = `<article class="target-arena-card ${halloweenActive ? 'is-halloween' : ''} ${targetArenaExpanded ? 'is-expanded' : 'is-compact'}" aria-label="${arenaName}">
+    <div class="target-arena-head"><div class="target-arena-icon">${halloweenActive ? '🎃' : '<i class="fa-solid fa-crosshairs"></i>'}</div><div><p>${halloweenActive ? 'HALLOWEEN · ДО 3 ЛИСТОПАДА' : 'ДЛЯ ВЕЛИКОГО БАЛАНСУ'}</p><h2>${arenaName}</h2><span>15 секунд на рухомі мішені. Чим краща точність — тим більша частина ставки повертається.</span></div><div class="target-arena-record"><span>РЕКОРД</span><b>${arena.bestScore}</b><small>${arena.rounds} спроб</small></div></div>
     ${targetArenaExpanded ? fullControls : compactAction}
   </article>`;
   root.querySelector('[data-arena-open]')?.addEventListener('click', () => {
@@ -1396,7 +1523,9 @@ function renderTargetArena() {
 
 function renderActiveTargetArena(root) {
   clearTargetArenaTimers();
-  root.innerHTML = `<article class="target-arena-card is-active" aria-label="Елітний тир, активна спроба"><div class="target-arena-live-head"><div><p><i class="fa-solid fa-crosshairs"></i> ЕЛІТНИЙ ТИР · СПРОБА ТРИВАЄ</p><strong id="targetArenaTimer">15.0 с</strong></div><div><span>ВНЕСОК</span><b>${formatCredits(targetArenaSession.stake)}</b></div><div><span>ВЛУЧАННЯ</span><b id="targetArenaScore">${targetArenaSession.score}</b><small id="targetArenaBonus">+${(Number(targetArenaSession.bonusMs) || 0) / 1000} с</small></div></div><div class="target-arena-board" id="targetArenaBoard"><span class="target-arena-board-copy">Тисни по мішені</span><button type="button" class="target-arena-target" id="targetArenaTarget" aria-label="Влучити в мішень"><i class="fa-solid fa-crosshairs"></i></button></div><p class="target-arena-live-note">Кожне влучання додає +220 мс (до +5 с). Для прибутку потрібно щонайменше 17.</p></article>`;
+  const halloweenActive = getHalloweenEventStatus().active;
+  const liveName = halloweenActive ? 'ГАРБУЗОВИЙ ТИР' : 'ЕЛІТНИЙ ТИР';
+  root.innerHTML = `<article class="target-arena-card ${halloweenActive ? 'is-halloween' : ''} is-active" aria-label="${liveName}, активна спроба"><div class="target-arena-live-head"><div><p>${halloweenActive ? '🎃' : '<i class="fa-solid fa-crosshairs"></i>'} ${liveName} · СПРОБА ТРИВАЄ</p><strong id="targetArenaTimer">15.0 с</strong></div><div><span>ВНЕСОК</span><b>${formatCredits(targetArenaSession.stake)}</b></div><div><span>ВЛУЧАННЯ</span><b id="targetArenaScore">${targetArenaSession.score}</b><small id="targetArenaBonus">+${(Number(targetArenaSession.bonusMs) || 0) / 1000} с</small></div></div><div class="target-arena-board" id="targetArenaBoard"><span class="target-arena-board-copy">${halloweenActive ? 'Полюй на гарбузи' : 'Тисни по мішені'}</span><button type="button" class="target-arena-target" id="targetArenaTarget" aria-label="Влучити в мішень">${halloweenActive ? '🎃' : '<i class="fa-solid fa-crosshairs"></i>'}</button></div><p class="target-arena-live-note">Кожне влучання додає +220 мс (до +5 с). Для прибутку потрібно щонайменше 17.</p></article>`;
   const board = root.querySelector('#targetArenaBoard');
   const target = root.querySelector('#targetArenaTarget');
   const moveTarget = () => {
@@ -1468,16 +1597,18 @@ function finishTargetArena() {
   arena.totalSpent = clampNumber(arena.totalSpent + session.stake, 0, MAX_STORED_BALANCE, 0);
   arena.totalPayout = clampNumber(arena.totalPayout + payout, 0, MAX_STORED_BALANCE, 0);
   arena.lastPlayedAt = Date.now();
+  const halloweenPumpkins = session.score >= 13 ? awardHalloweenPumpkins('arena') : 0;
   currentUser.balance = clampNumber(currentUser.balance + payout, 0, MAX_STORED_BALANCE, DEMO_STARTING_BALANCE);
   targetArenaSession = null;
   clearTargetArenaTimers();
   saveState();
   updateBalanceUI();
   renderTargetArena();
+  if (halloweenPumpkins) renderHalloweenEvent();
   if (payout > session.stake) soundWin(); else soundLose();
   const net = payout - session.stake;
   const netLabel = net > 0 ? `прибуток +${formatCredits(net)}` : net < 0 ? `втрачено ${formatCredits(Math.abs(net))}` : 'повернення внеску';
-  showToast(`Тир: ${session.score} влучань · ${tier.label} · ${netLabel}.`, payout >= session.stake ? 'success' : 'warn');
+  showToast(`Тир: ${session.score} влучань · ${tier.label} · ${netLabel}${halloweenPumpkins ? ' · +1 🎃' : ''}.`, payout >= session.stake ? 'success' : 'warn');
 }
 
 function getBattlePassProgress() {
@@ -2209,6 +2340,7 @@ function applyPortableSave(data, { skipCloudAutoSync = false } = {}) {
     daily: { ...createDefaultDaily(), ...(portable.gameState.daily || {}) },
     weekly: { ...createDefaultWeekly(), ...(portable.gameState.weekly || {}) },
     powerRun: { ...createDefaultPowerRun(), ...(portable.gameState.powerRun || {}) },
+    halloweenEvent: { ...createDefaultHalloweenEvent(), ...(portable.gameState.halloweenEvent || {}) },
     targetArena: { ...createDefaultTargetArena(), ...(portable.gameState.targetArena || {}) },
     allTime: { ...createDefaultAllTime(), ...(portable.gameState.allTime || {}) },
     collectionRewards: portable.gameState.collectionRewards || {}
@@ -3612,6 +3744,7 @@ function renderGameHub() {
   if (!gameState) return;
   renderProfileProgress();
   renderPowerRun();
+  renderHalloweenEvent();
   renderTargetArena();
   renderBattlePass();
   renderDailyTasks();
@@ -5598,7 +5731,7 @@ function renderCaseCatalog() {
   // when the visitor opens the Cases page, then redraw with full themed pools.
   if (currentPage === 'case' && !completeSkinCatalogReady) void loadCompleteSkinCatalog();
 
-  const validEntries = Object.entries(CASE_TYPES).filter(([id, c]) => !c.aliasTo);
+  const validEntries = Object.entries(CASE_TYPES).filter(([id, c]) => !c.aliasTo && (!c.seasonal || (c.seasonal === HALLOWEEN_EVENT.id && getHalloweenEventStatus().active)));
   const filtered = validEntries.filter(([id, c]) => {
     if (currentCaseCategory === 'all') return true;
     return c.category === currentCaseCategory;
@@ -5708,6 +5841,11 @@ function updateCaseCostDisplay() {
 function openPowerCase(caseType = 'budget_covert') {
   let cfg = CASE_TYPES[caseType] || CASE_TYPES.budget_covert;
   if (cfg.aliasTo) cfg = CASE_TYPES[cfg.aliasTo] || cfg;
+
+  if (cfg.seasonal && (cfg.seasonal !== HALLOWEEN_EVENT.id || !getHalloweenEventStatus().active)) {
+    showToast('Цей сезонний кейс зараз закритий.', 'warn');
+    return;
+  }
 
   if (!currentUser || !gameState || isCaseOpening || isFreeCaseOpening || isRolling || pendingWager) return;
 
@@ -6026,6 +6164,7 @@ async function startCaseReel() {
   gameState.stats.cases += mult;
   gameState.daily.cases += mult;
   gameState.weekly.cases = (gameState.weekly.cases || 0) + mult;
+  const halloweenPumpkins = awardHalloweenPumpkins('case', mult);
   updateAllTimeOnCase();
   wonItems.forEach(it => {
     if ((it.price || 0) >= 50000) gameState.allTime.legendaryDrops = (gameState.allTime.legendaryDrops || 0) + 1;
@@ -6039,6 +6178,7 @@ async function startCaseReel() {
   updateAvatarBadge();
   saveState();
   renderGameHub();
+  if (halloweenPumpkins) showToast(`Halloween: +${halloweenPumpkins} 🎃 за кейс.`, 'success');
 
   if (isFast) {
     soundCase();
@@ -6685,6 +6825,7 @@ function startBattle() {
       pSlot?.classList.add('is-loser');
       addXp(XP_BATTLE_LOSS);
     }
+    const halloweenPumpkins = isPlayerWin ? awardHalloweenPumpkins('battle') : 0;
 
     gameState.rounds.unshift({
       at: Date.now(),
@@ -6704,6 +6845,7 @@ function startBattle() {
     renderProfileInventory();
     updateAvatarBadge();
     renderGameHub();
+    if (halloweenPumpkins) showToast('Halloween: +1 🎃 за перемогу в бою.', 'success');
     void syncCommunity();
 
     if (startBtn) startBtn.innerHTML = '<i class="fa-solid fa-coins mr-2"></i>КИНУТИ МОНЕТКУ';
@@ -7879,6 +8021,11 @@ window.addEventListener('DOMContentLoaded', () => {
   // Master interval timer for reset texts, daily roll, gift and free case cooldowns
   setInterval(() => {
     if (!gameState) return;
+    const halloweenDate = getHalloweenEventStatus().date;
+    if (halloweenEventDateKey !== halloweenDate) {
+      halloweenEventDateKey = halloweenDate;
+      renderGameHub();
+    }
     const prevD = gameState.daily.date;
     const today = getTodayKey();
     if (prevD !== today) {
