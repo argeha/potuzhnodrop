@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="/css/tailwind.css?v=5.8.5">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/css/admin.css?v=6.5.1">
+<link rel="stylesheet" href="/css/admin.css?v=6.6.0">
 </head>
 <body>
 <div class="admin-shell">
@@ -81,7 +81,7 @@
     <section class="panel game-panel" id="gamePanel" aria-labelledby="gameTitle">
       <div class="section-head">
         <div><p class="eyebrow">ВІРТУАЛЬНА ГРА</p><h2 id="gameTitle">Керування профілем</h2></div>
-        <span class="audit-lock"><i class="fa-solid fa-cloud"></i> Серверний профіль</span>
+        <span class="audit-lock"><i class="fa-brands fa-steam"></i> Серверний акаунт</span>
       </div>
       <p class="game-note">Обери гравця зі списку — усі зміни виконуються на сервері й одразу потрапляють до журналу. Кнопка «Мій профіль» відкриває твій профіль без ручного пошуку ID.</p>
       <section class="player-directory" aria-labelledby="playersTitle">
@@ -89,7 +89,7 @@
         <div class="directory-tools"><label>Пошук<input id="playerDirectorySearch" type="search" maxlength="100" autocomplete="off" placeholder="Нікнейм або ID"></label><button id="openMyProfileButton" class="small-button my-profile-button" type="button"><i class="fa-solid fa-user"></i> Мій профіль</button><button id="playerDirectoryRefresh" class="small-button" type="button"><i class="fa-solid fa-rotate"></i> Оновити</button></div>
         <div id="playerDirectoryList" class="player-directory-list" aria-live="polite"><p class="loading-line"><i class="fa-solid fa-spinner fa-spin"></i> Завантаження гравців…</p></div>
       </section>
-      <details class="direct-player-search"><summary>Відкрити профіль за Cloud Profile ID</summary><form class="profile-lookup" id="profileLookupForm"><label>Cloud Profile ID<input id="profileAccountId" type="text" maxlength="64" autocomplete="off" spellcheck="false" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required></label><button class="icon-button" id="profileLookupButton" type="submit"><i class="fa-solid fa-magnifying-glass"></i><span>Відкрити</span></button></form></details>
+      <details class="direct-player-search"><summary>Відкрити профіль за Steam ID або legacy Cloud ID</summary><form class="profile-lookup" id="profileLookupForm"><label>Steam ID / Cloud ID<input id="profileAccountId" type="text" maxlength="64" autocomplete="off" spellcheck="false" placeholder="7656119… або xxxxxxxx-xxxx-…" required></label><button class="icon-button" id="profileLookupButton" type="submit"><i class="fa-solid fa-magnifying-glass"></i><span>Відкрити</span></button></form></details>
       <div class="game-unavailable hidden" id="gameUnavailable"><i class="fa-solid fa-lock"></i> Твоя роль не має доступу до керування віртуальними профілями.</div>
       <div id="playerWorkspace" class="player-workspace hidden">
         <article class="player-summary" id="playerSummary"></article>
@@ -174,6 +174,6 @@
   </main>
 </div>
 <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
-<script src="/js/admin.js?v=6.5.1" defer></script>
+<script src="/js/admin.js?v=6.6.0" defer></script>
 </body>
 </html>

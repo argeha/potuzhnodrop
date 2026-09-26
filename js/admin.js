@@ -28,9 +28,10 @@
   const eventPreviewPanel = $('#eventPreviewPanel')
   let skinSearchTimer = null
   let playerDirectorySearchTimer = null
-  const CLOUD_ACCOUNT_STORAGE = 'potuzhno_v6_account'
-  const CLOUD_REFRESH_STORAGE = 'potuzhno_v6_admin_profile_refresh'
+  const GAME_ACCOUNT_STORAGE = 'potuzhno_v6_account'
+  const GAME_REFRESH_STORAGE = 'potuzhno_v6_admin_game_refresh'
   const CLOUD_PROFILE_ID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i
+  const STEAM_ID = /^\d{17}$/
 
   const actionLabels = {
     access_granted: 'створив(ла) доступ',
@@ -62,17 +63,19 @@
 
   const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[char]))
 
-  function localCloudProfileId() {
+  function localGameAccountId() {
     try {
-      const stored = JSON.parse(localStorage.getItem(CLOUD_ACCOUNT_STORAGE) || 'null')
-      const id = String(stored?.cloud?.id || '').trim()
-      return CLOUD_PROFILE_ID.test(id) ? id : ''
+      const stored = JSON.parse(localStorage.getItem(GAME_ACCOUNT_STORAGE) || 'null')
+      const steamId = String(stored?.steamId || '').trim()
+      if (STEAM_ID.test(steamId)) return steamId
+      const cloudId = String(stored?.cloud?.id || '').trim()
+      return CLOUD_PROFILE_ID.test(cloudId) ? cloudId : ''
     } catch {
       return ''
     }
   }
 
-  const isOwnPlayer = player => Boolean(player?.accountId && player.accountId === localCloudProfileId())
+  const isOwnPlayer = player => Boolean(player?.accountId && player.accountId === localGameAccountId())
 
   function showToast(message, type = 'success') {
     const toast = document.createElement('div')
@@ -274,8 +277,8 @@
     $('#skinManagerTitle').closest('.skin-manager').classList.toggle('is-readonly', !canGame('grant'))
     $('#skinSearch').disabled = !canGame('grant') || !state.player?.accountId
     $('#grantSkinButton').disabled = !canGame('grant') || !state.player?.accountId || !state.selectedSkinId
-    $('#openMyProfileButton').disabled = !canRead || !localCloudProfileId()
-    $('#openMyProfileButton').title = localCloudProfileId() ? 'Відкрити свій серверний профіль' : 'Спершу відкрий головний сайт: серверний профіль створюється автоматично.'
+    $('#openMyProfileButton').disabled = !canRead || !localGameAccountId()
+    $('#openMyProfileButton').title = localGameAccountId() ? 'Відкрити свій Steam-акаунт' : 'Спершу увійди через Steam на головному сайті.'
     updateProgressAmountInput()
   }
 
@@ -348,15 +351,16 @@
       return
     }
     playerDirectoryList.innerHTML = players.map(player => {
-      const cloudProfile = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(String(player.accountId || ''))
-      const detail = cloudProfile
-        ? `Cloud Profile · LVL ${compact(player.level)}${player.prestige ? ` · P${compact(player.prestige)}` : ''} · ${compact(player.inventoryTotal)} скінів`
+      const serverProfile = Boolean(player.accountId)
+      const profileLabel = player.accountType === 'steam' ? 'Steam-акаунт' : 'Cloud Profile'
+      const detail = serverProfile
+        ? `${profileLabel} · LVL ${compact(player.level)}${player.prestige ? ` · P${compact(player.prestige)}` : ''} · ${compact(player.inventoryTotal)} скінів`
         : `Відвідувач · LVL ${compact(player.level)}${player.prestige ? ` · P${compact(player.prestige)}` : ''} · останній вхід ${formatTime(player.updatedAt)}`
-      const active = cloudProfile && state.player?.accountId === player.accountId ? ' is-active' : ''
+      const active = serverProfile && state.player?.accountId === player.accountId ? ' is-active' : ''
       const blocked = player.blocked === true ? ' is-blocked' : ''
       const hidden = player.hidden === true
-      const card = `<i class="fa-solid ${cloudProfile ? 'fa-cloud' : 'fa-user-clock'}"></i><span><strong>${escapeHtml(player.name)}</strong><small>${escapeHtml(detail)}</small></span>${cloudProfile ? '<i class="fa-solid fa-chevron-right directory-open"></i>' : '<i class="fa-solid fa-eye directory-open"></i>'}`
-      return cloudProfile
+      const card = `<i class="${serverProfile && player.accountType === 'steam' ? 'fa-brands fa-steam' : `fa-solid ${serverProfile ? 'fa-cloud' : 'fa-user-clock'}`}"></i><span><strong>${escapeHtml(player.name)}</strong><small>${escapeHtml(detail)}</small></span>${serverProfile ? '<i class="fa-solid fa-chevron-right directory-open"></i>' : '<i class="fa-solid fa-eye directory-open"></i>'}`
+      return serverProfile
         ? `<button type="button" class="directory-player${active}${blocked}" data-player-id="${escapeHtml(player.accountId)}">${card}${blocked ? '<i class="fa-solid fa-ban blocked-mark" title="Заблоковано"></i>' : ''}${hidden ? '<i class="fa-solid fa-eye-slash blocked-mark" title="Приховано з сайту"></i>' : ''}</button>`
         : `<article class="directory-player is-visitor" title="Локальний профіль: зібрано мінімальні дані входу, без віддаленого редагування.">${card}</article>`
     }).join('')
@@ -440,7 +444,7 @@
       showPanel()
       setHeader('Захищена сесія', 'ready')
       void loadPlayerDirectory({ quiet: true })
-      const ownProfileId = localCloudProfileId()
+      const ownProfileId = localGameAccountId()
       if (ownProfileId) void loadPlayerById(ownProfileId, { quiet: true })
     } catch (error) {
       state.roles = []
@@ -549,7 +553,7 @@
       })
       state.player = data.player || state.player
       try {
-        localStorage.setItem(CLOUD_REFRESH_STORAGE, JSON.stringify({ accountId: state.player.accountId, revision: state.player.revision, at: Date.now() }))
+        localStorage.setItem(GAME_REFRESH_STORAGE, JSON.stringify({ accountId: state.player.accountId, revision: state.player.revision, at: Date.now() }))
       } catch {}
       await refreshAuditAfterGameAction()
       renderAll()
@@ -573,8 +577,8 @@
 
   $('#playerDirectoryRefresh').addEventListener('click', () => void loadPlayerDirectory())
   $('#openMyProfileButton').addEventListener('click', () => {
-    const accountId = localCloudProfileId()
-    if (!accountId) return showToast('Твій серверний профіль ще не створений. Відкрий головну сторінку — він створиться автоматично.', 'error')
+    const accountId = localGameAccountId()
+    if (!accountId) return showToast('Спершу увійди через Steam на головному сайті.', 'error')
     void loadPlayerById(accountId)
   })
   $('#playerDirectorySearch').addEventListener('input', () => {

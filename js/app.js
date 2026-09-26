@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 6.5 ============ */
+/* ============ ПОТУЖНО DROP 6.6 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -16,7 +16,8 @@ const STORAGE = {
   pendingWager: 'potuzhno_v6_pending_wager',
   fair: 'potuzhno_v9_fair',
   steamNudge: 'potuzhno_v10_steam_nudge',
-  adminProfileRefresh: 'potuzhno_v6_admin_profile_refresh'
+  adminProfileRefresh: 'potuzhno_v6_admin_profile_refresh',
+  adminGameRefresh: 'potuzhno_v6_admin_game_refresh'
 };
 
 const PAGES = ['upgrader', 'case', 'battle', 'royale', 'contract', 'tasks', 'profile', 'about'];
@@ -1521,7 +1522,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.5';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.6';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -2720,6 +2721,15 @@ function loadAccount() {
   if (account.steamId && !account.steamProfile) {
     account.steamProfile = normalizeSteamProfile(null, account.steamId);
   }
+  if (!isSteamAccount(account.steamAccount, account.steamId)) {
+    delete account.steamAccount;
+  } else {
+    account.steamAccount = {
+      steamId: String(account.steamId),
+      revision: Math.max(1, Math.floor(Number(account.steamAccount.revision))),
+      updatedAt: clampNumber(account.steamAccount.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0)
+    };
+  }
   if (!isPublicProfileIdentity(account.publicProfile)) {
     account.publicProfile = {
       id: makeUuid(),
@@ -2870,6 +2880,16 @@ function getTodayUtc() {
 
 function isCloudProfile(value) {
   return Boolean(value && UUID_PATTERN.test(String(value.id || '')) && SECRET_PATTERN.test(String(value.recoveryCode || '')));
+}
+
+function isSteamAccount(value, steamId = currentUser?.steamId || account?.steamId) {
+  return Boolean(
+    value
+    && /^\d{17}$/.test(String(steamId || ''))
+    && String(value.steamId || '') === String(steamId)
+    && Number.isSafeInteger(Number(value.revision))
+    && Number(value.revision) >= 1
+  );
 }
 
 function isPublicProfileIdentity(value) {
@@ -3096,23 +3116,38 @@ function setCloudBusy(busy) {
 }
 
 function renderCloudSyncUI() {
-  const connected = isCloudProfile(account?.cloud);
+  const steamId = currentUser?.steamId || account?.steamId || '';
+  const steamLinked = /^\d{17}$/.test(String(steamId));
+  const steamReady = steamLinked && steamAccountReady && isSteamAccount(account?.steamAccount, steamId);
   const status = document.getElementById('cloudSyncStatus');
   const details = document.getElementById('cloudSyncDetails');
   const create = document.getElementById('cloudCreateBtn');
   const save = document.getElementById('cloudSaveBtn');
   const load = document.getElementById('cloudLoadBtn');
   const code = document.getElementById('cloudRecoveryBtn');
-  if (status) status.textContent = connected
-    ? (cloudAutoSyncLastError ? 'Автозбереження очікує повторної спроби' : 'Автозбереження увімкнено')
-    : (cloudAutoSyncStarted ? 'Готуємо автозбереження…' : 'Лише локальне збереження');
-  if (details) details.textContent = connected
-    ? `${cloudAutoSyncLastError ? 'Попередня копія збережена; повторимо автоматично. ' : ''}Остання синхронізація: ${formatSyncTime(account.cloud.updatedAt)}. Прогрес зберігається після гри та при закритті вкладки. Код потрібен лише для іншого пристрою.`
-    : 'Першу серверну копію буде створено автоматично. Код відновлення потрібен лише, якщо захочеш перенести профіль на інший пристрій.';
-  if (create) create.classList.toggle('hidden', connected);
-  if (save) save.classList.toggle('hidden', !connected);
-  if (load) load.classList.toggle('hidden', !connected);
-  if (code) code.classList.toggle('hidden', !connected);
+  const legacyConnect = document.getElementById('cloudConnectLegacyBtn');
+  const steamLogin = document.getElementById('steamAccountLoginBtn');
+  const steamSave = document.getElementById('steamAccountSaveBtn');
+  const steamLoad = document.getElementById('steamAccountLoadBtn');
+  if (steamLinked) {
+    if (status) status.textContent = steamReady
+      ? (steamAccountAutoSyncLastError ? 'Steam-збереження очікує повторної спроби' : 'Steam-акаунт захищає прогрес')
+      : 'Підключаємо серверне збереження Steam…';
+    if (details) details.textContent = steamReady
+      ? `${steamAccountAutoSyncLastError ? 'Попередня копія лишається доступною. ' : ''}Steam ID ${steamId}. Остання синхронізація: ${formatSyncTime(account.steamAccount.updatedAt)}. Код відновлення не потрібен.`
+      : 'Після перевірки Steam ID сайт безпечно завантажить або створить твій серверний прогрес.';
+    if (steamLogin) steamLogin.classList.toggle('hidden', steamReady || steamConnectionState === 'checking' || steamConnectionState === 'syncing');
+    if (steamSave) steamSave.classList.toggle('hidden', !steamReady);
+    if (steamLoad) steamLoad.classList.toggle('hidden', !steamReady);
+    [create, save, load, code, legacyConnect].forEach(button => button?.classList.add('hidden'));
+    return;
+  }
+  if (steamLogin) steamLogin.classList.remove('hidden');
+  if (steamSave) steamSave.classList.add('hidden');
+  if (steamLoad) steamLoad.classList.add('hidden');
+  if (status) status.textContent = 'Увійди через Steam, щоб закріпити прогрес';
+  if (details) details.textContent = 'Steam ID підтверджується на сервері. Після входу прогрес буде автоматично прив’язаний до акаунта без кодів відновлення.';
+  [create, save, load, code, legacyConnect].forEach(button => button?.classList.add('hidden'));
 }
 
 function renderFairUI() {
@@ -3210,6 +3245,9 @@ const CLOUD_INVENTORY_ENCODING = 'compact-v1';
 const CLOUD_AUTOSAVE_DEBOUNCE_MS = 8_000;
 const CLOUD_AUTOSAVE_MIN_INTERVAL_MS = 18_000;
 const CLOUD_AUTOSAVE_RETRY_MS = 45_000;
+const STEAM_ACCOUNT_AUTOSAVE_DEBOUNCE_MS = 3_000;
+const STEAM_ACCOUNT_AUTOSAVE_MIN_INTERVAL_MS = 8_000;
+const STEAM_ACCOUNT_AUTOSAVE_RETRY_MS = 25_000;
 let cloudAutoSyncStarted = false;
 let cloudAutoSyncDirty = false;
 let cloudAutoSyncTimer = null;
@@ -3218,6 +3256,24 @@ let cloudAutoSyncPending = false;
 let cloudAutoSyncVersion = 0;
 let cloudAutoSyncLastAt = 0;
 let cloudAutoSyncLastError = '';
+let steamAccountReady = false;
+let steamAccountBootstrapPromise = null;
+let steamAccountAutoSyncStarted = false;
+let steamAccountAutoSyncDirty = false;
+let steamAccountAutoSyncTimer = null;
+let steamAccountAutoSyncInFlight = false;
+let steamAccountAutoSyncPending = false;
+let steamAccountAutoSyncVersion = 0;
+let steamAccountAutoSyncLastAt = 0;
+let steamAccountAutoSyncLastError = '';
+
+function hasSteamIdentity() {
+  return /^\d{17}$/.test(String(currentUser?.steamId || account?.steamId || ''));
+}
+
+function hasReadySteamAccount() {
+  return steamAccountReady && hasSteamIdentity() && isSteamAccount(account?.steamAccount);
+}
 
 function compactCloudInventoryItem(item, index = 0) {
   const normalized = normalizeStoredItem(item, index);
@@ -3289,7 +3345,169 @@ function expandCloudSave(data) {
   return { ...data, inventory: data.inventory.map(expandCloudInventoryItem).filter(Boolean) };
 }
 
-function applyPortableSave(data, { skipCloudAutoSync = false } = {}) {
+function setSteamAccountMeta(steamId, data = {}) {
+  if (!/^\d{17}$/.test(String(steamId || ''))) return;
+  account = {
+    ...(account || {}),
+    steamAccount: {
+      steamId: String(steamId),
+      revision: Math.max(1, Math.floor(Number(data.revision) || 1)),
+      updatedAt: clampNumber(data.updatedAt, 0, Number.MAX_SAFE_INTEGER, Date.now())
+    }
+  };
+}
+
+async function requestSteamAccount(action, { payload, revision, keepalive = false } = {}) {
+  const options = action === 'load'
+    ? { method: 'GET', credentials: 'same-origin', cache: 'no-store' }
+    : {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, payload, revision }),
+      ...(keepalive ? { keepalive: true } : {})
+    };
+  return requestJson('/api/steam/account', options, 12_000);
+}
+
+function buildSteamAccountSave() {
+  const snapshot = buildCloudSave();
+  const steamId = String(currentUser?.steamId || account?.steamId || '');
+  if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
+  return {
+    ...snapshot,
+    version: '6.6-steam',
+    account: {
+      ...snapshot.account,
+      steamId,
+      steamProfile: normalizeSteamProfile(currentUser?.steamProfile || account?.steamProfile, steamId)
+    }
+  };
+}
+
+async function createSteamAccount({ silent = false } = {}) {
+  const steamId = String(currentUser?.steamId || account?.steamId || '');
+  if (!/^\d{17}$/.test(steamId)) return false;
+  try {
+    const data = await requestSteamAccount('create', { payload: buildSteamAccountSave() });
+    setSteamAccountMeta(steamId, data);
+    steamAccountAutoSyncLastError = '';
+    saveState({ skipCloudAutoSync: true, skipSteamAutoSync: true });
+    renderCloudSyncUI();
+    if (!silent) showToast('Прогрес прив’язано до Steam-акаунта.', 'success');
+    return true;
+  } catch (error) {
+    if (!silent) showToast(error?.message || 'Не вдалося створити Steam-збереження.', 'error');
+    return false;
+  }
+}
+
+async function loadSteamAccount({ silent = false } = {}) {
+  const steamId = String(currentUser?.steamId || account?.steamId || '');
+  if (!/^\d{17}$/.test(steamId)) {
+    if (!silent) startSteamLogin();
+    return false;
+  }
+  const profile = normalizeSteamProfile(currentUser?.steamProfile || account?.steamProfile, steamId) || fallbackSteamProfile(steamId);
+  try {
+    const data = await requestSteamAccount('load');
+    applyPortableSave(data.payload, { skipCloudAutoSync: true, skipSteamAutoSync: true });
+    // A stored game snapshot is never allowed to replace the Steam identity
+    // that has just been verified by the server session.
+    applySteamIdentity(steamId, profile, { skipAutoSync: true });
+    setSteamAccountMeta(steamId, data);
+    steamAccountAutoSyncLastError = '';
+    saveState({ skipCloudAutoSync: true, skipSteamAutoSync: true });
+    renderCloudSyncUI();
+    if (!silent) showToast('Прогрес відновлено зі Steam-акаунта.', 'success');
+    return true;
+  } catch (error) {
+    if (!silent) showToast(error?.message || 'Не вдалося завантажити Steam-прогрес.', 'error');
+    throw error;
+  }
+}
+
+async function saveSteamAccount({ silent = false, keepalive = false } = {}) {
+  if (!hasReadySteamAccount()) {
+    if (!silent) showToast('Зачекай, доки Steam-акаунт підключиться.', 'info');
+    return false;
+  }
+  const steamId = String(currentUser?.steamId || account?.steamId || '');
+  try {
+    const body = buildSteamAccountSave();
+    const data = await requestSteamAccount('save', {
+      payload: body,
+      revision: Number(account.steamAccount.revision),
+      keepalive: keepalive && new TextEncoder().encode(JSON.stringify(body)).byteLength <= 60_000
+    });
+    setSteamAccountMeta(steamId, data);
+    steamAccountAutoSyncLastError = '';
+    saveState({ skipCloudAutoSync: true, skipSteamAutoSync: true });
+    renderCloudSyncUI();
+    if (!silent) showToast('Прогрес збережено у Steam-акаунті.', 'success');
+    return true;
+  } catch (error) {
+    if (error?.code === 'player_blocked') {
+      setProfileModeration(error.moderation);
+      steamAccountAutoSyncDirty = false;
+      steamAccountAutoSyncLastError = '';
+      renderCloudSyncUI();
+      if (!silent) showToast(error?.message || 'Профіль заблоковано.', 'warn');
+      return false;
+    }
+    if (error?.status === 409) {
+      steamAccountAutoSyncLastError = 'Є новіша версія на іншому пристрої';
+      steamAccountAutoSyncDirty = false;
+      renderCloudSyncUI();
+      if (!silent) showToast('На іншому пристрої є новіший прогрес. Натисни «Відновити», щоб безпечно його завантажити.', 'warn');
+      return false;
+    }
+    steamAccountAutoSyncLastError = 'Steam-збереження тимчасово недоступне';
+    renderCloudSyncUI();
+    if (!silent) showToast(error?.message || 'Не вдалося зберегти Steam-прогрес.', 'error');
+    return false;
+  }
+}
+
+async function bootstrapSteamAccount(profile, { announce = false } = {}) {
+  const steamId = String(profile?.steamId || currentUser?.steamId || account?.steamId || '');
+  if (!/^\d{17}$/.test(steamId)) return false;
+  if (steamAccountBootstrapPromise) return steamAccountBootstrapPromise;
+  steamAccountReady = false;
+  renderCloudSyncUI();
+  steamAccountBootstrapPromise = (async () => {
+    try {
+      await loadSteamAccount({ silent: true });
+      steamAccountReady = true;
+      startSteamAccountAutoSync();
+      renderCloudSyncUI();
+      if (announce) showToast('Steam-акаунт підключено: прогрес доступний на будь-якому пристрої.', 'success');
+      return true;
+    } catch (error) {
+      if (error?.status !== 404) throw error;
+      const created = await createSteamAccount({ silent: true });
+      // Two fresh tabs can complete Steam login together. In that case the
+      // second create is rejected, then safely adopts the first saved copy.
+      if (!created) await loadSteamAccount({ silent: true });
+      steamAccountReady = true;
+      startSteamAccountAutoSync();
+      renderCloudSyncUI();
+      if (announce) showToast('Steam-акаунт створено: цей прогрес тепер прив’язаний до Steam.', 'success');
+      return true;
+    }
+  })().catch(error => {
+    steamAccountReady = false;
+    steamAccountAutoSyncLastError = error?.message || 'Steam-збереження тимчасово недоступне';
+    renderCloudSyncUI();
+    if (announce) showToast(steamAccountAutoSyncLastError, 'warn');
+    return false;
+  }).finally(() => {
+    steamAccountBootstrapPromise = null;
+  });
+  return steamAccountBootstrapPromise;
+}
+
+function applyPortableSave(data, { skipCloudAutoSync = false, skipSteamAutoSync = false } = {}) {
   const portable = expandCloudSave(data);
   if (!portable || typeof portable !== 'object' || !Array.isArray(portable.inventory) || !portable.gameState || typeof portable.gameState !== 'object') {
     throw new Error('Bad format');
@@ -3350,7 +3568,7 @@ function applyPortableSave(data, { skipCloudAutoSync = false } = {}) {
   }
   ensureDailyState();
   ensureWeeklyState();
-  saveState({ skipCloudAutoSync });
+  saveState({ skipCloudAutoSync, skipSteamAutoSync });
   updateBalanceUI();
   renderInventoryGrid();
   renderProfileInventory();
@@ -3461,7 +3679,7 @@ async function loadCloudProfile({ silent = false } = {}) {
 }
 
 function scheduleCloudAutoSync({ urgent = false, delay = null } = {}) {
-  if (!cloudAutoSyncStarted || !cloudAutoSyncDirty || !account) return;
+  if (!cloudAutoSyncStarted || !cloudAutoSyncDirty || !account || hasSteamIdentity()) return;
   if (cloudAutoSyncTimer) window.clearTimeout(cloudAutoSyncTimer);
   const elapsed = Date.now() - cloudAutoSyncLastAt;
   const intervalDelay = urgent ? 0 : Math.max(CLOUD_AUTOSAVE_DEBOUNCE_MS, CLOUD_AUTOSAVE_MIN_INTERVAL_MS - elapsed);
@@ -3473,7 +3691,7 @@ function scheduleCloudAutoSync({ urgent = false, delay = null } = {}) {
 }
 
 function queueCloudAutoSync() {
-  if (!cloudAutoSyncStarted || !account) return;
+  if (!cloudAutoSyncStarted || !account || hasSteamIdentity()) return;
   cloudAutoSyncDirty = true;
   cloudAutoSyncVersion += 1;
   scheduleCloudAutoSync();
@@ -3481,6 +3699,10 @@ function queueCloudAutoSync() {
 
 async function syncCloudProfileAutomatically({ finalAttempt = false } = {}) {
   if (!cloudAutoSyncStarted || !cloudAutoSyncDirty || !account) return false;
+  if (hasSteamIdentity()) {
+    cloudAutoSyncDirty = false;
+    return false;
+  }
   if (cloudAutoSyncInFlight) {
     cloudAutoSyncPending = true;
     return false;
@@ -3517,8 +3739,9 @@ async function syncCloudProfileAutomatically({ finalAttempt = false } = {}) {
 
 function startCloudAutoSync() {
   if (cloudAutoSyncStarted) return;
-  cloudAutoSyncStarted = true;
   renderCloudSyncUI();
+  if (hasSteamIdentity()) return;
+  cloudAutoSyncStarted = true;
   queueCloudAutoSync();
 
   const refreshFromAdminChange = () => {
@@ -3544,6 +3767,85 @@ function startCloudAutoSync() {
   window.addEventListener('pagehide', () => {
     if (cloudAutoSyncDirty) void syncCloudProfileAutomatically({ finalAttempt: true });
   });
+}
+
+function scheduleSteamAccountAutoSync({ urgent = false, delay = null } = {}) {
+  if (!hasReadySteamAccount() || !steamAccountAutoSyncDirty) return;
+  if (steamAccountAutoSyncTimer) window.clearTimeout(steamAccountAutoSyncTimer);
+  const elapsed = Date.now() - steamAccountAutoSyncLastAt;
+  const intervalDelay = urgent ? 0 : Math.max(STEAM_ACCOUNT_AUTOSAVE_DEBOUNCE_MS, STEAM_ACCOUNT_AUTOSAVE_MIN_INTERVAL_MS - elapsed);
+  const wait = Number.isFinite(delay) ? Math.max(0, delay) : intervalDelay;
+  steamAccountAutoSyncTimer = window.setTimeout(() => {
+    steamAccountAutoSyncTimer = null;
+    void syncSteamAccountAutomatically({ finalAttempt: urgent });
+  }, wait);
+}
+
+function queueSteamAccountAutoSync() {
+  if (!hasReadySteamAccount()) return;
+  steamAccountAutoSyncDirty = true;
+  steamAccountAutoSyncVersion += 1;
+  scheduleSteamAccountAutoSync();
+}
+
+async function syncSteamAccountAutomatically({ finalAttempt = false } = {}) {
+  if (!hasReadySteamAccount() || !steamAccountAutoSyncDirty) return false;
+  if (steamAccountAutoSyncInFlight) {
+    steamAccountAutoSyncPending = true;
+    return false;
+  }
+  steamAccountAutoSyncInFlight = true;
+  const snapshotVersion = steamAccountAutoSyncVersion;
+  let synced = false;
+  try {
+    synced = await saveSteamAccount({ silent: true, keepalive: finalAttempt });
+    if (synced) {
+      steamAccountAutoSyncLastAt = Date.now();
+      steamAccountAutoSyncLastError = '';
+      if (steamAccountAutoSyncVersion === snapshotVersion) steamAccountAutoSyncDirty = false;
+      renderCloudSyncUI();
+      return true;
+    }
+    return false;
+  } finally {
+    steamAccountAutoSyncInFlight = false;
+    if (steamAccountAutoSyncPending) {
+      steamAccountAutoSyncPending = false;
+      scheduleSteamAccountAutoSync({ urgent: finalAttempt });
+    } else if (!synced && steamAccountAutoSyncDirty && !/іншому пристрої/i.test(steamAccountAutoSyncLastError)) {
+      scheduleSteamAccountAutoSync({ delay: STEAM_ACCOUNT_AUTOSAVE_RETRY_MS });
+    } else if (steamAccountAutoSyncDirty) {
+      scheduleSteamAccountAutoSync();
+    }
+  }
+}
+
+function startSteamAccountAutoSync() {
+  if (steamAccountAutoSyncStarted) return;
+  steamAccountAutoSyncStarted = true;
+  const refreshFromAdminChange = () => {
+    if (!hasReadySteamAccount()) return;
+    try {
+      const change = JSON.parse(localStorage.getItem(STORAGE.adminGameRefresh) || 'null');
+      const steamId = String(currentUser?.steamId || account?.steamId || '');
+      if (change?.accountId !== steamId || Number(change?.revision) <= Number(account?.steamAccount?.revision || 0)) return;
+      void loadSteamAccount({ silent: true }).then(loaded => {
+        if (loaded) showToast('Steam-профіль оновлено адміністрацією.', isProfileBlocked() ? 'warn' : 'info');
+      });
+    } catch {}
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && steamAccountAutoSyncDirty) void syncSteamAccountAutomatically({ finalAttempt: true });
+    if (!document.hidden) refreshFromAdminChange();
+  });
+  window.addEventListener('pagehide', () => {
+    if (steamAccountAutoSyncDirty) void syncSteamAccountAutomatically({ finalAttempt: true });
+  });
+  window.addEventListener('storage', event => {
+    if (event.key === STORAGE.adminGameRefresh) refreshFromAdminChange();
+  });
+  window.addEventListener('pageshow', refreshFromAdminChange);
+  refreshFromAdminChange();
 }
 
 function openCloudRecoveryModal() {
@@ -3921,7 +4223,7 @@ function renderCanvas(chancePercent, pointerAngle = 0) {
   }
 }
 
-function saveState({ skipCloudAutoSync = false } = {}) {
+function saveState({ skipCloudAutoSync = false, skipSteamAutoSync = false } = {}) {
   if (currentUser) {
     if (currentUser.steamId) localStorage.setItem(STORAGE.steamId, currentUser.steamId);
     localStorage.setItem(STORAGE.balance, String(currentUser.balance));
@@ -3931,6 +4233,7 @@ function saveState({ skipCloudAutoSync = false } = {}) {
   if (gameState) localStorage.setItem(STORAGE.game, JSON.stringify(gameState));
   if (account) localStorage.setItem(STORAGE.account, JSON.stringify(account));
   queuePublicProfilePublish();
+  if (!skipSteamAutoSync) queueSteamAccountAutoSync();
   if (!skipCloudAutoSync) queueCloudAutoSync();
 }
 
@@ -4518,7 +4821,11 @@ function getCommunityPlayerPayload() {
   return {
     name: cleanText(account?.nick || currentUser?.name || 'Гравець', 24) || 'Гравець',
     profileId: account?.publicProfile?.enabled ? account.publicProfile.id : '',
-    cloudProfileId: isCloudProfile(account?.cloud) ? account.cloud.id : '',
+    // Kept under the existing field name for compatibility with community
+    // records, but Steam ID is now the primary server account identity.
+    cloudProfileId: hasReadySteamAccount()
+      ? String(currentUser?.steamId || account?.steamId || '')
+      : (isCloudProfile(account?.cloud) ? account.cloud.id : ''),
     xp: clampNumber(gameState?.xp, 0, 9_999_999, 0),
     wins: clampNumber(stats.wins, 0, 9_999_999, 0),
     rounds: clampNumber(stats.rounds, 0, 9_999_999, 0),
@@ -5211,7 +5518,8 @@ async function fetchSteamSession() {
 async function restoreSteamSession() {
   try {
     const session = await fetchSteamSession();
-    applySteamIdentity(session.profile.steamId, session.profile);
+    applySteamIdentity(session.profile.steamId, session.profile, { skipAutoSync: true });
+    await bootstrapSteamAccount(session.profile);
     setSteamConnectionState('connected');
     return true;
   } catch (error) {
@@ -5222,13 +5530,14 @@ async function restoreSteamSession() {
   }
 }
 
-function applySteamIdentity(steamId, rawProfile) {
+function applySteamIdentity(steamId, rawProfile, { skipAutoSync = false } = {}) {
   const profile = normalizeSteamProfile(rawProfile, steamId) || fallbackSteamProfile(steamId);
   const currentNick = cleanText(account?.nick, 24);
   const useSteamName = !currentNick || currentNick.startsWith('Гравець_') || /^Steam_\d{4}$/.test(currentNick);
   const importRecord = getSteamImportRecord(steamId);
   const steamImports = getSteamImportMap();
   steamImports[steamId] = importRecord;
+  const sameSteamAccount = isSteamAccount(account?.steamAccount, steamId) ? account.steamAccount : null;
   account = {
     ...(account || {}),
     steamId,
@@ -5237,6 +5546,8 @@ function applySteamIdentity(steamId, rawProfile) {
     steamImports,
     nick: useSteamName ? profile.name : currentNick
   };
+  if (sameSteamAccount) account.steamAccount = sameSteamAccount;
+  else delete account.steamAccount;
   currentUser = {
     ...(currentUser || {}),
     steamId,
@@ -5249,7 +5560,7 @@ function applySteamIdentity(steamId, rawProfile) {
   localStorage.removeItem(STORAGE.steamNudge);
   applyLoggedInUI();
   updateAccountUI();
-  saveState();
+  saveState({ skipCloudAutoSync: true, skipSteamAutoSync: skipAutoSync });
 }
 
 function importSteamItems(steamId, items) {
@@ -5407,6 +5718,10 @@ async function disconnectSteam() {
       avatar: '',
       name: account.nick
     };
+    steamAccountReady = false;
+    steamAccountAutoSyncDirty = false;
+    if (steamAccountAutoSyncTimer) window.clearTimeout(steamAccountAutoSyncTimer);
+    steamAccountAutoSyncTimer = null;
     localStorage.removeItem(STORAGE.steamId);
     setSteamConnectionState('disconnected');
     saveState();
@@ -5444,7 +5759,14 @@ async function processSteamCallback() {
   history.replaceState({}, '', `${location.pathname}${UUID_PATTERN.test(String(profileId || '')) ? `?profile=${encodeURIComponent(profileId)}` : ''}${location.hash}`);
   closeModal('steamModal');
   showToast('Steam підтверджено. Підключаємо профіль…', 'success');
-  if (/^\d{17}$/.test(String(sid || ''))) applySteamIdentity(sid, fallbackSteamProfile(sid));
+  if (/^\d{17}$/.test(String(sid || ''))) applySteamIdentity(sid, fallbackSteamProfile(sid), { skipAutoSync: true });
+  try {
+    const session = await fetchSteamSession();
+    applySteamIdentity(session.profile.steamId, session.profile, { skipAutoSync: true });
+    await bootstrapSteamAccount(session.profile, { announce: true });
+  } catch (error) {
+    showToast(error?.message || 'Не вдалося підключити Steam-збереження.', 'warn');
+  }
   await syncSteamInventory();
   return true;
 }
@@ -8955,7 +9277,6 @@ window.addEventListener('DOMContentLoaded', () => {
   startMarketTicker();
   startLiveFeedSimulation();
   startPresenceTracking();
-  startCloudAutoSync();
   updateTopupUI();
   renderCaseTopDrops();
   updateFreeCaseBtn();
@@ -9118,6 +9439,8 @@ window.saveAccountNick = saveAccountNick;
 window.createCloudProfile = createCloudProfile;
 window.saveCloudProfile = saveCloudProfile;
 window.loadCloudProfile = loadCloudProfile;
+window.saveSteamAccount = saveSteamAccount;
+window.loadSteamAccount = loadSteamAccount;
 window.openCloudRecoveryModal = openCloudRecoveryModal;
 window.copyCloudRecoveryCode = copyCloudRecoveryCode;
 window.openCloudConnectModal = openCloudConnectModal;

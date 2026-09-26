@@ -177,6 +177,17 @@ function isPayload(value) {
   }
 }
 
+function gameAccountType(accountId) {
+  const id = cleanText(accountId, 64)
+  if (ID.test(id)) return 'cloud'
+  if (/^\d{17}$/.test(id)) return 'steam'
+  return ''
+}
+
+function isGameAccountId(accountId) {
+  return Boolean(gameAccountType(accountId))
+}
+
 function cleanImage(value) {
   try {
     const url = new URL(cleanText(value, 2048))
@@ -507,7 +518,7 @@ function normalizeCommunityPlayer(value, visitorHash, now) {
     id: visitorHash,
     name,
     profileId: ID.test(profileId) ? profileId : '',
-    cloudProfileId: ID.test(cloudProfileId) ? cloudProfileId : '',
+    cloudProfileId: isGameAccountId(cloudProfileId) ? cloudProfileId : '',
     xp: boundedInteger(value?.xp, 0, 9_999_999),
     wins: boundedInteger(value?.wins, 0, 9_999_999),
     rounds: boundedInteger(value?.rounds, 0, 9_999_999),
@@ -677,7 +688,7 @@ function safeAdminInventoryItem(value, index = 0) {
   }
 }
 
-function adminProfileSummary(accountId, entry) {
+function adminProfileSummary(accountId, entry, accountType = gameAccountType(accountId)) {
   const payload = entry?.payload && typeof entry.payload === 'object' && !Array.isArray(entry.payload) ? entry.payload : null
   if (!payload) return null
   const gameState = payload.gameState && typeof payload.gameState === 'object' && !Array.isArray(payload.gameState) ? payload.gameState : {}
@@ -687,6 +698,7 @@ function adminProfileSummary(accountId, entry) {
   const xp = boundedInteger(gameState.xp, 0, ADMIN_GAME_MAX_XP)
   return {
     accountId,
+    accountType,
     name: cleanText(payload.account?.nick, 24) || 'Гравець',
     updatedAt: boundedInteger(entry.updatedAt, 0, Number.MAX_SAFE_INTEGER),
     revision: boundedInteger(entry.revision, 1, Number.MAX_SAFE_INTEGER, 1),
@@ -707,11 +719,12 @@ function adminProfileSummary(accountId, entry) {
   }
 }
 
-function adminPlayerDirectoryEntry(accountId, entry) {
-  const summary = adminProfileSummary(accountId, entry)
+function adminPlayerDirectoryEntry(accountId, entry, accountType = gameAccountType(accountId)) {
+  const summary = adminProfileSummary(accountId, entry, accountType)
   if (!summary) return null
   return {
     accountId: summary.accountId,
+    accountType: summary.accountType,
     visitorId: '',
     name: summary.name,
     level: summary.level,
@@ -749,13 +762,14 @@ function adminVisitorDirectoryEntry(visitorHash, player, firstSeenAt = 0) {
 function normalizeAdminPlayerDirectoryEntry(value) {
   const accountId = cleanText(value?.accountId, 64)
   const visitorId = cleanText(value?.visitorId, 64).toLowerCase()
-  const hasCloudProfile = ID.test(accountId)
+  const accountType = gameAccountType(accountId)
   const hasVisitor = /^[a-f0-9]{64}$/i.test(visitorId)
-  if (!hasCloudProfile && !hasVisitor) return null
+  if (!accountType && !hasVisitor) return null
   const updatedAt = boundedInteger(value?.updatedAt, 0, Number.MAX_SAFE_INTEGER)
   const firstSeenAt = boundedInteger(value?.firstSeenAt, 0, updatedAt || Number.MAX_SAFE_INTEGER, updatedAt)
   return {
-    accountId: hasCloudProfile ? accountId : '',
+    accountId: accountType ? accountId : '',
+    accountType,
     visitorId: hasVisitor ? visitorId : '',
     name: cleanText(value?.name, 24) || 'Гравець',
     level: boundedInteger(value?.level, 1, 99_999, 1),
@@ -989,6 +1003,7 @@ export class PotuzhnoState {
       // These routes are reachable only through a Durable Object stub. The public
       // Worker never dispatches /__internal/* to this class.
       if (path === '/__internal/steam-session') return await this.internalSteamSession(request)
+      if (path === '/__internal/steam-account') return await this.internalSteamAccount(request)
       if (path === '/__internal/migrate-profile') return await this.internalProfileMigration(request)
       if (path === '/__internal/migrate-public-profile') return await this.internalPublicProfileMigration(request)
       if (path === '/__internal/profile-visibility') return await this.internalProfileVisibility(request)
@@ -1006,6 +1021,7 @@ export class PotuzhnoState {
       if (path === '/api/community') return await this.community(request)
       if (path === '/api/steam/auth') return await this.steamAuth(request)
       if (path === '/api/steam/session') return await this.steamSession(request)
+      if (path === '/api/steam/account') return await this.steamAccount(request)
       if (path === '/api/steam/logout') return await this.steamLogout(request)
       if (path === '/api/steam/profile') return await this.steamProfile(request)
       if (path === '/api/steam/avatar') return await this.steamAvatar(request)
@@ -1041,6 +1057,79 @@ export class PotuzhnoState {
       expiresAt: Number(session.expiresAt),
     })
     return json({ stored: true })
+  }
+
+  // A Steam account is deliberately stored in a stable object named after the
+  // verified Steam ID, not in the short-lived browser-session object. The
+  // browser never supplies a Steam ID for this endpoint: the session object
+  // forwards the ID only after reading its HttpOnly Steam session cookie.
+  async internalSteamAccount(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request)
+    } catch (error) {
+      return json({ error: error instanceof RangeError ? error.message : 'Некоректний запит.' }, error instanceof RangeError ? 413 : 400)
+    }
+    const steamId = String(body?.steamId || '')
+    const action = String(body?.action || '')
+    if (!/^\d{17}$/.test(steamId)) return json({ error: 'Некоректний Steam-акаунт.' }, 400)
+
+    const key = 'steam-account'
+    const entry = await this.storage.get(key)
+    if (entry && entry.steamId !== steamId) return json({ error: 'Помилка ізоляції Steam-акаунта.' }, 403)
+
+    if (action === 'load') {
+      if (!entry || !isPayload(entry.payload)) return json({ error: 'Steam-акаунт ще не має збереження.' }, 404)
+      await this.indexGameProfile(steamId, entry, 'steam')
+      return json({ payload: entry.payload, updatedAt: entry.updatedAt, revision: Math.max(1, Math.floor(Number(entry.revision) || 1)) })
+    }
+
+    if (action === 'create') {
+      if (!isPayload(body?.payload)) return json({ error: 'Некоректне збереження.' }, 400)
+      const created = await this.storage.transaction(async transaction => {
+        const current = await transaction.get(key)
+        if (current) return null
+        const next = { version: 1, steamId, revision: 1, payload: body.payload, createdAt: Date.now(), updatedAt: Date.now() }
+        await transaction.put(key, next)
+        return next
+      })
+      if (!created) return json({ error: 'Steam-акаунт уже має збереження.' }, 409)
+      await this.indexGameProfile(steamId, created, 'steam')
+      return json({ created: true, updatedAt: created.updatedAt, revision: created.revision })
+    }
+
+    if (action !== 'save' || !isPayload(body?.payload)) return json({ error: 'Некоректне збереження.' }, 400)
+    const expectedRevision = Number(body?.revision)
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1) return json({ error: 'Локальна версія застаріла. Спочатку завантаж актуальний Steam-прогрес.' }, 409)
+    const saved = await this.storage.transaction(async transaction => {
+      const current = await transaction.get(key)
+      if (!current || current.steamId !== steamId || !isPayload(current.payload)) return { error: 'Steam-акаунт не знайдено.', status: 404 }
+      const revision = Math.max(1, Math.floor(Number(current.revision) || 1))
+      const moderation = adminProfileModeration(current.payload?.moderation, Number(current.updatedAt) || Date.now())
+      if (moderation.blocked) {
+        return {
+          error: `Профіль заблоковано. Причина: ${moderation.reason}`,
+          code: 'player_blocked',
+          moderation,
+          status: 423,
+        }
+      }
+      if (revision !== expectedRevision) {
+        return {
+          error: 'Прогрес змінився на іншому пристрої. Завантажуємо актуальну версію, щоб нічого не перетерти.',
+          status: 409,
+          revision,
+        }
+      }
+      const updatedAt = Date.now()
+      const next = { ...current, version: 1, revision: revision + 1, payload: body.payload, updatedAt }
+      await transaction.put(key, next)
+      return { updatedAt, revision: next.revision, entry: next }
+    })
+    if (saved.error) return json({ error: saved.error, code: saved.code, moderation: saved.moderation, revision: saved.revision }, saved.status)
+    await this.indexGameProfile(steamId, saved.entry, 'steam')
+    return json({ updatedAt: saved.updatedAt, revision: saved.revision })
   }
 
   async internalProfileMigration(request) {
@@ -1090,14 +1179,15 @@ export class PotuzhnoState {
       return json({ error: 'Некоректний запит до профілю.' }, 400)
     }
     const accountId = String(body?.accountId || '')
-    if (!ID.test(accountId)) return json({ error: 'Некоректний Cloud Profile ID.' }, 400)
-    const key = `profile:${accountId}`
+    const accountType = gameAccountType(accountId)
+    if (!accountType) return json({ error: 'Некоректний ID гравця.' }, 400)
+    const key = accountType === 'steam' ? 'steam-account' : `profile:${accountId}`
     const action = cleanText(body?.action, 24)
     if (action === 'summary') {
       const entry = await this.storage.get(key)
-      const player = adminProfileSummary(accountId, entry)
-      if (!player) return json({ error: 'Хмарний профіль не знайдено.' }, 404)
-      await this.indexCloudProfile(accountId, entry)
+      const player = adminProfileSummary(accountId, entry, accountType)
+      if (!player) return json({ error: 'Профіль гравця не знайдено.' }, 404)
+      await this.indexGameProfile(accountId, entry, accountType)
       return json({ player })
     }
     if (action !== 'mutate') return json({ error: 'Невідома дія над профілем.' }, 400)
@@ -1105,7 +1195,7 @@ export class PotuzhnoState {
     const result = await this.storage.transaction(async transaction => {
       const entry = await transaction.get(key)
       const payload = entry?.payload && typeof entry.payload === 'object' && !Array.isArray(entry.payload) ? entry.payload : null
-      if (!entry || !payload) return { error: 'Хмарний профіль не знайдено.', status: 404 }
+      if (!entry || !payload || (accountType === 'steam' && entry.steamId !== accountId)) return { error: 'Профіль гравця не знайдено.', status: 404 }
       const next = structuredClone(payload)
       const gameState = next.gameState && typeof next.gameState === 'object' && !Array.isArray(next.gameState) ? next.gameState : {}
       next.gameState = gameState
@@ -1223,17 +1313,17 @@ export class PotuzhnoState {
       const updatedAt = Date.now()
       const nextEntry = {
         ...entry,
-        version: 2,
+        version: accountType === 'steam' ? 1 : 2,
         revision: Math.max(1, boundedInteger(entry.revision, 1, Number.MAX_SAFE_INTEGER, 1)) + 1,
         payload: next,
         updatedAt,
       }
       if (!isPayload(next)) return { error: 'Профіль завеликий після зміни.', status: 413 }
       await transaction.put(key, nextEntry)
-      return { player: adminProfileSummary(accountId, nextEntry), detail, entry: nextEntry }
+      return { player: adminProfileSummary(accountId, nextEntry, accountType), detail, entry: nextEntry }
     })
     if (result.error) return json({ error: result.error }, result.status)
-    await this.indexCloudProfile(accountId, result.entry)
+    await this.indexGameProfile(accountId, result.entry, accountType)
     return json({ player: result.player, detail: result.detail })
   }
 
@@ -1246,8 +1336,10 @@ export class PotuzhnoState {
       return json({ error: 'Некоректний запит профілю.' }, 400)
     }
     const accountId = cleanText(body?.accountId, 64)
-    if (!ID.test(accountId)) return json({ error: 'Некоректний Cloud Profile ID.' }, 400)
-    const entry = await this.storage.get(`profile:${accountId}`)
+    const accountType = gameAccountType(accountId)
+    if (!accountType) return json({ error: 'Некоректний ID гравця.' }, 400)
+    const entry = await this.storage.get(accountType === 'steam' ? 'steam-account' : `profile:${accountId}`)
+    if (accountType === 'steam' && entry?.steamId !== accountId) return json({ hidden: false })
     return json({ hidden: adminProfileVisibility(entry?.payload?.visibility, entry?.updatedAt).hidden })
   }
 
@@ -1329,7 +1421,7 @@ export class PotuzhnoState {
       return json({ error: 'Некоректний запит видимості.' }, 400)
     }
     const accountId = cleanText(body?.accountId, 64)
-    if (!ID.test(accountId) || typeof body?.hidden !== 'boolean') return json({ error: 'Некоректні дані видимості.' }, 400)
+    if (!isGameAccountId(accountId) || typeof body?.hidden !== 'boolean') return json({ error: 'Некоректні дані видимості.' }, 400)
     const now = Date.now()
     await this.storage.transaction(async transaction => {
       const state = normalizeCommunityState(await transaction.get('community:season'), now)
@@ -1341,8 +1433,8 @@ export class PotuzhnoState {
     return json({ updated: true })
   }
 
-  async indexCloudProfile(accountId, entry) {
-    const player = adminPlayerDirectoryEntry(accountId, entry)
+  async indexGameProfile(accountId, entry, accountType = gameAccountType(accountId)) {
+    const player = adminPlayerDirectoryEntry(accountId, entry, accountType)
     if (!player) return
     try {
       const global = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName('global'))
@@ -1355,6 +1447,10 @@ export class PotuzhnoState {
       // The profile save itself must stay reliable if the administrative index
       // is temporarily unavailable; the next load/save will add it again.
     }
+  }
+
+  async indexCloudProfile(accountId, entry) {
+    return this.indexGameProfile(accountId, entry, 'cloud')
   }
 
   async indexVisitedPlayer(visitorHash, player) {
@@ -1740,9 +1836,10 @@ export class PotuzhnoState {
     const player = normalizeCommunityPlayer(body?.player, visitorHash, now)
     if (!player) return json({ error: 'Некоректні дані гравця.' }, 400)
     if (player.cloudProfileId) {
-      const profile = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(`profile:${player.cloudProfileId}`))
+      const accountType = gameAccountType(player.cloudProfileId)
+      const profile = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(accountType === 'steam' ? `steam-account:${player.cloudProfileId}` : `profile:${player.cloudProfileId}`))
       try {
-        const visibilityResponse = await profile.fetch(new Request('https://internal/__internal/profile-visibility', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId: player.cloudProfileId }) }))
+        const visibilityResponse = await profile.fetch(new Request('https://internal/__internal/profile-visibility', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId: player.cloudProfileId, accountType }) }))
         const visibility = await visibilityResponse.json()
         player.hidden = visibility?.hidden === true
       } catch {
@@ -1979,6 +2076,32 @@ export class PotuzhnoState {
     }, 200, { 'Cache-Control': 'private, no-store' })
   }
 
+  async steamAccount(request) {
+    if (request.method !== 'GET' && request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    const session = await this.getSteamSession(request)
+    if (!session) return json({ error: 'Сесія Steam завершилась. Увійди через Steam ще раз.' }, 401)
+
+    let body = { action: 'load' }
+    if (request.method === 'POST') {
+      try {
+        body = await this.readBody(request)
+      } catch (error) {
+        return json({ error: error instanceof RangeError ? error.message : 'Некоректний запит.' }, error instanceof RangeError ? 413 : 400)
+      }
+    }
+    const action = String(body?.action || '')
+    if (!['load', 'create', 'save'].includes(action)) return json({ error: 'Невідома дія Steam-акаунта.' }, 400)
+
+    const accountState = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(`steam-account:${session.steamId}`))
+    const response = await accountState.fetch(new Request('https://internal/__internal/steam-account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...body, action, steamId: session.steamId }),
+    }))
+    const data = await response.json().catch(() => ({ error: 'Steam-акаунт повернув некоректну відповідь.' }))
+    return json(data, response.status)
+  }
+
   async steamLogout(request) {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
     const url = new URL(request.url)
@@ -2177,11 +2300,13 @@ export class PotuzhnoAdmin {
   }
 
   async profileAdminRequest(accountId, payload) {
-    const profile = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(`profile:${accountId}`))
+    const accountType = gameAccountType(accountId)
+    const name = accountType === 'steam' ? `steam-account:${accountId}` : `profile:${accountId}`
+    const profile = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(name))
     const response = await profile.fetch(new Request('https://internal/__internal/admin-profile', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accountId, ...payload }),
+      body: JSON.stringify({ accountId, accountType, ...payload }),
     }))
     let data = null
     try { data = await response.json() } catch {}
@@ -2264,7 +2389,7 @@ export class PotuzhnoAdmin {
   async gamePlayer(request, actor) {
     if (!adminGameCapabilities(actor).read) return adminForbidden('Твоя роль не має доступу до керування грою.')
     const accountId = new URL(request.url).searchParams.get('accountId') || ''
-    if (!ID.test(accountId)) return json({ error: 'Вкажи правильний Cloud Profile ID.' }, 400)
+    if (!isGameAccountId(accountId)) return json({ error: 'Вкажи правильний Steam ID або Cloud Profile ID.' }, 400)
     const response = await this.profileAdminRequest(accountId, { action: 'summary' })
     return response.ok ? json(response.data) : json({ error: response.data?.error || 'Не вдалося завантажити профіль.' }, response.status)
   }
@@ -2316,7 +2441,7 @@ export class PotuzhnoAdmin {
     }
     const accountId = cleanText(body?.accountId, 64)
     const operation = cleanText(body?.operation, 32)
-    if (!ID.test(accountId) || !canRunAdminGameOperation(actor, operation)) {
+    if (!isGameAccountId(accountId) || !canRunAdminGameOperation(actor, operation)) {
       return adminForbidden('Твоя роль не може виконати цю дію.')
     }
     const payload = { action: 'mutate', operation, amount: body?.amount, itemId: body?.itemId, reason: body?.reason }
