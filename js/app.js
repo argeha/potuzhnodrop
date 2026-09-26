@@ -1241,6 +1241,10 @@ function createDefaultWinterEvent() {
   };
 }
 
+function createDefaultSeasonalCosmetics() {
+  return { activeTitle: '', activeFrame: '' };
+}
+
 function createDefaultPulseCircuit() {
   return { date: '', step: 0, completed: 0, completedDate: '', badgeUnlocked: false, lastCompletedAt: 0 };
 }
@@ -1264,6 +1268,7 @@ function createDefaultGameState() {
     powerRun: createDefaultPowerRun(),
     halloweenEvent: createDefaultHalloweenEvent(),
     winterEvent: createDefaultWinterEvent(),
+    seasonalCosmetics: createDefaultSeasonalCosmetics(),
     pulseCircuit: createDefaultPulseCircuit(),
     targetArena: createDefaultTargetArena(),
     allTime: createDefaultAllTime(),
@@ -1313,6 +1318,7 @@ function loadGameState() {
       powerRun: { ...createDefaultPowerRun(), ...(s.powerRun || {}) },
       halloweenEvent: { ...createDefaultHalloweenEvent(), ...(s.halloweenEvent || {}) },
       winterEvent: { ...createDefaultWinterEvent(), ...(s.winterEvent || {}) },
+      seasonalCosmetics: { ...createDefaultSeasonalCosmetics(), ...(s.seasonalCosmetics || {}) },
       pulseCircuit: { ...createDefaultPulseCircuit(), ...(s.pulseCircuit || {}) },
       targetArena: { ...createDefaultTargetArena(), ...(s.targetArena || {}) },
       allTime: { ...createDefaultAllTime(), ...(s.allTime || {}) },
@@ -1638,6 +1644,47 @@ function getWinterEventState() {
   return state;
 }
 
+function getSeasonalCosmeticSelection(titles, frames, halloween, winter) {
+  const stored = gameState?.seasonalCosmetics && typeof gameState.seasonalCosmetics === 'object'
+    ? gameState.seasonalCosmetics
+    : {};
+  const activeSeason = getActiveSeason()?.kind;
+  const valid = (id, entries) => entries.some(entry => entry.id === id) ? id : '';
+  const legacyChoice = (key, entries) => {
+    const preferred = activeSeason === 'winter'
+      ? [winter.cosmetics[key], halloween.cosmetics[key]]
+      : [halloween.cosmetics[key], winter.cosmetics[key]];
+    return preferred.map(id => valid(String(id || ''), entries)).find(Boolean) || '';
+  };
+  const selection = {
+    activeTitle: valid(String(stored.activeTitle || ''), titles) || legacyChoice('activeTitle', titles),
+    activeFrame: valid(String(stored.activeFrame || ''), frames) || legacyChoice('activeFrame', frames)
+  };
+  if (gameState) gameState.seasonalCosmetics = selection;
+  return selection;
+}
+
+function activateSeasonalCosmetic(id, { toggle = false } = {}) {
+  const cosmetic = SEASONAL_COSMETICS[id];
+  if (!cosmetic || !gameState) return '';
+  const halloween = getHalloweenEventState();
+  const winter = getWinterEventState();
+  const owner = WINTER_COSMETICS[id] ? winter : halloween;
+  const collection = cosmetic.kind === 'title' ? owner.cosmetics.titles : owner.cosmetics.frames;
+  if (!collection.includes(id)) return '';
+  const titles = [...new Set([...halloween.cosmetics.titles, ...winter.cosmetics.titles])].map(entry => SEASONAL_COSMETICS[entry]).filter(Boolean);
+  const frames = [...new Set([...halloween.cosmetics.frames, ...winter.cosmetics.frames])].map(entry => SEASONAL_COSMETICS[entry]).filter(Boolean);
+  const selection = getSeasonalCosmeticSelection(titles, frames, halloween, winter);
+  const key = cosmetic.kind === 'title' ? 'activeTitle' : 'activeFrame';
+  const next = toggle && selection[key] === id ? '' : id;
+  selection[key] = next;
+  halloween.cosmetics[key] = '';
+  winter.cosmetics[key] = '';
+  if (next) owner.cosmetics[key] = next;
+  gameState.seasonalCosmetics = selection;
+  return next;
+}
+
 function awardHalloweenPumpkins(source, amount = 1) {
   const status = getHalloweenEventStatus();
   if (!status.scheduledActive || !Object.prototype.hasOwnProperty.call(HALLOWEEN_EVENT.dailyCaps, source)) return 0;
@@ -1678,7 +1725,7 @@ function awardWinterShards(source, amount = 1) {
   state.shards = clampNumber(state.shards + granted, 0, 999, 0);
   if (state.shards >= 13 && !state.cosmetics.titles.includes('icewire_survivor_2026')) {
     state.cosmetics.titles.push('icewire_survivor_2026');
-    state.cosmetics.activeTitle = 'icewire_survivor_2026';
+    activateSeasonalCosmetic('icewire_survivor_2026');
   }
   return granted;
 }
@@ -1688,9 +1735,10 @@ function getHalloweenCosmetics() {
   const winter = getWinterEventState();
   const titles = [...new Set([...state.cosmetics.titles, ...winter.cosmetics.titles])].map(id => SEASONAL_COSMETICS[id]).filter(Boolean);
   const frames = [...new Set([...state.cosmetics.frames, ...winter.cosmetics.frames])].map(id => SEASONAL_COSMETICS[id]).filter(Boolean);
-  const activeTitle = SEASONAL_COSMETICS[winter.cosmetics.activeTitle] || SEASONAL_COSMETICS[state.cosmetics.activeTitle] || null;
-  const activeFrame = SEASONAL_COSMETICS[winter.cosmetics.activeFrame] || SEASONAL_COSMETICS[state.cosmetics.activeFrame] || null;
-  return { state, winter, activeTitle, activeFrame, titles, frames };
+  const selection = getSeasonalCosmeticSelection(titles, frames, state, winter);
+  const activeTitle = SEASONAL_COSMETICS[selection.activeTitle] || null;
+  const activeFrame = SEASONAL_COSMETICS[selection.activeFrame] || null;
+  return { state, winter, selection, activeTitle, activeFrame, titles, frames };
 }
 
 function renderProfileCosmeticsSummary() {
@@ -1702,9 +1750,14 @@ function renderProfileCosmeticsSummary() {
   const hasCosmetics = cosmetics.titles.length || cosmetics.frames.length;
   button.classList.toggle('hidden', !hasCosmetics);
   if (!hasCosmetics) return;
+  const winterFrame = Boolean(cosmetics.activeFrame && WINTER_COSMETICS[cosmetics.activeFrame.id]);
   button.classList.toggle('has-frame', Boolean(cosmetics.activeFrame));
-  label.textContent = cosmetics.activeTitle?.title || cosmetics.activeFrame?.title || 'Колекція Halloween';
-  if (portrait) portrait.classList.toggle('is-halloween-frame', Boolean(cosmetics.activeFrame));
+  button.classList.toggle('is-winter', winterFrame);
+  label.textContent = cosmetics.activeTitle?.title || cosmetics.activeFrame?.title || 'Сезонна колекція';
+  if (portrait) {
+    portrait.classList.toggle('is-halloween-frame', Boolean(cosmetics.activeFrame) && !winterFrame);
+    portrait.classList.toggle('is-winter-frame', winterFrame);
+  }
 }
 
 function renderSignalForgeProfile() {
@@ -1742,12 +1795,11 @@ function setHalloweenCosmetic(id) {
   const state = WINTER_COSMETICS[id] ? getWinterEventState() : getHalloweenEventState();
   const collection = cosmetic.kind === 'title' ? state.cosmetics.titles : state.cosmetics.frames;
   if (!collection.includes(id)) return;
-  if (cosmetic.kind === 'title') state.cosmetics.activeTitle = state.cosmetics.activeTitle === id ? '' : id;
-  else state.cosmetics.activeFrame = state.cosmetics.activeFrame === id ? '' : id;
+  const activeId = activateSeasonalCosmetic(id, { toggle: true });
   saveState();
   renderProfileCosmeticsSummary();
   renderProfileCosmeticsModal();
-  showToast(state.cosmetics[cosmetic.kind === 'title' ? 'activeTitle' : 'activeFrame'] ? 'Косметику активовано в профілі.' : 'Косметику вимкнено в профілі.', 'success');
+  showToast(activeId ? 'Косметику активовано в профілі.' : 'Косметику вимкнено в профілі.', 'success');
 }
 
 function getHalloweenPurchaseCount(state, itemId) {
@@ -1929,11 +1981,11 @@ function finishIcewireRoute(run) {
   state.shards = clampNumber(state.shards + Math.max(1, Math.min(7, Math.floor(score / 3) + 1)), 0, 999, 0);
   if (score >= 12 && !state.cosmetics.titles.includes('aurora_conductor_2026')) {
     state.cosmetics.titles.push('aurora_conductor_2026');
-    state.cosmetics.activeTitle = 'aurora_conductor_2026';
+    activateSeasonalCosmetic('aurora_conductor_2026');
   }
   if (state.shards >= 24 && !state.cosmetics.frames.includes('aurora_frame_2026')) {
     state.cosmetics.frames.push('aurora_frame_2026');
-    state.cosmetics.activeFrame = 'aurora_frame_2026';
+    activateSeasonalCosmetic('aurora_frame_2026');
   }
   addXp(18 + score * 3);
   saveState();
@@ -2000,11 +2052,10 @@ function buyHalloweenShopItem(itemId) {
     const cosmetic = HALLOWEEN_COSMETICS[item.id];
     if (cosmetic.kind === 'title') {
       state.cosmetics.titles.push(cosmetic.id);
-      state.cosmetics.activeTitle = cosmetic.id;
     } else {
       state.cosmetics.frames.push(cosmetic.id);
-      state.cosmetics.activeFrame = cosmetic.id;
     }
+    activateSeasonalCosmetic(cosmetic.id);
   }
   saveState();
   updateCaseTicketOption();
@@ -2035,7 +2086,7 @@ function chooseHalloweenTreat(optionId) {
     state.ritualShards = Math.min(3, state.ritualShards + option.shard);
     if (state.ritualShards >= 3 && !state.cosmetics.titles.includes('midnight_keeper_2026')) {
       state.cosmetics.titles.push('midnight_keeper_2026');
-      state.cosmetics.activeTitle = 'midnight_keeper_2026';
+      activateSeasonalCosmetic('midnight_keeper_2026');
       showToast('Ритуал завершено: титул «Сторож опівночі» назавжди твій.', 'success');
     }
   }
@@ -2207,7 +2258,7 @@ function finishMidnightRift(run) {
   addXp(12 + score * 3);
   if (score >= 10 && !state.cosmetics.titles.includes('rift_breaker_2026')) {
     state.cosmetics.titles.push('rift_breaker_2026');
-    state.cosmetics.activeTitle = 'rift_breaker_2026';
+    activateSeasonalCosmetic('rift_breaker_2026');
   }
   saveState();
   updateBalanceUI();
@@ -2953,12 +3004,13 @@ function renderPublicProfileModal(profile, { demo = false } = {}) {
   const safeName = escapeHtml(cleanText(profile.name, 24) || 'Гравець');
   const publicTitle = SEASONAL_COSMETICS[profile?.cosmetics?.title] || null;
   const publicFrame = SEASONAL_COSMETICS[profile?.cosmetics?.frame] || null;
+  const winterPublicFrame = Boolean(publicFrame && WINTER_COSMETICS[publicFrame.id]);
   const signalForge = profile?.signal?.forged === true;
   const signalRoutes = clampNumber(profile?.signal?.routes, 0, 9_999, 0);
   const isOwnProfile = profile.id && profile.id === account?.publicProfile?.id;
   content.innerHTML = `
     <div class="public-profile-hero">
-      <div class="public-profile-avatar-shell ${publicFrame ? 'is-halloween-frame' : ''} ${signalForge ? 'is-signal-forge-frame' : ''}"><img src="${escapeHtml(avatar)}" alt="Аватар ${safeName}" onerror="handleSteamAvatarError(this)"></div>
+      <div class="public-profile-avatar-shell ${publicFrame ? winterPublicFrame ? 'is-winter-frame' : 'is-halloween-frame' : ''} ${signalForge ? 'is-signal-forge-frame' : ''}"><img src="${escapeHtml(avatar)}" alt="Аватар ${safeName}" onerror="handleSteamAvatarError(this)"></div>
       <div class="min-w-0"><p class="public-profile-kicker">${demo ? 'ДЕМО-АКТИВНІСТЬ' : 'ПРОФІЛЬ ГРАВЦЯ'}</p><h3>${safeName}</h3><p class="public-profile-level">LVL ${level}${prestige ? ` · P${prestige}` : ''}${profile.steamConnected ? ' · <i class="fa-brands fa-steam"></i> Steam' : ''}</p>${publicTitle ? `<span class="public-profile-title"><i class="fa-solid ${publicTitle.icon}"></i>${escapeHtml(publicTitle.title)}</span>` : ''}</div>
     </div>
     <div class="public-profile-stats">
@@ -3255,6 +3307,7 @@ function applyPortableSave(data, { skipCloudAutoSync = false } = {}) {
     powerRun: { ...createDefaultPowerRun(), ...(portable.gameState.powerRun || {}) },
     halloweenEvent: { ...createDefaultHalloweenEvent(), ...(portable.gameState.halloweenEvent || {}) },
     winterEvent: { ...createDefaultWinterEvent(), ...(portable.gameState.winterEvent || {}) },
+    seasonalCosmetics: { ...createDefaultSeasonalCosmetics(), ...(portable.gameState.seasonalCosmetics || {}) },
     pulseCircuit: { ...createDefaultPulseCircuit(), ...(portable.gameState.pulseCircuit || {}) },
     targetArena: { ...createDefaultTargetArena(), ...(portable.gameState.targetArena || {}) },
     allTime: { ...createDefaultAllTime(), ...(portable.gameState.allTime || {}) },
