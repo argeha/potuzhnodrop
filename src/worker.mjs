@@ -1099,6 +1099,32 @@ export class PotuzhnoState {
       return json({ created: true, updatedAt: created.updatedAt, revision: created.revision })
     }
 
+    if (action === 'set-visibility') {
+      if (typeof body?.hidden !== 'boolean') return json({ error: 'Некоректна видимість профілю.' }, 400)
+      const changed = await this.storage.transaction(async transaction => {
+        const current = await transaction.get(key)
+        if (!current || current.steamId !== steamId || !isPayload(current.payload)) {
+          return { error: 'Steam-акаунт не знайдено.', status: 404 }
+        }
+        const updatedAt = Date.now()
+        const visibility = { hidden: body.hidden === true, updatedAt }
+        const payload = { ...current.payload, visibility }
+        if (!isPayload(payload)) return { error: 'Профіль завеликий після зміни.', status: 413 }
+        const next = {
+          ...current,
+          version: 1,
+          revision: Math.max(1, Math.floor(Number(current.revision) || 1)) + 1,
+          payload,
+          updatedAt,
+        }
+        await transaction.put(key, next)
+        return { updatedAt, revision: next.revision, hidden: visibility.hidden, entry: next }
+      })
+      if (changed.error) return json({ error: changed.error }, changed.status)
+      await this.indexGameProfile(steamId, changed.entry, 'steam')
+      return json({ updatedAt: changed.updatedAt, revision: changed.revision, hidden: changed.hidden })
+    }
+
     if (action !== 'save' || !isPayload(body?.payload)) return json({ error: 'Некоректне збереження.' }, 400)
     const expectedRevision = Number(body?.revision)
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1) return json({ error: 'Локальна версія застаріла. Спочатку завантаж актуальний Steam-прогрес.' }, 409)
@@ -1107,6 +1133,7 @@ export class PotuzhnoState {
       if (!current || current.steamId !== steamId || !isPayload(current.payload)) return { error: 'Steam-акаунт не знайдено.', status: 404 }
       const revision = Math.max(1, Math.floor(Number(current.revision) || 1))
       const moderation = adminProfileModeration(current.payload?.moderation, Number(current.updatedAt) || Date.now())
+      const visibility = adminProfileVisibility(current.payload?.visibility, Number(current.updatedAt) || Date.now())
       if (moderation.blocked) {
         return {
           error: `Профіль заблоковано. Причина: ${moderation.reason}`,
@@ -1122,8 +1149,10 @@ export class PotuzhnoState {
           revision,
         }
       }
+      const payload = { ...body.payload, moderation, visibility }
+      if (!isPayload(payload)) return { error: 'Профіль завеликий після збереження.', status: 413 }
       const updatedAt = Date.now()
-      const next = { ...current, version: 1, revision: revision + 1, payload: body.payload, updatedAt }
+      const next = { ...current, version: 1, revision: revision + 1, payload, updatedAt }
       await transaction.put(key, next)
       return { updatedAt, revision: next.revision, entry: next }
     })
@@ -2090,7 +2119,7 @@ export class PotuzhnoState {
       }
     }
     const action = String(body?.action || '')
-    if (!['load', 'create', 'save'].includes(action)) return json({ error: 'Невідома дія Steam-акаунта.' }, 400)
+    if (!['load', 'create', 'save', 'set-visibility'].includes(action)) return json({ error: 'Невідома дія Steam-акаунта.' }, 400)
 
     const accountState = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(`steam-account:${session.steamId}`))
     const response = await accountState.fetch(new Request('https://internal/__internal/steam-account', {

@@ -354,6 +354,7 @@ let publicProfilePublishTimer = null;
 let publicProfilePublishPromise = null;
 let activePublicProfile = null;
 let profileModeration = { blocked: false, reason: '', updatedAt: 0 };
+let profileVisibility = { hidden: false, updatedAt: 0 };
 
 function normalizeProfileModeration(value) {
   const blocked = value?.blocked === true;
@@ -393,6 +394,22 @@ function renderProfileBlockOverlay() {
 function setProfileModeration(value) {
   profileModeration = normalizeProfileModeration(value);
   renderProfileBlockOverlay();
+}
+
+function normalizeProfileVisibility(value) {
+  return {
+    hidden: value?.hidden === true,
+    updatedAt: clampNumber(value?.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0)
+  };
+}
+
+function isProfileHidden() {
+  return profileVisibility?.hidden === true;
+}
+
+function setProfileVisibility(value) {
+  profileVisibility = normalizeProfileVisibility(value);
+  if (account) account.profileVisibility = profileVisibility;
 }
 
 // Case reels are deliberately lighter on entry-level phones and on devices
@@ -2713,6 +2730,7 @@ function loadAccount() {
     account = { nick: 'Гравець_' + Math.random().toString(36).slice(2, 6).toUpperCase(), createdAt: Date.now() };
     localStorage.setItem(STORAGE.account, JSON.stringify(account));
   }
+  setProfileVisibility(account.profileVisibility);
   const steamImports = normalizeSteamImportMap(account.steamImports, account.steamImport);
   if (Object.keys(steamImports).length) {
     account.steamImports = steamImports;
@@ -2973,7 +2991,7 @@ async function copyPublicProfileLink() {
   return true;
 }
 
-async function unpublishPublicProfile() {
+async function unpublishPublicProfile({ announce = true } = {}) {
   if (!isPublicProfileIdentity(account?.publicProfile)) return;
   const identity = account.publicProfile;
   try {
@@ -2986,13 +3004,13 @@ async function unpublishPublicProfile() {
     // A missing record is already private. Other failures must not pretend that a
     // remotely published profile was hidden.
     if (!/профіль не знайдено/i.test(String(error?.message || ''))) {
-      showToast(error?.message || 'Не вдалося приховати публічний профіль. Спробуй ще раз.', 'error');
+      if (announce) showToast(error?.message || 'Не вдалося приховати публічний профіль. Спробуй ще раз.', 'error');
       return false;
     }
   }
   account.publicProfile = { ...identity, enabled: false, updatedAt: 0 };
   localStorage.setItem(STORAGE.account, JSON.stringify(account));
-  showToast('Публічне посилання вимкнено.', 'info');
+  if (announce) showToast('Публічне посилання вимкнено.', 'info');
   return true;
 }
 
@@ -3129,6 +3147,26 @@ function renderCloudSyncUI() {
   const steamLogin = document.getElementById('steamAccountLoginBtn');
   const steamSave = document.getElementById('steamAccountSaveBtn');
   const steamLoad = document.getElementById('steamAccountLoadBtn');
+  const visibilityPanel = document.getElementById('steamProfileVisibilityPanel');
+  const visibilityStatus = document.getElementById('steamProfileVisibilityStatus');
+  const makePublic = document.getElementById('steamProfilePublicBtn');
+  const makePrivate = document.getElementById('steamProfilePrivateBtn');
+  const updateVisibility = () => {
+    const canChange = steamReady && !isProfileBlocked();
+    if (visibilityPanel) visibilityPanel.classList.toggle('hidden', !steamLinked);
+    if (visibilityStatus) {
+      visibilityStatus.textContent = isProfileHidden() ? 'ПРИХОВАНИЙ' : 'ПУБЛІЧНИЙ';
+      visibilityStatus.className = `rounded-full px-2 py-0.5 text-[10px] font-extrabold ${isProfileHidden() ? 'bg-gray-700/70 text-gray-200' : 'bg-emerald-500/15 text-emerald-200'}`;
+    }
+    if (makePublic) {
+      makePublic.disabled = !canChange || !isProfileHidden();
+      makePublic.classList.toggle('opacity-50', !isProfileHidden());
+    }
+    if (makePrivate) {
+      makePrivate.disabled = !canChange || isProfileHidden();
+      makePrivate.classList.toggle('opacity-50', isProfileHidden());
+    }
+  };
   if (steamLinked) {
     if (status) status.textContent = steamReady
       ? (steamAccountAutoSyncLastError ? 'Steam-збереження очікує повторної спроби' : 'Steam-акаунт захищає прогрес')
@@ -3140,6 +3178,7 @@ function renderCloudSyncUI() {
     if (steamSave) steamSave.classList.toggle('hidden', !steamReady);
     if (steamLoad) steamLoad.classList.toggle('hidden', !steamReady);
     [create, save, load, code, legacyConnect].forEach(button => button?.classList.add('hidden'));
+    updateVisibility();
     return;
   }
   if (steamLogin) steamLogin.classList.remove('hidden');
@@ -3148,6 +3187,7 @@ function renderCloudSyncUI() {
   if (status) status.textContent = 'Увійди через Steam, щоб закріпити прогрес';
   if (details) details.textContent = 'Steam ID підтверджується на сервері. Після входу прогрес буде автоматично прив’язаний до акаунта без кодів відновлення.';
   [create, save, load, code, legacyConnect].forEach(button => button?.classList.add('hidden'));
+  updateVisibility();
 }
 
 function renderFairUI() {
@@ -3313,6 +3353,8 @@ function buildPortableSave() {
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
     gameState,
+    moderation: profileModeration,
+    visibility: profileVisibility,
     account: {
       nick: account?.nick || 'Гравець',
       steamId: account?.steamId || null,
@@ -3357,14 +3399,14 @@ function setSteamAccountMeta(steamId, data = {}) {
   };
 }
 
-async function requestSteamAccount(action, { payload, revision, keepalive = false } = {}) {
+async function requestSteamAccount(action, { payload, revision, hidden, keepalive = false } = {}) {
   const options = action === 'load'
     ? { method: 'GET', credentials: 'same-origin', cache: 'no-store' }
     : {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, payload, revision }),
+      body: JSON.stringify({ action, payload, revision, hidden }),
       ...(keepalive ? { keepalive: true } : {})
     };
   return requestJson('/api/steam/account', options, 12_000);
@@ -3376,7 +3418,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '6.6-steam',
+    version: '6.6.1-steam',
     account: {
       ...snapshot.account,
       steamId,
@@ -3469,6 +3511,35 @@ async function saveSteamAccount({ silent = false, keepalive = false } = {}) {
   }
 }
 
+async function setSteamProfileVisibility(hidden) {
+  if (!hasReadySteamAccount()) {
+    showToast('Спочатку дочекайся підключення Steam-акаунта.', 'info');
+    return false;
+  }
+  const nextHidden = hidden === true;
+  if (nextHidden === isProfileHidden()) return true;
+  const steamId = String(currentUser?.steamId || account?.steamId || '');
+  try {
+    const data = await requestSteamAccount('set-visibility', { hidden: nextHidden });
+    setProfileVisibility({ hidden: nextHidden, updatedAt: data.updatedAt || Date.now() });
+    setSteamAccountMeta(steamId, data);
+    steamAccountAutoSyncLastError = '';
+    if (nextHidden && account?.publicProfile?.enabled) await unpublishPublicProfile({ announce: false });
+    saveState({ skipCloudAutoSync: true, skipSteamAutoSync: true });
+    renderCloudSyncUI();
+    // A forced heartbeat immediately replaces any older public entry on the
+    // server. Later periodic syncs stay off while the profile is hidden.
+    void syncCommunity(null, null, null, { force: true });
+    showToast(nextHidden
+      ? 'Профіль приховано з рейтингу, стрічки та пошуку.'
+      : 'Профіль знову видно у спільноті.', 'success');
+    return true;
+  } catch (error) {
+    showToast(error?.message || 'Не вдалося змінити видимість профілю.', 'error');
+    return false;
+  }
+}
+
 async function bootstrapSteamAccount(profile, { announce = false } = {}) {
   const steamId = String(profile?.steamId || currentUser?.steamId || account?.steamId || '');
   if (!/^\d{17}$/.test(steamId)) return false;
@@ -3513,6 +3584,7 @@ function applyPortableSave(data, { skipCloudAutoSync = false, skipSteamAutoSync 
     throw new Error('Bad format');
   }
   setProfileModeration(portable.moderation);
+  setProfileVisibility(portable.visibility);
   userInventory = portable.inventory.map((item, index) => normalizeStoredItem(item, index)).filter(Boolean);
 
   const defaults = createDefaultGameState();
@@ -4832,7 +4904,8 @@ function getCommunityPlayerPayload() {
     collectionValue: clampNumber(collectionValue, 0, MAX_STORED_ITEM_VALUE * 10_000, 0),
     inventoryTotal: clampNumber(userInventory.length, 0, 10_000, 0),
     level: getPlayerLevel(),
-    prestige: clampNumber(gameState?.prestige, 0, 99, 0)
+    prestige: clampNumber(gameState?.prestige, 0, 99, 0),
+    hidden: isProfileHidden()
   };
 }
 
@@ -4915,8 +4988,8 @@ function applyCommunitySnapshot(data) {
   renderHalloweenSeasonShell();
 }
 
-async function syncCommunity(event = null, circuitPulse = null, riftPulse = null) {
-  if (!account?.communityId || !gameState || document.hidden || isProfileBlocked()) return;
+async function syncCommunity(event = null, circuitPulse = null, riftPulse = null, { force = false } = {}) {
+  if (!account?.communityId || !gameState || document.hidden || isProfileBlocked() || (isProfileHidden() && !force)) return;
   if (communitySyncInFlight) {
     if (event || circuitPulse || riftPulse) queuedCommunityEvents = [...queuedCommunityEvents, { event, circuitPulse, riftPulse }].slice(-8);
     return;
