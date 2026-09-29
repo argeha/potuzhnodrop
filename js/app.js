@@ -66,6 +66,8 @@ function showPage(id) {
   if (id === 'battle') {
     resetCoinVisual();
     renderBattleRoom();
+    renderBattleLobby();
+    void refreshBattleListings();
   }
   if (id === 'royale') {
     // Do not replace the participants while an existing spin still owns them.
@@ -7838,9 +7840,25 @@ function renderCaseTopDrops() {
 /* ===== 1v1 BATTLE ===== */
 const MATCHMAKING_WAIT_MS = 8_000;
 const MATCHMAKING_POLL_MS = 900;
+const BATTLE_LISTING_REFRESH_MS = 9_000;
+const BATTLE_LISTING_POLL_MS = 2_500;
+const BATTLE_LISTING_MIN_RATIO = 0.65;
+const BATTLE_LISTING_MAX_RATIO = 1.45;
+const BATTLE_MATCH_COUNTDOWN_MS = 5_000;
 let battleMatch = null;
 let battleSearchSerial = 0;
 let battleSearchTicket = null;
+let battleLobbyTab = 'open';
+let battleListings = [];
+let battleListing = null;
+let battleListingJoin = null;
+let battleListingsRefreshInFlight = false;
+let battleListingPollTimer = null;
+let battleListingsAutoRefreshTimer = null;
+let battleListingHydrated = false;
+let battleAutoStartTimer = null;
+let battleAutoCountdownTimer = null;
+let battleAutoMatchId = '';
 
 function setBattleAction(mode, disabled = false) {
   const button = document.getElementById('battleStartBtn');
@@ -7849,6 +7867,15 @@ function setBattleAction(mode, disabled = false) {
   if (mode === 'search') {
     button.onclick = findBattleOpponent;
     button.innerHTML = '<i class="fa-solid fa-magnifying-glass mr-2"></i>ШУКАТИ СУПЕРНИКА';
+  } else if (mode === 'listing') {
+    button.onclick = createBattleListing;
+    button.innerHTML = '<i class="fa-solid fa-tower-broadcast mr-2"></i>СТВОРИТИ БІЙ';
+  } else if (mode === 'listed') {
+    button.onclick = cancelBattleListing;
+    button.innerHTML = '<i class="fa-solid fa-xmark mr-2"></i>СКАСУВАТИ ЗАЯВКУ';
+  } else if (mode === 'accept') {
+    button.onclick = acceptBattleListing;
+    button.innerHTML = '<i class="fa-solid fa-handshake mr-2"></i>ПРИЙНЯТИ БІЙ';
   } else if (mode === 'waiting') {
     button.onclick = null;
     button.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>ПОШУК…';
@@ -7858,7 +7885,211 @@ function setBattleAction(mode, disabled = false) {
   }
 }
 
+function clearBattleAutoStart() {
+  if (battleAutoStartTimer) window.clearTimeout(battleAutoStartTimer);
+  if (battleAutoCountdownTimer) window.clearInterval(battleAutoCountdownTimer);
+  battleAutoStartTimer = null;
+  battleAutoCountdownTimer = null;
+  battleAutoMatchId = '';
+}
+
+function scheduleBattleAutoStart(match) {
+  const matchId = String(match?.id || '');
+  if (!matchId || battleAutoMatchId === matchId || battleInProgress) return;
+  clearBattleAutoStart();
+  battleAutoMatchId = matchId;
+  const serverStartAt = Number(match?.startAt || 0);
+  const startAt = serverStartAt > 0 ? serverStartAt : Date.now() + BATTLE_MATCH_COUNTDOWN_MS;
+  const renderCountdown = () => {
+    const remaining = Math.max(0, startAt - Date.now());
+    const seconds = Math.max(1, Math.ceil(remaining / 1_000));
+    const button = document.getElementById('battleStartBtn');
+    if (button) {
+      button.disabled = true;
+      button.onclick = null;
+      button.innerHTML = `<i class="fa-solid fa-clock mr-2"></i>СТАРТ ЧЕРЕЗ ${seconds}`;
+    }
+    const outcome = document.getElementById('battleOutcome');
+    if (outcome) outcome.innerHTML = `<span class="text-cyan-200 pulse-soft">Сервер синхронізував бій. Монетка стартує через ${seconds}…</span>`;
+  };
+  renderCountdown();
+  battleAutoCountdownTimer = window.setInterval(renderCountdown, 150);
+  battleAutoStartTimer = window.setTimeout(() => {
+    const isCurrentMatch = battleMatch?.id === matchId && battleAutoMatchId === matchId;
+    clearBattleAutoStart();
+    if (isCurrentMatch) startBattle();
+  }, Math.max(0, startAt - Date.now()) + 35);
+}
+
+function restoreBattleListing() {
+  if (battleListingHydrated) return;
+  battleListingHydrated = true;
+  const saved = gameState?.battleListing;
+  if (!saved || typeof saved !== 'object' || !UUID_PATTERN.test(String(saved.ticketId || '')) || !String(saved.id || '')) return;
+  battleListing = {
+    id: String(saved.id),
+    ticketId: String(saved.ticketId),
+    itemId: String(saved.itemId || ''),
+    stake: saved.stake && typeof saved.stake === 'object' ? saved.stake : null,
+    reservedItem: normalizeStoredItem(saved.reservedItem, 0),
+    name: cleanText(saved.name, 24) || account?.nick || 'Гравець',
+    expiresAt: clampNumber(saved.expiresAt, 0, Number.MAX_SAFE_INTEGER, 0),
+    isMine: true,
+  };
+}
+
+function persistBattleListing(next) {
+  battleListing = next || null;
+  if (!gameState) return;
+  if (battleListing) {
+    gameState.battleListing = {
+      id: String(battleListing.id),
+      ticketId: String(battleListing.ticketId),
+      itemId: String(battleListing.itemId || ''),
+      stake: battleListing.stake || null,
+      reservedItem: battleListing.reservedItem || null,
+      name: cleanText(battleListing.name, 24),
+      expiresAt: clampNumber(battleListing.expiresAt, 0, Number.MAX_SAFE_INTEGER, 0)
+    };
+  } else {
+    delete gameState.battleListing;
+  }
+  saveState();
+}
+
+function restoreBattleListingItem(listing = battleListing) {
+  const reserved = normalizeStoredItem(listing?.reservedItem, 0);
+  if (!reserved) return null;
+  if (!userInventory.some(item => String(item.id) === String(reserved.id))) {
+    userInventory.push(reserved);
+    renderInventoryGrid();
+    renderProfileInventory();
+    updateAvatarBadge();
+  }
+  return reserved;
+}
+
+function reserveBattleListingItem(listing, item) {
+  const reserved = normalizeStoredItem(item, 0);
+  if (!reserved) return false;
+  listing.reservedItem = reserved;
+  userInventory = userInventory.filter(entry => String(entry.id) !== String(reserved.id));
+  if (selectedInputSkin?.id === reserved.id) {
+    selectedInputSkin = null;
+    document.getElementById('inputSkinState')?.classList.add('hidden');
+    document.getElementById('inputEmptyState')?.classList.remove('hidden');
+    recalculateUpgrade();
+  }
+  multiInputSkins = multiInputSkins.filter(entry => String(entry.id) !== String(reserved.id));
+  renderMultiSlots();
+  renderInventoryGrid();
+  renderProfileInventory();
+  updateAvatarBadge();
+  return true;
+}
+
+function formatBattleListingTime(ms) {
+  const total = Math.max(0, Math.ceil(Number(ms || 0) / 1_000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+function getBattleListingRemaining(listing) {
+  const expiresAt = Number(listing?.expiresAt || 0);
+  return expiresAt > 0 ? Math.max(0, expiresAt - Date.now()) : Math.max(0, Number(listing?.remainingMs || 0));
+}
+
+function isCompatibleBattleListing(listing, item) {
+  const source = Number(listing?.stake?.price || 0);
+  const candidate = Number(item?.price || 0);
+  if (!source || !candidate) return false;
+  const ratio = candidate / source;
+  return ratio >= BATTLE_LISTING_MIN_RATIO && ratio <= BATTLE_LISTING_MAX_RATIO;
+}
+
+function renderBattleListingJoinBanner() {
+  const banner = document.getElementById('battleListingJoinBanner');
+  if (!banner) return;
+  const listing = battleListingJoin;
+  if (!listing) {
+    banner.classList.add('hidden');
+    banner.replaceChildren();
+    return;
+  }
+  const lower = Math.round(Number(listing.stake?.price || 0) * BATTLE_LISTING_MIN_RATIO);
+  const upper = Math.round(Number(listing.stake?.price || 0) * BATTLE_LISTING_MAX_RATIO);
+  banner.classList.remove('hidden');
+  banner.innerHTML = `<b>Ти приймаєш бій ${escapeHtml(listing.name)} за «${escapeHtml(listing.stake?.name || 'скін')}» (${formatCredits(listing.stake?.price || 0)}).</b><small>Обери свій предмет вартістю від ${formatCredits(lower)} до ${formatCredits(upper)} — після цього монетка буде готова.</small>`;
+}
+
+function renderBattleListings() {
+  const grid = document.getElementById('battleListingsGrid');
+  if (!grid) return;
+  const listings = battleListings.filter(listing => getBattleListingRemaining(listing) > 0);
+  if (!listings.length) {
+    grid.innerHTML = '<div class="battle-listings-empty"><i class="fa-solid fa-tower-broadcast mr-1"></i> Поки немає відкритих боїв. Створи перший у вкладці «Створити бій».</div>';
+    return;
+  }
+  grid.innerHTML = listings.map(listing => {
+    const stake = listing.stake || {};
+    const image = cleanImageUrl(stake.img) || createSkinPreview(stake.name || 'CS2 Skin');
+    const remaining = getBattleListingRemaining(listing);
+    const lower = Math.round(Number(stake.price || 0) * BATTLE_LISTING_MIN_RATIO);
+    const upper = Math.round(Number(stake.price || 0) * BATTLE_LISTING_MAX_RATIO);
+    return `<article class="battle-listing-card ${listing.isMine ? 'is-mine' : ''}">
+      <div class="battle-listing-kicker"><b>${escapeHtml(listing.name || 'Гравець')}</b><span>${listing.isMine ? 'Твій бій' : `ще ${formatBattleListingTime(remaining)}`}</span></div>
+      <div class="battle-listing-skin"><img src="${escapeHtml(image)}" alt="" data-skin-name="${escapeHtml(stake.name || 'CS2 Skin')}" onerror="handleSkinImageError(this)"><div><strong>${escapeHtml(stake.name || 'CS2 Skin')}</strong><span>${formatCredits(stake.price || 0)}</span></div></div>
+      <div class="battle-listing-meta"><span>Твоя ставка: ${formatCredits(lower)}–${formatCredits(upper)}</span><span>1v1</span></div>
+      <button type="button" class="${listing.isMine ? 'is-cancel' : ''}" data-battle-listing="${escapeHtml(listing.id)}">${listing.isMine ? '<i class="fa-solid fa-xmark mr-1"></i>Скасувати' : '<i class="fa-solid fa-handshake mr-1"></i>Прийняти бій'}</button>
+    </article>`;
+  }).join('');
+  grid.querySelectorAll('[data-battle-listing]').forEach(button => button.addEventListener('click', () => {
+    const listing = battleListings.find(entry => entry.id === button.dataset.battleListing);
+    if (!listing) return;
+    if (listing.isMine) void cancelBattleListing();
+    else openBattleListing(listing.id);
+  }));
+}
+
+function renderBattleLobby() {
+  restoreBattleListing();
+  const isOpen = battleLobbyTab === 'open';
+  const openTab = document.getElementById('battleOpenTab');
+  const createTab = document.getElementById('battleCreateTab');
+  const openPanel = document.getElementById('battleListingsPanel');
+  const createPanel = document.getElementById('battleCreatePanel');
+  openTab?.classList.toggle('is-active', isOpen);
+  openTab?.setAttribute('aria-selected', String(isOpen));
+  createTab?.classList.toggle('is-active', !isOpen);
+  createTab?.setAttribute('aria-selected', String(!isOpen));
+  openPanel?.classList.toggle('hidden', !isOpen);
+  createPanel?.classList.toggle('hidden', isOpen);
+  renderBattleListingJoinBanner();
+  renderBattleListings();
+  startBattleListingsAutoRefresh();
+  if (battleListing && !battleMatch && currentPage === 'battle') startBattleListingPolling();
+}
+
+function setBattleLobbyTab(tab) {
+  battleLobbyTab = tab === 'create' ? 'create' : 'open';
+  renderBattleLobby();
+  if (battleLobbyTab === 'open') void refreshBattleListings();
+}
+
+function openBattleListing(listingId) {
+  const listing = battleListings.find(entry => entry.id === String(listingId));
+  if (!listing || listing.isMine) return;
+  if (battleListing) {
+    showToast('Спочатку скасуй власний відкритий бій.', 'warn');
+    return;
+  }
+  battleListingJoin = listing;
+  battleLobbyTab = 'create';
+  renderBattleLobby();
+  showToast('Обери свій скін, щоб прийняти цей бій.', 'info');
+}
+
 function clearBattleOpponent() {
+  clearBattleAutoStart();
   battleBotItem = null;
   battleMatch = null;
   document.getElementById('battleBotEmpty')?.classList.remove('hidden');
@@ -7972,7 +8203,7 @@ function joinPublicProfileBattle() {
   showToast(`Кімната ${activePublicProfile.name}: обери скін і почни пошук.`, 'info');
 }
 
-async function matchmakingRequest(action, ticketId, stake = null) {
+async function matchmakingRequest(action, ticketId, stake = null, { listingId = '', roomId = battleRoom?.id || '' } = {}) {
   return requestJson('/api/matchmaking', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -7982,7 +8213,8 @@ async function matchmakingRequest(action, ticketId, stake = null) {
       ticketId,
       name: account?.nick || 'Гравець',
       profileId: account?.publicProfile?.enabled ? account.publicProfile.id : '',
-      roomId: battleRoom?.id || '',
+      roomId,
+      listingId,
       ...(stake ? { stake } : {}),
     }),
   }, 5_000);
@@ -7995,13 +8227,200 @@ function cancelBattleSearch() {
   if (ticketId) matchmakingRequest('cancel', ticketId).catch(() => {});
 }
 
+async function refreshBattleListings(announce = false) {
+  if (battleListingsRefreshInFlight) return false;
+  battleListingsRefreshInFlight = true;
+  try {
+    const data = await matchmakingRequest('list', makeUuid(), null, { roomId: '' });
+    battleListings = Array.isArray(data?.listings) ? data.listings : [];
+    if (battleListing) {
+      const serverListing = battleListings.find(entry => entry.isMine && entry.id === battleListing.id);
+      if (serverListing) battleListing = { ...battleListing, ...serverListing };
+    }
+    renderBattleListings();
+    if (announce) showToast('Список відкритих боїв оновлено.', 'info');
+    return true;
+  } catch (error) {
+    if (announce) showToast(error?.message || 'Не вдалося оновити відкриті бої.', 'error');
+    return false;
+  } finally {
+    battleListingsRefreshInFlight = false;
+  }
+}
+
+function startBattleListingsAutoRefresh() {
+  if (battleListingsAutoRefreshTimer) return;
+  battleListingsAutoRefreshTimer = window.setInterval(() => {
+    if (currentPage === 'battle') void refreshBattleListings();
+  }, BATTLE_LISTING_REFRESH_MS);
+}
+
+function startBattleListingPolling() {
+  if (battleListingPollTimer || !battleListing) return;
+  battleListingPollTimer = window.setInterval(() => {
+    if (!battleListing || currentPage !== 'battle') {
+      if (!battleListing) {
+        window.clearInterval(battleListingPollTimer);
+        battleListingPollTimer = null;
+      }
+      return;
+    }
+    void pollBattleListing();
+  }, BATTLE_LISTING_POLL_MS);
+}
+
+function stopBattleListingPolling() {
+  if (!battleListingPollTimer) return;
+  window.clearInterval(battleListingPollTimer);
+  battleListingPollTimer = null;
+}
+
+async function pollBattleListing() {
+  if (!battleListing?.ticketId || battleInProgress) return;
+  try {
+    const data = await matchmakingRequest('listing-status', battleListing.ticketId, null, { roomId: '' });
+    if (data?.status === 'listed') {
+      battleListing = { ...battleListing, ...data.listing };
+      return;
+    }
+    if (data?.status === 'matched' && data.match) {
+      const listing = battleListing;
+      const item = userInventory.find(entry => String(entry.id) === String(listing.itemId)) || restoreBattleListingItem(listing);
+      const ticketId = battleListing.ticketId;
+      persistBattleListing(null);
+      stopBattleListingPolling();
+      if (!item) {
+        showToast('Твій скін для відкритого бою вже недоступний. Бій скасовано локально.', 'warn');
+        return;
+      }
+      if (!battlePlayerItem || String(battlePlayerItem.id) !== String(item.id)) setBattlePlayer(item);
+      battleLobbyTab = 'create';
+      renderBattleLobby();
+      if (useHumanBattleMatch(data.match, ticketId)) {
+        showToast('Твій відкритий бій прийнято. Кидай монетку!', 'success');
+      }
+      void refreshBattleListings();
+      return;
+    }
+    if (data?.status === 'idle') {
+      restoreBattleListingItem(battleListing);
+      persistBattleListing(null);
+      stopBattleListingPolling();
+      if (battlePlayerItem) setBattleAction(battleRoom ? 'search' : 'listing');
+      showToast('Відкритий бій завершився або сплив його час.', 'info');
+      void refreshBattleListings();
+    }
+  } catch {
+    // The card stays on the screen while a short Worker redeploy is in progress.
+  }
+}
+
+async function createBattleListing() {
+  if (battleRoom) return findBattleOpponent();
+  if (battleInProgress || pendingWager || !battlePlayerItem) return;
+  if (isProfileHidden()) {
+    showToast('Щоб створити відкритий бій, увімкни видимість профілю на Potuzhno Drop.', 'warn');
+    return;
+  }
+  if (battleListingJoin) return acceptBattleListing();
+  if (battleListing) {
+    showToast('Твій відкритий бій уже чекає суперника.', 'info');
+    return;
+  }
+  if (!userInventory.some(item => String(item.id) === String(battlePlayerItem.id))) {
+    showToast('Обраний скін уже недоступний.', 'warn');
+    return;
+  }
+  const ticketId = makeUuid();
+  const stake = toPublicBattleStake(battlePlayerItem);
+  setBattleAction('waiting', true);
+  try {
+    const data = await matchmakingRequest('create-listing', ticketId, stake, { roomId: '' });
+    if (data?.status !== 'listed' || !data.listing?.id) throw new Error('Не вдалося створити відкритий бій.');
+    const listing = { ...data.listing, ticketId, itemId: battlePlayerItem.id, stake };
+    if (!reserveBattleListingItem(listing, battlePlayerItem)) throw new Error('Не вдалося зарезервувати обраний скін.');
+    persistBattleListing(listing);
+    battleListingJoin = null;
+    battleListings = [data.listing, ...battleListings.filter(entry => entry.id !== data.listing.id)];
+    setBattleAction('listed');
+    battleLobbyTab = 'open';
+    renderBattleLobby();
+    startBattleListingPolling();
+    showToast('Бій виставлено у вітрину. Чекаємо суперника.', 'success');
+    void refreshBattleListings();
+  } catch (error) {
+    setBattleAction('listing');
+    showToast(error?.message || 'Не вдалося створити відкритий бій.', 'error');
+  }
+}
+
+async function cancelBattleListing() {
+  if (!battleListing?.ticketId) return;
+  const current = battleListing;
+  setBattleAction('waiting', true);
+  try {
+    const data = await matchmakingRequest('cancel-listing', current.ticketId, null, { roomId: '' });
+    if (data?.status === 'matched' && data.match) {
+      restoreBattleListingItem(current);
+      persistBattleListing(null);
+      stopBattleListingPolling();
+      if (useHumanBattleMatch(data.match, current.ticketId)) showToast('Суперник прийняв бій у ту саму мить. Кидай монетку!', 'success');
+      return;
+    }
+    restoreBattleListingItem(current);
+    persistBattleListing(null);
+    stopBattleListingPolling();
+    if (battlePlayerItem) setBattleAction('listing');
+    battleListings = battleListings.filter(entry => entry.id !== current.id);
+    renderBattleListings();
+    showToast('Відкритий бій скасовано. Скін залишився у твоєму інвентарі.', 'info');
+    void refreshBattleListings();
+  } catch (error) {
+    setBattleAction('listed');
+    showToast(error?.message || 'Не вдалося скасувати відкритий бій.', 'error');
+  }
+}
+
+async function acceptBattleListing() {
+  const listing = battleListingJoin;
+  if (!listing || !battlePlayerItem || battleInProgress || pendingWager) return;
+  if (!isCompatibleBattleListing(listing, battlePlayerItem)) {
+    const lower = Math.round(Number(listing.stake?.price || 0) * BATTLE_LISTING_MIN_RATIO);
+    const upper = Math.round(Number(listing.stake?.price || 0) * BATTLE_LISTING_MAX_RATIO);
+    showToast(`Потрібен скін від ${formatCredits(lower)} до ${formatCredits(upper)}.`, 'warn');
+    return;
+  }
+  if (!userInventory.some(item => String(item.id) === String(battlePlayerItem.id))) {
+    showToast('Обраний скін уже недоступний.', 'warn');
+    return;
+  }
+  const ticketId = makeUuid();
+  setBattleAction('waiting', true);
+  try {
+    const data = await matchmakingRequest('accept-listing', ticketId, toPublicBattleStake(battlePlayerItem), { listingId: listing.id, roomId: '' });
+    if (data?.status !== 'matched' || !data.match || !useHumanBattleMatch(data.match, ticketId)) {
+      throw new Error('Цей бій уже недоступний. Онови вітрину.');
+    }
+    battleListingJoin = null;
+    battleListings = battleListings.filter(entry => entry.id !== listing.id);
+    renderBattleLobby();
+    showToast('Бій прийнято. Монетка готова!', 'success');
+    void refreshBattleListings();
+  } catch (error) {
+    setBattleAction('listing');
+    showToast(error?.message || 'Не вдалося прийняти бій.', 'error');
+    void refreshBattleListings();
+  }
+}
+
 function useHumanBattleMatch(match, ticketId) {
   const opponent = match?.players?.find(player => player.ticketId !== ticketId);
   if (!opponent?.stake) return false;
   setBattleOpponent(opponent.stake, opponent.name, false, { id: match.id, winnerTicketId: match.winnerTicketId, ticketId, opponentProfileId: opponent.profileId || '' });
   const outcome = document.getElementById('battleOutcome');
-  if (outcome) outcome.innerHTML = `<span class="text-cyan-200">Знайдено реального суперника: ${escapeHtml(opponent.name)}.</span>`;
-  setBattleAction('start');
+  if (outcome) outcome.innerHTML = `<span class="text-cyan-200">Знайдено реального суперника: ${escapeHtml(opponent.name)}. Сервер запускає відлік.</span>`;
+  setBattleAction('waiting', true);
+  scheduleBattleAutoStart(match);
   return true;
 }
 
@@ -8045,9 +8464,15 @@ function pickBattlePlayerItem() {
     showToast('Інвентар порожній', 'warn');
     return;
   }
+  const reservedItemId = String(battleListing?.itemId || '');
+  const available = userInventory.filter(item => !reservedItemId || String(item.id) === reservedItemId || String(item.id) === String(battlePlayerItem?.id || ''));
+  if (!available.length) {
+    showToast('Твій скін уже зарезервовано у відкритому бою. Скасуй заявку, щоб обрати інший.', 'info');
+    return;
+  }
   const g = document.getElementById('battlePickGrid');
   if (!g) return;
-  g.innerHTML = userInventory.map(s => {
+  g.innerHTML = available.map(s => {
     const wear = getWear(s);
     return `<button type="button" data-battle-pick="${escapeHtml(String(s.id))}" class="bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 flex flex-col items-center transition">
       <span class="wear-badge wear-${wear.code} self-start">${wear.code}</span>
@@ -8067,6 +8492,10 @@ function pickBattlePlayerItem() {
 }
 
 function setBattlePlayer(item) {
+  if (battleListing && String(item?.id) !== String(battleListing.itemId)) {
+    showToast('Спочатку скасуй відкритий бій, щоб змінити свій скін.', 'warn');
+    return;
+  }
   cancelBattleSearch();
   battlePlayerItem = item;
   document.getElementById('battlePlayerEmpty')?.classList.add('hidden');
@@ -8079,8 +8508,16 @@ function setBattlePlayer(item) {
   document.getElementById('battlePlayerSlot')?.classList.add('filled');
   clearBattleOpponent();
   const outcome = document.getElementById('battleOutcome');
-  if (outcome) outcome.innerHTML = '<span class="text-gray-300">Предмет готовий. Запусти пошук суперника.</span>';
-  setBattleAction('search');
+  if (battleListingJoin) {
+    if (outcome) outcome.innerHTML = '<span class="text-cyan-200">Предмет готовий. Прийми відкритий бій.</span>';
+    setBattleAction('accept');
+  } else if (battleListing) {
+    if (outcome) outcome.innerHTML = '<span class="text-amber-200">Твій бій уже у вітрині. Чекаємо суперника.</span>';
+    setBattleAction('listed');
+  } else {
+    if (outcome) outcome.innerHTML = '<span class="text-gray-300">Предмет готовий. Вистав його у відкритий бій.</span>';
+    setBattleAction(battleRoom ? 'search' : 'listing');
+  }
 }
 
 function pickBotOpponent(basePrice) {
@@ -8120,7 +8557,10 @@ function spinCoin(isPlayerWin) {
     const stage = document.getElementById('battleCoinStage');
     const coin = document.getElementById('battleCoin');
     if (!coin || !stage) return resolve();
-    const spins = 6 + Math.floor(Math.random() * 3);
+    // Human 1v1 matches use the same server match ID on both devices, so the
+    // number of visual turns is identical as well as the server start time.
+    const matchSeed = String(battleMatch?.id || '').split('').reduce((total, char) => ((total * 31) + char.charCodeAt(0)) >>> 0, 0);
+    const spins = battleMatch?.id ? 6 + (matchSeed % 3) : 6 + Math.floor(Math.random() * 3);
     const finalRot = spins * 360 + (isPlayerWin ? 0 : 180);
     coin.style.setProperty('transition', 'none', 'important');
     coin.style.transform = 'rotateX(0deg)';
@@ -8175,6 +8615,7 @@ function startBattle() {
     return;
   }
   const playerStake = battlePlayerItem;
+  clearBattleAutoStart();
   const wagerId = beginPendingWager({ inventory: [playerStake] });
 
   // Reserve the stake before the coin starts. It cannot be sold, upgraded or
@@ -8276,7 +8717,7 @@ function startBattle() {
       document.getElementById('battleBotEmpty')?.classList.remove('hidden');
       document.getElementById('battlePlayerFilled')?.classList.add('hidden');
       document.getElementById('battleBotFilled')?.classList.add('hidden');
-      setBattleAction('search', true);
+      setBattleAction(battleRoom ? 'search' : 'listing', true);
       if (outcome) outcome.innerHTML = '<span class="text-gray-400">Готуємось до наступного бою…</span>';
     }, 4200);
   });
@@ -9510,6 +9951,9 @@ window.repeatDropAction = repeatDropAction;
 window.pickBattlePlayerItem = pickBattlePlayerItem;
 window.rerollBattleBot = rerollBattleBot;
 window.findBattleOpponent = findBattleOpponent;
+window.setBattleLobbyTab = setBattleLobbyTab;
+window.refreshBattleListings = refreshBattleListings;
+window.createBattleListing = createBattleListing;
 window.startBattle = startBattle;
 window.pickContractSlot = pickContractSlot;
 window.clearContract = clearContract;

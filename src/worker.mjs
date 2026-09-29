@@ -33,6 +33,9 @@ const MAX_PROFILE_REQUEST_BYTES = MAX_PROFILE_PAYLOAD_BYTES + 8_192
 const MAX_PRICE = 1_000_000
 const WAIT_TTL = 10_000
 const MATCH_TTL = 10 * 60_000
+const BATTLE_MATCH_START_DELAY = 5_000
+const BATTLE_LISTING_TTL = 10 * 60_000
+const BATTLE_LISTING_LIMIT = 60
 const PUBLIC_PROFILE_TTL = 90 * 24 * 60 * 60_000
 const PUBLIC_PROFILE_TITLES = new Set(['night_hunter_2026', 'midnight_keeper_2026', 'rift_breaker_2026', 'aurora_conductor_2026', 'icewire_survivor_2026'])
 const PUBLIC_PROFILE_FRAMES = new Set(['halloween_night_2026', 'aurora_frame_2026'])
@@ -391,6 +394,7 @@ function normalizeMatchState(value) {
   return {
     queue: Array.isArray(value?.queue) ? value.queue : [],
     matches: Array.isArray(value?.matches) ? value.matches : [],
+    listings: Array.isArray(value?.listings) ? value.listings : [],
   }
 }
 
@@ -973,18 +977,63 @@ function adminUnauthenticated(message = 'Увійди до адмін-панел
   return json({ error: message }, 401)
 }
 
+function normalizeBattleListing(value, now) {
+  const id = cleanText(value?.id, 64)
+  const ownerDeviceId = cleanText(value?.ownerDeviceId, 64)
+  const ownerTicketId = cleanText(value?.ownerTicketId, 64)
+  const stake = parseStake(value?.stake)
+  const createdAt = boundedInteger(value?.createdAt, now - BATTLE_LISTING_TTL, now, now)
+  const expiresAt = boundedInteger(value?.expiresAt, createdAt + 1, now + BATTLE_LISTING_TTL, createdAt + BATTLE_LISTING_TTL)
+  if (!id || !ID.test(ownerDeviceId) || !ID.test(ownerTicketId) || !stake || expiresAt <= now) return null
+  const profileId = cleanText(value?.profileId, 64)
+  return {
+    id,
+    ownerDeviceId,
+    ownerTicketId,
+    name: cleanText(value?.name, 24) || 'Гравець',
+    profileId: ID.test(profileId) ? profileId : '',
+    stake,
+    createdAt,
+    expiresAt,
+  }
+}
+
 function cleanMatchState(state, now) {
   state.queue = state.queue.filter(entry => entry && ID.test(String(entry.deviceId || '')) && ID.test(String(entry.ticketId || '')) && now - Number(entry.joinedAt || 0) < WAIT_TTL)
   state.matches = state.matches.filter(match => match && now - Number(match.createdAt || 0) < MATCH_TTL).slice(0, 40)
+  state.listings = state.listings
+    .map(entry => normalizeBattleListing(entry, now))
+    .filter(Boolean)
+    .sort((left, right) => right.createdAt - left.createdAt)
+    .slice(0, BATTLE_LISTING_LIMIT)
 }
 
 function publicMatch(match) {
   return {
     id: match.id,
     createdAt: match.createdAt,
+    startAt: boundedInteger(match.startAt, match.createdAt, match.createdAt + BATTLE_MATCH_START_DELAY, match.createdAt),
     winnerTicketId: match.winnerTicketId,
     players: match.players.map(player => ({ ticketId: player.ticketId, name: player.name, profileId: player.profileId || '', stake: player.stake })),
   }
+}
+
+function publicBattleListing(listing, deviceId, now) {
+  return {
+    id: listing.id,
+    name: listing.name,
+    profileId: listing.profileId || '',
+    stake: listing.stake,
+    createdAt: listing.createdAt,
+    expiresAt: listing.expiresAt,
+    remainingMs: Math.max(0, listing.expiresAt - now),
+    isMine: listing.ownerDeviceId === deviceId,
+  }
+}
+
+function compatibleBattleStakes(first, second) {
+  const ratio = Number(second?.price || 0) / Math.max(1, Number(first?.price || 0))
+  return ratio >= 0.65 && ratio <= 1.45
 }
 
 function matchmakingResult(state, deviceId, ticketId, now) {
@@ -993,6 +1042,15 @@ function matchmakingResult(state, deviceId, ticketId, now) {
   const position = state.queue.findIndex(entry => entry.deviceId === deviceId && entry.ticketId === ticketId)
   if (position >= 0) return { status: 'waiting', position: position + 1, waitedMs: Math.max(0, now - state.queue[position].joinedAt) }
   return { status: 'idle' }
+}
+
+function battleListingResult(state, deviceId, ticketId, now) {
+  const matched = matchmakingResult(state, deviceId, ticketId, now)
+  if (matched.status === 'matched') return matched
+  const listing = state.listings.find(entry => entry.ownerDeviceId === deviceId && entry.ownerTicketId === ticketId)
+  return listing
+    ? { status: 'listed', listing: publicBattleListing(listing, deviceId, now) }
+    : { status: 'idle' }
 }
 
 async function timedFetch(url, options = {}) {
@@ -1797,10 +1855,90 @@ export class PotuzhnoState {
     } catch {
       return json({ error: 'Некоректний запит.' }, 400)
     }
-    const action = cleanText(body?.action, 16)
+    const action = cleanText(body?.action, 24)
     const deviceId = cleanText(body?.deviceId, 64)
     const ticketId = cleanText(body?.ticketId, 64)
     if (!ID.test(deviceId) || !ID.test(ticketId)) return json({ error: 'Некоректний matchmaking-квиток.' }, 400)
+
+    if (action === 'list') {
+      return json(await this.updateMatchState((state, now) => ({
+        status: 'list',
+        listings: state.listings.map(listing => publicBattleListing(listing, deviceId, now)),
+      })))
+    }
+    if (action === 'listing-status') return json(await this.updateMatchState((state, now) => battleListingResult(state, deviceId, ticketId, now)))
+    if (action === 'cancel-listing') {
+      return json(await this.updateMatchState((state, now) => {
+        const existing = battleListingResult(state, deviceId, ticketId, now)
+        if (existing.status === 'matched') return existing
+        state.listings = state.listings.filter(entry => !(entry.ownerDeviceId === deviceId && entry.ownerTicketId === ticketId))
+        return { status: 'cancelled' }
+      }))
+    }
+
+    if (action === 'create-listing') {
+      const stake = parseStake(body?.stake)
+      if (!stake) return json({ error: 'Некоректний предмет для відкритого бою.' }, 400)
+      const name = cleanText(body?.name, 24) || 'Гравець'
+      const profileId = cleanText(body?.profileId, 64)
+      if (profileId && !ID.test(profileId)) return json({ error: 'Некоректний профіль гравця.' }, 400)
+      return json(await this.updateMatchState((state, now) => {
+        const existing = battleListingResult(state, deviceId, ticketId, now)
+        if (existing.status === 'matched' || existing.status === 'listed') return existing
+        state.queue = state.queue.filter(entry => entry.deviceId !== deviceId)
+        state.listings = state.listings.filter(entry => entry.ownerDeviceId !== deviceId)
+        const listing = {
+          id: randomHex(12),
+          ownerDeviceId: deviceId,
+          ownerTicketId: ticketId,
+          name,
+          profileId,
+          stake,
+          createdAt: now,
+          expiresAt: now + BATTLE_LISTING_TTL,
+        }
+        state.listings.unshift(listing)
+        return { status: 'listed', listing: publicBattleListing(listing, deviceId, now) }
+      }))
+    }
+
+    if (action === 'accept-listing') {
+      const listingId = cleanText(body?.listingId, 64)
+      const stake = parseStake(body?.stake)
+      const name = cleanText(body?.name, 24) || 'Гравець'
+      const profileId = cleanText(body?.profileId, 64)
+      if (!listingId || !stake) return json({ error: 'Обери коректний предмет для прийняття бою.' }, 400)
+      if (profileId && !ID.test(profileId)) return json({ error: 'Некоректний профіль гравця.' }, 400)
+      const accepted = await this.updateMatchState((state, now) => {
+        const existing = matchmakingResult(state, deviceId, ticketId, now)
+        if (existing.status === 'matched') return existing
+        const listingIndex = state.listings.findIndex(entry => entry.id === listingId)
+        if (listingIndex < 0) return { error: 'Цей бій уже прийняли або він завершився.', status: 404 }
+        const listing = state.listings[listingIndex]
+        if (listing.ownerDeviceId === deviceId) return { error: 'Не можна прийняти власний бій.', status: 400 }
+        if (!compatibleBattleStakes(listing.stake, stake)) {
+          return { error: 'Твій предмет має коштувати від 65% до 145% ставки суперника.', status: 400 }
+        }
+        state.listings.splice(listingIndex, 1)
+        state.queue = state.queue.filter(entry => entry.deviceId !== deviceId && entry.deviceId !== listing.ownerDeviceId)
+        const entrant = { deviceId, ticketId, name, profileId, roomId: '', stake, joinedAt: now }
+        const owner = {
+          deviceId: listing.ownerDeviceId,
+          ticketId: listing.ownerTicketId,
+          name: listing.name,
+          profileId: listing.profileId,
+          roomId: '',
+          stake: listing.stake,
+          joinedAt: listing.createdAt,
+        }
+        const players = [owner, entrant]
+        const roll = crypto.getRandomValues(new Uint32Array(1))[0] / 0x1_0000_0000
+        state.matches.unshift({ id: randomHex(), createdAt: now, startAt: now + BATTLE_MATCH_START_DELAY, winnerTicketId: players[roll < 0.5 ? 0 : 1].ticketId, players })
+        return matchmakingResult(state, deviceId, ticketId, now)
+      })
+      if (accepted.error) return json({ error: accepted.error }, accepted.status)
+      return json(accepted)
+    }
 
     if (action === 'status') return json(await this.updateMatchState((state, now) => matchmakingResult(state, deviceId, ticketId, now)))
     if (action === 'cancel') {
@@ -1832,7 +1970,7 @@ export class PotuzhnoState {
         state.queue = state.queue.filter(entry => entry.ticketId !== ticketId)
         const players = [opponent, entrant]
         const roll = crypto.getRandomValues(new Uint32Array(1))[0] / 0x1_0000_0000
-        state.matches.unshift({ id: randomHex(), createdAt: now, winnerTicketId: players[roll < 0.5 ? 0 : 1].ticketId, players })
+        state.matches.unshift({ id: randomHex(), createdAt: now, startAt: now + BATTLE_MATCH_START_DELAY, winnerTicketId: players[roll < 0.5 ? 0 : 1].ticketId, players })
       }
       return matchmakingResult(state, deviceId, ticketId, now)
     }))

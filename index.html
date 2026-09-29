@@ -29,13 +29,13 @@
 <link rel="preconnect" href="https://community.akamai.steamstatic.com">
 <link rel="preconnect" href="https://avatars.steamstatic.com">
 <!-- Tailwind зібраний локально: інтерфейс не залежить від зовнішнього CDN. -->
-<link rel="stylesheet" href="/css/tailwind.css?v=6.6.2">
+<link rel="stylesheet" href="/css/tailwind.css?v=6.7.0">
 <!-- Font Awesome -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-<link rel="stylesheet" href="/css/style.css?v=6.6.2">
+<link rel="stylesheet" href="/css/style.css?v=6.7.0">
 </head>
 <body class="min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -287,14 +287,27 @@
 <section data-page="battle" class="page-view hidden">
 <div class="mode-intro mode-intro-battle flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-4">
 <div><span class="text-xs font-extrabold uppercase tracking-[.2em] text-amber-400">1 VS 1 · COIN FLIP</span><h1 class="font-heading mt-1 text-4xl sm:text-5xl font-extrabold uppercase tracking-wider text-white">Потужний бій</h1></div>
-<p class="max-w-lg text-sm leading-6 text-gray-400">Пошук триває до 8 секунд. Якщо реального суперника немає, до бою приєднається позначений бот.</p>
+<p class="max-w-lg text-sm leading-6 text-gray-400">Вистав свій віртуальний скін у відкритий бій або прийми ставку іншого гравця. Монетка та результат синхронізуються через сервер.</p>
 </div>
-<div class="mb-4 flex flex-wrap gap-2">
+<div class="battle-lobby-tabs mb-4" role="tablist" aria-label="Режим Потужного бою">
+<button id="battleOpenTab" type="button" class="is-active" role="tab" aria-selected="true" onclick="setBattleLobbyTab('open')"><i class="fa-solid fa-tower-broadcast"></i>Відкриті бої</button>
+<button id="battleCreateTab" type="button" role="tab" aria-selected="false" onclick="setBattleLobbyTab('create')"><i class="fa-solid fa-plus"></i>Створити бій</button>
+</div>
+<section id="battleListingsPanel" class="glass-panel rounded-2xl border border-brand-border p-4 sm:p-5 max-w-5xl mx-auto">
+<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p class="text-[10px] font-extrabold uppercase tracking-[.18em] text-amber-400">Вітрина 1v1</p><h2 class="font-heading text-2xl font-extrabold uppercase text-white">Відкриті бої</h2><p class="mt-1 text-xs text-gray-400">Прийми ставку, обери свій скін у межах ±35% — і монетка вирішить бій.</p></div><button type="button" onclick="refreshBattleListings(false)" class="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-3 py-2 text-[11px] font-extrabold text-cyan-100 hover:bg-cyan-400/20"><i class="fa-solid fa-rotate-right mr-1"></i>Оновити</button></div>
+<div id="battleListingsGrid" class="battle-listings-grid mt-4" aria-live="polite"><div class="battle-listings-empty"><i class="fa-solid fa-spinner fa-spin"></i> Завантажуємо відкриті бої…</div></div>
+</section>
+<div id="battleCreatePanel" class="hidden">
+<details class="mb-4 rounded-xl border border-cyan-400/20 bg-cyan-500/5 p-3 max-w-5xl mx-auto">
+<summary class="cursor-pointer text-xs font-extrabold text-cyan-100"><i class="fa-solid fa-link mr-1.5"></i>Бій з другом за посиланням</summary>
+<div class="mt-3 flex flex-wrap gap-2">
 <button type="button" onclick="openOwnBattleRoom()" class="rounded-xl border border-cyan-400/35 bg-cyan-400/10 px-4 py-2.5 text-xs font-extrabold text-cyan-100 hover:bg-cyan-400/20"><i class="fa-solid fa-link mr-1.5"></i>Створити кімнату для друга</button>
 <button type="button" onclick="openPublicProfileSearch()" class="rounded-xl border border-gray-700 bg-black/20 px-4 py-2.5 text-xs font-extrabold text-gray-200 hover:border-cyan-400/35 hover:text-cyan-100"><i class="fa-solid fa-magnifying-glass mr-1.5"></i>Приєднатися за посиланням</button>
 <button type="button" onclick="unpublishPublicProfile()" class="rounded-xl border border-gray-700 bg-black/20 px-4 py-2.5 text-xs font-extrabold text-gray-400 hover:border-red-400/35 hover:text-red-200"><i class="fa-solid fa-eye-slash mr-1.5"></i>Приховати посилання</button>
 </div>
+</details>
 <div id="battleRoomBanner" class="battle-room-banner hidden mb-4"><div><span><i class="fa-solid fa-link"></i> Кімната друга</span><strong id="battleRoomName">—</strong><p>Пошук знайде лише гравця з цим самим посиланням на профіль.</p></div><button id="battleRoomLeaveBtn" onclick="leaveBattleRoom()" type="button"><i class="fa-solid fa-arrow-right-from-bracket"></i> Загальний пошук</button></div>
+<div id="battleListingJoinBanner" class="battle-listing-join hidden max-w-5xl mx-auto mb-4"></div>
 <article class="glass-panel rounded-2xl border border-brand-border p-5 sm:p-7 max-w-5xl mx-auto">
 <div class="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-5 items-center">
 <div id="battlePlayerSlot" class="battle-slot" onclick="pickBattlePlayerItem()">
@@ -309,7 +322,7 @@
 </div>
 <div class="coin-result-burst"></div>
 </div>
-<button onclick="findBattleOpponent()" id="battleStartBtn" disabled class="px-6 py-3 bg-gradient-to-r from-amber-500 to-red-500 hover:from-amber-400 text-black font-extrabold uppercase rounded-xl text-sm disabled:opacity-40 disabled:cursor-not-allowed transition shadow-lg shadow-amber-500/20 whitespace-nowrap"><i class="fa-solid fa-magnifying-glass mr-2"></i>ШУКАТИ СУПЕРНИКА</button>
+<button onclick="createBattleListing()" id="battleStartBtn" disabled class="px-6 py-3 bg-gradient-to-r from-amber-500 to-red-500 hover:from-amber-400 text-black font-extrabold uppercase rounded-xl text-sm disabled:opacity-40 disabled:cursor-not-allowed transition shadow-lg shadow-amber-500/20 whitespace-nowrap"><i class="fa-solid fa-tower-broadcast mr-2"></i>СТВОРИТИ БІЙ</button>
 </div>
 <div id="battleBotSlot" class="battle-slot" onclick="rerollBattleBot()">
 <div id="battleBotEmpty" class="text-center"><i id="battleOpponentEmptyIcon" class="fa-solid fa-magnifying-glass text-4xl text-red-500/60 mb-3"></i><p class="text-sm font-bold text-gray-300">Суперник</p><p class="text-[11px] text-gray-500 mt-1">Почни пошук після вибору предмета</p></div>
@@ -319,6 +332,7 @@
 <div id="battleOutcome" class="mt-6 text-center text-base font-bold text-gray-400 min-h-[28px]">Обери предмет і знайди суперника…</div>
 <p class="mt-4 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-[11px] leading-5 text-amber-100/80"><i class="fa-solid fa-circle-info mr-1"></i> Бій — це віртуальна симуляція. Реальні речі та Steam-предмети не передаються.</p>
 </article>
+</div>
 </section>
 
 <!-- ROYALE -->
@@ -734,6 +748,6 @@
 
 <div id="toastContainer" class="fixed bottom-6 right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm"></div>
 
-<script src="/js/app.js?v=6.6.2" defer></script>
+<script src="/js/app.js?v=6.7.0" defer></script>
 </body>
 </html>
