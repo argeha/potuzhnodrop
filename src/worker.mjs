@@ -36,6 +36,12 @@ const MATCH_TTL = 10 * 60_000
 const BATTLE_MATCH_START_DELAY = 5_000
 const BATTLE_LISTING_TTL = 10 * 60_000
 const BATTLE_LISTING_LIMIT = 60
+// Open Bank is one shared, server-owned Royale lobby.  The result is decided
+// by the Durable Object, never by an individual browser.
+const ROYALE_LIVE_MAX_PLAYERS = 8
+const ROYALE_LIVE_LOBBY_TTL = 12 * 60_000
+const ROYALE_LIVE_RESULT_TTL = 30_000
+const ROYALE_LIVE_START_DELAY = 5_000
 const PUBLIC_PROFILE_TTL = 90 * 24 * 60 * 60_000
 const PUBLIC_PROFILE_TITLES = new Set(['night_hunter_2026', 'midnight_keeper_2026', 'rift_breaker_2026', 'aurora_conductor_2026', 'icewire_survivor_2026'])
 const PUBLIC_PROFILE_FRAMES = new Set(['halloween_night_2026', 'aurora_frame_2026'])
@@ -361,7 +367,7 @@ function rateLimitGroup(path) {
   if (path === '/api/profile/sync') return 'profile'
   if (path === '/api/public-profile' || path === '/api/public-avatar') return 'publicProfile'
   if (path.startsWith('/api/fair/')) return 'fair'
-  if (path === '/api/matchmaking') return 'matchmaking'
+  if (path === '/api/matchmaking' || path === '/api/royale') return 'matchmaking'
   if (path === '/api/steam/auth') return 'steamAuth'
   if (path === '/api/steam/inventory') return 'steamInventory'
   if (path.startsWith('/api/steam/')) return 'steam'
@@ -395,6 +401,7 @@ function normalizeMatchState(value) {
     queue: Array.isArray(value?.queue) ? value.queue : [],
     matches: Array.isArray(value?.matches) ? value.matches : [],
     listings: Array.isArray(value?.listings) ? value.listings : [],
+    royale: value?.royale && typeof value.royale === 'object' && !Array.isArray(value.royale) ? value.royale : null,
   }
 }
 
@@ -998,6 +1005,83 @@ function normalizeBattleListing(value, now) {
   }
 }
 
+function normalizeRoyaleParticipant(value, now) {
+  const deviceId = cleanText(value?.deviceId, 64)
+  const ticketId = cleanText(value?.ticketId, 64)
+  const profileId = cleanText(value?.profileId, 64)
+  const stake = parseStake(value?.stake)
+  const joinedAt = boundedInteger(value?.joinedAt, now - ROYALE_LIVE_LOBBY_TTL, now, now)
+  if (!ID.test(deviceId) || !ID.test(ticketId) || !stake) return null
+  return {
+    deviceId,
+    ticketId,
+    profileId: ID.test(profileId) ? profileId : '',
+    name: cleanText(value?.name, 24) || 'Гравець',
+    stake,
+    joinedAt,
+  }
+}
+
+function normalizeRoyaleRound(value, now) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const createdAt = boundedInteger(value.createdAt, now - ROYALE_LIVE_LOBBY_TTL, now, now)
+  const participants = (Array.isArray(value.participants) ? value.participants : [])
+    .map(entry => normalizeRoyaleParticipant(entry, now))
+    .filter(Boolean)
+    .filter((entry, index, all) => all.findIndex(candidate => candidate.deviceId === entry.deviceId) === index)
+    .slice(0, ROYALE_LIVE_MAX_PLAYERS)
+  const status = ['open', 'countdown', 'settled'].includes(value.status) ? value.status : 'open'
+  const startAt = boundedInteger(value.startAt, createdAt, createdAt + ROYALE_LIVE_LOBBY_TTL, 0)
+  const winnerTicketId = cleanText(value.winnerTicketId, 64)
+  if (!participants.length) return null
+  if (status === 'open' && now - createdAt > ROYALE_LIVE_LOBBY_TTL) return null
+  if (status === 'settled' && now - startAt > ROYALE_LIVE_RESULT_TTL) return null
+  if (status !== 'open' && (!startAt || !ID.test(winnerTicketId))) return null
+  return {
+    id: cleanText(value.id, 64) || randomHex(12),
+    createdAt,
+    status: status === 'countdown' && now >= startAt ? 'settled' : status,
+    startAt,
+    winnerTicketId,
+    participants,
+  }
+}
+
+function publicRoyaleRound(round, deviceId, ticketId, now) {
+  if (!round) return { status: 'idle', canJoin: true, maxPlayers: ROYALE_LIVE_MAX_PLAYERS }
+  const isSettled = round.status === 'settled'
+  return {
+    id: round.id,
+    status: round.status,
+    createdAt: round.createdAt,
+    startAt: round.startAt || 0,
+    startInMs: round.status === 'countdown' ? Math.max(0, round.startAt - now) : 0,
+    // The winning ticket is intentionally withheld until the server starts
+    // the draw, so the pre-spin wheel cannot reveal the outcome.
+    winnerTicketId: isSettled ? round.winnerTicketId : '',
+    canJoin: round.status === 'open' && round.participants.length < ROYALE_LIVE_MAX_PLAYERS,
+    maxPlayers: ROYALE_LIVE_MAX_PLAYERS,
+    participants: round.participants.map(player => ({
+      ticketId: player.ticketId,
+      name: player.name,
+      profileId: player.profileId,
+      stake: player.stake,
+      joinedAt: player.joinedAt,
+      isMine: player.deviceId === deviceId && player.ticketId === ticketId,
+    })),
+  }
+}
+
+function pickRoyaleWinner(participants) {
+  const total = participants.reduce((sum, player) => sum + Math.max(1, Number(player.stake?.price || 0)), 0)
+  let cursor = (crypto.getRandomValues(new Uint32Array(1))[0] / 0x1_0000_0000) * total
+  for (const player of participants) {
+    cursor -= Math.max(1, Number(player.stake?.price || 0))
+    if (cursor <= 0) return player.ticketId
+  }
+  return participants[participants.length - 1].ticketId
+}
+
 function cleanMatchState(state, now) {
   state.queue = state.queue.filter(entry => entry && ID.test(String(entry.deviceId || '')) && ID.test(String(entry.ticketId || '')) && now - Number(entry.joinedAt || 0) < WAIT_TTL)
   state.matches = state.matches.filter(match => match && now - Number(match.createdAt || 0) < MATCH_TTL).slice(0, 40)
@@ -1006,6 +1090,7 @@ function cleanMatchState(state, now) {
     .filter(Boolean)
     .sort((left, right) => right.createdAt - left.createdAt)
     .slice(0, BATTLE_LISTING_LIMIT)
+  state.royale = normalizeRoyaleRound(state.royale, now)
 }
 
 function publicMatch(match, now) {
@@ -1094,6 +1179,7 @@ export class PotuzhnoState {
       if (path === '/api/fair/roll') return await this.fairRoll(request)
       if (path === '/api/fair/verify') return await this.fairVerify(request)
       if (path === '/api/matchmaking') return await this.matchmaking(request)
+      if (path === '/api/royale') return await this.royale(request)
       if (path === '/api/presence') return await this.presence(request)
       if (path === '/api/community') return await this.community(request)
       if (path === '/api/steam/auth') return await this.steamAuth(request)
@@ -1979,6 +2065,69 @@ export class PotuzhnoState {
       }
       return matchmakingResult(state, deviceId, ticketId, now)
     }))
+  }
+
+  async royale(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request, 16_384)
+    } catch {
+      return json({ error: 'Некоректний запит банку.' }, 400)
+    }
+    const action = cleanText(body?.action, 24)
+    const deviceId = cleanText(body?.deviceId, 64)
+    const ticketId = cleanText(body?.ticketId, 64)
+    if (!ID.test(deviceId) || !ID.test(ticketId)) return json({ error: 'Некоректний квиток Royale.' }, 400)
+
+    if (action === 'status') {
+      return json(await this.updateMatchState((state, now) => ({
+        ...publicRoyaleRound(state.royale, deviceId, ticketId, now),
+      })))
+    }
+
+    if (action === 'leave') {
+      return json(await this.updateMatchState((state, now) => {
+        const round = state.royale
+        if (!round) return { status: 'idle', canJoin: true, maxPlayers: ROYALE_LIVE_MAX_PLAYERS }
+        if (round.status !== 'open') return publicRoyaleRound(round, deviceId, ticketId, now)
+        round.participants = round.participants.filter(player => !(player.deviceId === deviceId && player.ticketId === ticketId))
+        state.royale = round.participants.length ? round : null
+        return { status: 'left', canJoin: true, maxPlayers: ROYALE_LIVE_MAX_PLAYERS }
+      }))
+    }
+
+    if (action !== 'join') return json({ error: 'Невідома дія Open Bank.' }, 400)
+    const stake = parseStake(body?.stake)
+    const name = cleanText(body?.name, 24) || 'Гравець'
+    const profileId = cleanText(body?.profileId, 64)
+    if (!stake) return json({ error: 'Обери коректний віртуальний скін для банку.' }, 400)
+    if (profileId && !ID.test(profileId)) return json({ error: 'Некоректний профіль гравця.' }, 400)
+
+    const joined = await this.updateMatchState((state, now) => {
+      // A completed bank stays visible to its participants for a short time.
+      // A new join starts the next round without requiring manual cleanup.
+      if (!state.royale || state.royale.status === 'settled') {
+        state.royale = { id: randomHex(12), createdAt: now, status: 'open', startAt: 0, winnerTicketId: '', participants: [] }
+      }
+      const round = state.royale
+      const existing = round.participants.find(player => player.deviceId === deviceId)
+      if (existing) {
+        if (existing.ticketId !== ticketId) return { error: 'Ти вже маєш активний внесок у цьому банку.', status: 409 }
+        return publicRoyaleRound(round, deviceId, ticketId, now)
+      }
+      if (round.status !== 'open') return { error: 'Банк уже синхронізує запуск. Дочекайся наступного раунду.', status: 409 }
+      if (round.participants.length >= ROYALE_LIVE_MAX_PLAYERS) return { error: 'Банк уже заповнений. Скоро відкриється новий.', status: 409 }
+      round.participants.push({ deviceId, ticketId, name, profileId: ID.test(profileId) ? profileId : '', stake, joinedAt: now })
+      if (round.participants.length >= 2) {
+        round.status = 'countdown'
+        round.startAt = now + ROYALE_LIVE_START_DELAY
+        round.winnerTicketId = pickRoyaleWinner(round.participants)
+      }
+      return publicRoyaleRound(round, deviceId, ticketId, now)
+    })
+    if (joined?.error) return json({ error: joined.error }, joined.status || 400)
+    return json(joined)
   }
 
   async presence(request) {
