@@ -592,7 +592,21 @@ function communityResponse(state, visitorHash) {
     isMe: player.id === visitorHash,
   }))
   const ownRank = rows.findIndex(player => player.id === visitorHash) + 1
-  const events = state.events.filter(event => state.players[event.playerId]?.hidden !== true)
+  const events = state.events
+    .filter(event => state.players[event.playerId]?.hidden !== true)
+    .map(event => {
+      const player = state.players[event.playerId]
+      return {
+        ...event,
+        xp: player?.xp || 0,
+        wins: player?.wins || 0,
+        rounds: player?.rounds || 0,
+        collectionValue: player?.collectionValue || 0,
+        inventoryTotal: player?.inventoryTotal || 0,
+        level: player?.level || event.level,
+        prestige: player?.prestige || event.prestige,
+      }
+    })
   const circuit = normalizeCommunityCircuit(state.circuit, Date.now())
   const recent = circuit.recent
     .filter(entry => state.players[entry.playerId]?.hidden !== true)

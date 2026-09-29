@@ -3036,6 +3036,7 @@ function renderPublicProfileModal(profile, { demo = false } = {}) {
   const content = document.getElementById('publicProfileContent');
   if (!content || !profile) return;
   const stats = profile.stats || {};
+  const communityProfile = profile.community === true;
   const level = clampNumber(profile.level, 1, 9_999, 1);
   const prestige = clampNumber(profile.prestige, 0, 99, 0);
   const avatar = getPublicAvatarSource(profile);
@@ -3045,22 +3046,27 @@ function renderPublicProfileModal(profile, { demo = false } = {}) {
   const winterPublicFrame = Boolean(publicFrame && WINTER_COSMETICS[publicFrame.id]);
   const signalForge = profile?.signal?.forged === true;
   const signalRoutes = clampNumber(profile?.signal?.routes, 0, 9_999, 0);
-  const isOwnProfile = profile.id && profile.id === account?.publicProfile?.id;
+  const isOwnProfile = profile.isOwn === true || (profile.id && profile.id === account?.publicProfile?.id);
+  const canJoinBattle = !demo && !communityProfile && !isOwnProfile && UUID_PATTERN.test(String(profile.id || ''));
+  const statsMarkup = communityProfile
+    ? `<div><span>XP</span><strong>${Math.round(Number(profile.xp) || 0).toLocaleString('uk-UA')}</strong></div>
+      <div><span>Перемог</span><strong>${Math.round(Number(profile.wins) || 0).toLocaleString('uk-UA')}</strong></div>
+      <div><span>Раундів</span><strong>${Math.round(Number(stats.rounds) || 0).toLocaleString('uk-UA')}</strong></div>
+      <div><span>Колекція</span><strong>${formatCredits(Number(stats.bestValue) || 0)}</strong></div>`
+    : `<div><span>Роллів</span><strong>${Math.round(Number(stats.rounds) || 0).toLocaleString('uk-UA')}</strong></div>
+      <div><span>Кейсів</span><strong>${Math.round(Number(stats.cases) || 0).toLocaleString('uk-UA')}</strong></div>
+      <div><span>Боїв</span><strong>${Math.round(Number(stats.battles) || 0).toLocaleString('uk-UA')}</strong></div>
+      <div><span>Рекорд</span><strong>${formatCredits(Number(stats.bestValue) || 0)}</strong></div>`;
   content.innerHTML = `
     <div class="public-profile-hero">
       <div class="public-profile-avatar-shell ${publicFrame ? winterPublicFrame ? 'is-winter-frame' : 'is-halloween-frame' : ''} ${signalForge ? 'is-signal-forge-frame' : ''}"><img src="${escapeHtml(avatar)}" alt="Аватар ${safeName}" onerror="handleSteamAvatarError(this)"></div>
-      <div class="min-w-0"><p class="public-profile-kicker">${demo ? 'ДЕМО-АКТИВНІСТЬ' : 'ПРОФІЛЬ ГРАВЦЯ'}</p><h3>${safeName}</h3><p class="public-profile-level">LVL ${level}${prestige ? ` · P${prestige}` : ''}${profile.steamConnected ? ' · <i class="fa-brands fa-steam"></i> Steam' : ''}</p>${publicTitle ? `<span class="public-profile-title"><i class="fa-solid ${publicTitle.icon}"></i>${escapeHtml(publicTitle.title)}</span>` : ''}</div>
+      <div class="min-w-0"><p class="public-profile-kicker">${demo ? 'ДЕМО-АКТИВНІСТЬ' : communityProfile ? 'ПРОФІЛЬ У СПІЛЬНОТІ' : 'ПРОФІЛЬ ГРАВЦЯ'}</p><h3>${safeName}</h3><p class="public-profile-level">LVL ${level}${prestige ? ` · P${prestige}` : ''}${profile.steamConnected ? ' · <i class="fa-brands fa-steam"></i> Steam' : ''}</p>${publicTitle ? `<span class="public-profile-title"><i class="fa-solid ${publicTitle.icon}"></i>${escapeHtml(publicTitle.title)}</span>` : ''}</div>
     </div>
-    <div class="public-profile-stats">
-      <div><span>Роллів</span><strong>${Math.round(Number(stats.rounds) || 0).toLocaleString('uk-UA')}</strong></div>
-      <div><span>Кейсів</span><strong>${Math.round(Number(stats.cases) || 0).toLocaleString('uk-UA')}</strong></div>
-      <div><span>Боїв</span><strong>${Math.round(Number(stats.battles) || 0).toLocaleString('uk-UA')}</strong></div>
-      <div><span>Рекорд</span><strong>${formatCredits(Number(stats.bestValue) || 0)}</strong></div>
-    </div>
+    <div class="public-profile-stats">${statsMarkup}</div>
     ${signalForge ? `<p class="public-profile-signal"><i class="fa-solid fa-tower-broadcast"></i><span><b>SIGNAL FORGE</b><small>Nightfall-маршрутів: ${signalRoutes}</small></span></p>` : ''}
-    <p class="public-profile-note"><i class="fa-solid fa-shield-halved"></i>${demo ? ' Це візуальна демонстрація стрічки: дані не належать реальному користувачу.' : ' Видимі лише публічні дані. Баланс, інвентар і дані Steam приховані.'}</p>
-    ${!demo && !isOwnProfile ? '<button type="button" onclick="joinPublicProfileBattle()" class="public-profile-battle"><i class="fa-solid fa-dice"></i> Приєднатися до 1v1</button>' : ''}
-    ${!demo && isOwnProfile ? '<button type="button" onclick="openOwnBattleRoom()" class="public-profile-battle"><i class="fa-solid fa-dice"></i> Відкрити мою кімнату 1v1</button>' : ''}`;
+    <p class="public-profile-note"><i class="fa-solid fa-shield-halved"></i>${demo ? ' Це візуальна демонстрація стрічки: дані не належать реальному користувачу.' : communityProfile ? ' Це безпечна картка зі спільноти. Баланс, інвентар, Steam ID та інші приватні дані приховані.' : ' Видимі лише публічні дані. Баланс, інвентар і дані Steam приховані.'}</p>
+    ${canJoinBattle ? '<button type="button" onclick="joinPublicProfileBattle()" class="public-profile-battle"><i class="fa-solid fa-dice"></i> Приєднатися до 1v1</button>' : ''}
+    ${!demo && isOwnProfile && !communityProfile ? '<button type="button" onclick="openOwnBattleRoom()" class="public-profile-battle"><i class="fa-solid fa-dice"></i> Відкрити мою кімнату 1v1</button>' : ''}`;
   activePublicProfile = { ...profile, demo };
   openModal('publicProfileModal');
 }
@@ -4909,6 +4915,32 @@ function getCommunityPlayerPayload() {
   };
 }
 
+function buildCommunityProfile(player) {
+  const source = player && typeof player === 'object' ? player : {};
+  return {
+    id: '',
+    community: true,
+    isOwn: source.isMe === true,
+    name: cleanText(source.name, 24) || 'Гравець',
+    level: clampNumber(source.level, 1, 9_999, 1),
+    prestige: clampNumber(source.prestige, 0, 99, 0),
+    steamConnected: false,
+    xp: clampNumber(source.xp, 0, 9_999_999, 0),
+    wins: clampNumber(source.wins, 0, 9_999_999, 0),
+    stats: {
+      rounds: clampNumber(source.rounds, 0, 9_999_999, 0),
+      cases: clampNumber(source.inventoryTotal, 0, 9_999, 0),
+      battles: clampNumber(source.wins, 0, 9_999_999, 0),
+      bestValue: clampNumber(source.collectionValue, 0, MAX_STORED_ITEM_VALUE * 10_000, 0)
+    }
+  };
+}
+
+function openCommunityProfile(player) {
+  const profile = buildCommunityProfile(player);
+  renderPublicProfileModal(profile);
+}
+
 function renderLeaderboard() {
   const list = document.getElementById('leaderboardList');
   if (!list) return;
@@ -4928,16 +4960,23 @@ function renderLeaderboard() {
     const cls = rank <= 3 ? `lb-rank-${rank}` : 'text-gray-500';
     const prestige = clampNumber(row.prestige, 0, 99, 0);
     const pBadge = prestige > 0 ? `<span class="prestige-badge ml-1"><i class="fa-solid fa-crown text-[8px]"></i>P${prestige}</span>` : '';
-    const canOpen = UUID_PATTERN.test(String(row.profileId || ''));
-    return `<button type="button" class="lb-row w-full text-left ${row.isMe ? 'is-me' : ''} ${canOpen ? 'cursor-pointer hover:border-cyan-400/35' : ''}" data-community-profile="${canOpen ? escapeHtml(row.profileId) : ''}" ${canOpen ? `title="Відкрити профіль ${escapeHtml(row.name)}"` : ''}>
+    const canOpen = Boolean(cleanText(row?.name, 24));
+    return `<button type="button" class="lb-row w-full text-left ${row.isMe ? 'is-me' : ''} ${canOpen ? 'cursor-pointer hover:border-cyan-400/35' : ''}" data-community-row="${index}" ${canOpen ? `title="Відкрити профіль ${escapeHtml(row.name)}"` : ''}>
       <div class="lb-rank ${cls}">#${rank}</div>
       <div class="min-w-0"><p class="truncate text-sm font-extrabold ${row.isMe ? 'text-amber-200' : 'text-white'}">${escapeHtml(row.name)}${pBadge}${row.isMe ? ' <span class="text-[10px] font-bold text-amber-400">(ти)</span>' : ''}</p><p class="text-[11px] font-bold text-gray-500">${Number(row.xp || 0).toLocaleString('uk-UA')} XP · LVL ${level}</p></div>
       <div class="font-heading text-xl font-extrabold text-amber-300">${prestige > 0 ? `P${prestige}` : '—'}</div>
     </button>`;
   }).join('');
-  list.querySelectorAll('[data-community-profile]').forEach(button => button.addEventListener('click', () => {
-    const id = button.dataset.communityProfile;
-    if (UUID_PATTERN.test(String(id || ''))) void openPublicProfile(id);
+  list.querySelectorAll('[data-community-row]').forEach(button => button.addEventListener('click', () => {
+    const row = rows[Number(button.dataset.communityRow)];
+    if (!row) return;
+    if (UUID_PATTERN.test(String(row.profileId || ''))) {
+      void openPublicProfile(row.profileId).then(profile => {
+        if (!profile) openCommunityProfile(row);
+      });
+      return;
+    }
+    openCommunityProfile(row);
   }));
 }
 
@@ -4959,14 +4998,9 @@ function renderCommunityFeed(events) {
       skin: { ...event.skin, id: event.id },
       outcome: 'win',
       activityKind: event.kind,
-      profile: {
-        id: event.profileId || '',
-        name: event.name,
-        level: clampNumber(event.level, 1, 9_999, 1),
-        prestige: clampNumber(event.prestige, 0, 99, 0),
-        stats: {},
-        demo: false
-      }
+      profile: UUID_PATTERN.test(String(event.profileId || ''))
+        ? { ...buildCommunityProfile(event), id: event.profileId, community: false, communityFallback: true }
+        : buildCommunityProfile(event)
     });
   });
 }
@@ -8886,6 +8920,7 @@ function getLiveFeedProfile(player) {
     return {
       id: publicProfileEnabled ? account.publicProfile.id : '',
       ...buildPublicProfilePayload(),
+      isOwn: true,
       avatarUrl: currentUser?.avatar || '',
       demo: false
     };
@@ -8897,9 +8932,15 @@ function openLiveFeedProfile(event) {
   const profile = event?.currentTarget?._liveProfile;
   if (!profile) return;
   if (UUID_PATTERN.test(String(profile.id || ''))) {
-    void openPublicProfile(profile.id);
+    void openPublicProfile(profile.id).then(loaded => {
+      if (!loaded && profile.communityFallback === true) {
+        renderPublicProfileModal({ ...profile, id: '', community: true });
+      }
+    });
+  } else if (profile.community === true || profile.isOwn === true) {
+    renderPublicProfileModal(profile);
   } else {
-    showToast('Гравець не зробив профіль публічним.', 'info');
+    showToast('У цього гравця немає доступної публічної картки.', 'info');
   }
 }
 
