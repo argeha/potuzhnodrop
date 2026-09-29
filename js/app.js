@@ -7898,8 +7898,14 @@ function scheduleBattleAutoStart(match) {
   if (!matchId || battleAutoMatchId === matchId || battleInProgress) return;
   clearBattleAutoStart();
   battleAutoMatchId = matchId;
+  const serverDelay = Number(match?.startInMs);
   const serverStartAt = Number(match?.startAt || 0);
-  const startAt = serverStartAt > 0 ? serverStartAt : Date.now() + BATTLE_MATCH_COUNTDOWN_MS;
+  // Prefer a delay calculated by the Worker. Device clocks can be several
+  // minutes apart, while this duration remains accurate for every client.
+  const delay = Number.isFinite(serverDelay)
+    ? clampNumber(serverDelay, 0, BATTLE_MATCH_COUNTDOWN_MS, BATTLE_MATCH_COUNTDOWN_MS)
+    : clampNumber(serverStartAt - Date.now(), 0, BATTLE_MATCH_COUNTDOWN_MS, BATTLE_MATCH_COUNTDOWN_MS);
+  const startAt = Date.now() + delay;
   const renderCountdown = () => {
     const remaining = Math.max(0, startAt - Date.now());
     const seconds = Math.max(1, Math.ceil(remaining / 1_000));

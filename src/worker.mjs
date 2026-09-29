@@ -1008,11 +1008,16 @@ function cleanMatchState(state, now) {
     .slice(0, BATTLE_LISTING_LIMIT)
 }
 
-function publicMatch(match) {
+function publicMatch(match, now) {
+  const startAt = boundedInteger(match.startAt, match.createdAt, match.createdAt + BATTLE_MATCH_START_DELAY, match.createdAt)
   return {
     id: match.id,
     createdAt: match.createdAt,
-    startAt: boundedInteger(match.startAt, match.createdAt, match.createdAt + BATTLE_MATCH_START_DELAY, match.createdAt),
+    startAt,
+    // The browser uses this server-calculated delay instead of trusting its
+    // own clock. That keeps the visible countdown within five seconds even
+    // when a player's device time is wrong.
+    startInMs: Math.max(0, startAt - now),
     winnerTicketId: match.winnerTicketId,
     players: match.players.map(player => ({ ticketId: player.ticketId, name: player.name, profileId: player.profileId || '', stake: player.stake })),
   }
@@ -1038,7 +1043,7 @@ function compatibleBattleStakes(first, second) {
 
 function matchmakingResult(state, deviceId, ticketId, now) {
   const match = state.matches.find(candidate => candidate.players.some(player => player.deviceId === deviceId && player.ticketId === ticketId))
-  if (match) return { status: 'matched', match: publicMatch(match) }
+  if (match) return { status: 'matched', match: publicMatch(match, now) }
   const position = state.queue.findIndex(entry => entry.deviceId === deviceId && entry.ticketId === ticketId)
   if (position >= 0) return { status: 'waiting', position: position + 1, waitedMs: Math.max(0, now - state.queue[position].joinedAt) }
   return { status: 'idle' }
