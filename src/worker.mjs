@@ -119,7 +119,7 @@ const RATE_LIMITS = {
   profile: { limit: 24, windowMs: 60_000 },
   publicProfile: { limit: 60, windowMs: 60_000 },
   fair: { limit: 80, windowMs: 60_000 },
-  matchmaking: { limit: 50, windowMs: 60_000 },
+  matchmaking: { limit: 140, windowMs: 60_000 },
   steamAuth: { limit: 8, windowMs: 10 * 60_000 },
   steamInventory: { limit: 16, windowMs: 60_000 },
   steam: { limit: 60, windowMs: 60_000 },
