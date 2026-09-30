@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 6.8.2 ============ */
+/* ============ ПОТУЖНО DROP 6.8.3 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -1542,7 +1542,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.8.2';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.8.3';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -8769,7 +8769,7 @@ let royaleLivePollTimer = null;
 let royaleLivePollInFlight = false;
 let royaleLiveSpinRoundId = '';
 const ROYALE_LIVE_REFRESH_MS = 1_000;
-const ROYALE_LIVE_MAX_SKINS = 1;
+const ROYALE_LIVE_MAX_SKINS = 10;
 
 // ── Canvas init ────────────────────────────────────────────────────────────
 function initRoyaleCanvas() {
@@ -8782,8 +8782,8 @@ function initRoyaleCanvas() {
 function royaleGetValues() {
   if (royaleMode === 'live' && royaleLiveRound?.participants?.length) {
     const participants = royaleLiveRound.participants;
-    const pv = participants.find(entry => entry.isMine === true || entry.ticketId === royaleLiveTicket?.ticketId)?.stake?.price || 0;
-    const total = participants.reduce((sum, entry) => sum + Number(entry?.stake?.price || 0), 0);
+    const pv = Number(participants.find(entry => entry.isMine === true || entry.ticketId === royaleLiveTicket?.ticketId)?.total || 0);
+    const total = participants.reduce((sum, entry) => sum + Number(entry?.total || 0), 0);
     return { pv, bv: [], total };
   }
   const pv  = royalePlayerSkins.reduce((s, x) => s + (x.price || 0), 0);
@@ -9269,8 +9269,8 @@ function royaleParticipants() {
     return royaleLiveRound.participants.map((player, index) => ({
       ticketId: player.ticketId,
       name: player.name || 'Гравець',
-      value: Number(player?.stake?.price || 0),
-      skins: player?.stake ? [player.stake] : [],
+      value: Number(player?.total || 0),
+      skins: Array.isArray(player?.stakes) ? player.stakes : [],
       color: ROYALE_COLORS[index % ROYALE_COLORS.length] || '#a78bfa',
       isYou: player.isMine === true || player.ticketId === royaleLiveTicket?.ticketId,
     }));
@@ -9482,7 +9482,7 @@ function updateRoyaleUI() {
   if (wheelStatus) wheelStatus.textContent = royalePhase === 'countdown' ? 'СТАРТ ЗА' : royalePhase === 'spinning' ? 'БАНК У РУСІ' : 'ТВІЙ ШАНС';
   if (wheelSub) wheelSub.textContent = royalePhase === 'countdown' ? `${remaining} секунд` : royalePhase === 'spinning' ? 'серверний ритм' : royalePlayerSkins.length ? 'місце у банку' : 'додай скін';
   if (hint) hint.textContent = isLive
-    ? (royaleLiveRound?.participants?.length ? 'Банк синхронізовано сервером. AI у цьому режимі не бере участі.' : 'Відкрий банк зі своїм віртуальним скіном — інші гравці можуть приєднатися.')
+    ? (royaleLiveRound?.participants?.length ? 'Банк синхронізовано сервером. AI у цьому режимі не бере участі.' : 'Відкрий банк із 1–10 віртуальними скінами — інші гравці можуть приєднатися.')
     : 'Ставки ботів підлаштовуються під твій внесок.';
   if (addButton) addButton.disabled = royaleInProgress || liveLocked || royalePlayerSkins.length >= skinLimit;
   if (startButton) {
@@ -9621,7 +9621,7 @@ function resetRoyale(force = false) {
   renderRoyaleDeck();
 }
 
-function royaleLiveRequest(action, ticketId, stake = null) {
+function royaleLiveRequest(action, ticketId, stakes = null) {
   return requestJson('/api/royale', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -9631,7 +9631,7 @@ function royaleLiveRequest(action, ticketId, stake = null) {
       ticketId,
       name: account?.nick || currentUser?.name || 'Гравець',
       profileId: account?.publicProfile?.enabled ? account.publicProfile.id : '',
-      ...(stake ? { stake } : {}),
+      ...(Array.isArray(stakes) ? { stakes } : {}),
     }),
   }, 5_000);
 }
@@ -9666,8 +9666,10 @@ function persistRoyaleLiveTicket() {
 function releaseLiveRoyaleReservation({ announce = false } = {}) {
   const ticket = royaleLiveTicket;
   if (!ticket) return;
-  const skin = ticket.skin && normalizeStoredItem(ticket.skin);
-  if (skin && !userInventory.some(item => String(item.id) === String(skin.id))) userInventory.push(skin);
+  const reservedSkins = Array.isArray(ticket.skins) ? ticket.skins : ticket.skin ? [ticket.skin] : [];
+  reservedSkins.map((skin, index) => normalizeStoredItem(skin, index)).filter(Boolean).forEach(skin => {
+    if (!userInventory.some(item => String(item.id) === String(skin.id))) userInventory.push(skin);
+  });
   if (ticket.wagerId) completePendingWager(ticket.wagerId);
   royaleLiveTicket = null;
   royaleLiveRound = null;
@@ -9767,26 +9769,27 @@ async function refreshLiveRoyale() {
 async function joinLiveRoyale() {
   if (royaleLiveTicket) return leaveLiveRoyale();
   if (pendingWager || isCaseOpening || isFreeCaseOpening) return showToast('Спочатку дочекайся завершення поточного раунду.', 'warn');
-  const skin = royalePlayerSkins[0];
-  if (!skin) return showToast('Додай один віртуальний скін у відкритий банк.', 'warn');
-  if (!userInventory.some(item => item.id === skin.id)) {
-    royalePlayerSkins = [];
+  const skins = royalePlayerSkins.slice(0, ROYALE_LIVE_MAX_SKINS);
+  if (!skins.length) return showToast('Додай від 1 до 10 віртуальних скінів у відкритий банк.', 'warn');
+  if (!skins.every(skin => userInventory.some(item => item.id === skin.id))) {
+    royalePlayerSkins = royalePlayerSkins.filter(skin => userInventory.some(item => item.id === skin.id));
     renderRoyaleDeck();
-    return showToast('Цей скін уже недоступний. Обери інший.', 'warn');
+    return showToast('Один зі скінів уже недоступний. Обери його ще раз.', 'warn');
   }
   const ticketId = makeUuid();
-  const wagerId = beginPendingWager({ inventory: [skin] });
-  royaleLiveTicket = { ticketId, wagerId, skin: normalizeStoredItem(skin), createdAt: Date.now() };
+  const wagerId = beginPendingWager({ inventory: skins });
+  royaleLiveTicket = { ticketId, wagerId, skins: skins.map((skin, index) => normalizeStoredItem(skin, index)).filter(Boolean), createdAt: Date.now() };
   persistRoyaleLiveTicket();
-  userInventory = userInventory.filter(item => item.id !== skin.id);
+  const skinIds = new Set(skins.map(skin => String(skin.id)));
+  userInventory = userInventory.filter(item => !skinIds.has(String(item.id)));
   saveState();
   renderInventoryGrid(); renderProfileInventory(); updateAvatarBadge();
   try {
-    const round = await royaleLiveRequest('join', ticketId, skin);
+    const round = await royaleLiveRequest('join', ticketId, skins);
     document.getElementById('royaleWinBanner')?.classList.add('hidden');
     startLiveRoyalePolling();
     applyLiveRoyaleState(round);
-    showToast(round.status === 'countdown' ? 'Гравець приєднався — сервер запускає рулетку.' : 'Ти у відкритому банку. Чекаємо ще одного гравця.', 'success');
+    showToast(round.status === 'countdown' ? 'Гравець приєднався — сервер запускає рулетку.' : `У банку ${skins.length} ${skins.length === 1 ? 'скін' : 'скінів'}. Чекаємо ще одного гравця.`, 'success');
   } catch (error) {
     releaseLiveRoyaleReservation();
     renderRoyaleDeck();
@@ -9934,7 +9937,7 @@ function initRoyalePage() {
   initRoyaleCanvas();
   bindRoyaleControls();
   const savedTicket = gameState?.royaleLiveTicket;
-  if (!royaleLiveTicket && savedTicket?.ticketId && savedTicket?.wagerId && savedTicket?.skin) {
+  if (!royaleLiveTicket && savedTicket?.ticketId && savedTicket?.wagerId && (Array.isArray(savedTicket?.skins) || savedTicket?.skin)) {
     royaleLiveTicket = savedTicket;
     royaleMode = 'live';
   }

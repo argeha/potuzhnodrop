@@ -39,6 +39,7 @@ const BATTLE_LISTING_LIMIT = 60
 // Open Bank is one shared, server-owned Royale lobby.  The result is decided
 // by the Durable Object, never by an individual browser.
 const ROYALE_LIVE_MAX_PLAYERS = 8
+const ROYALE_LIVE_MAX_STAKES = 10
 const ROYALE_LIVE_LOBBY_TTL = 12 * 60_000
 const ROYALE_LIVE_RESULT_TTL = 30_000
 const ROYALE_LIVE_START_DELAY = 5_000
@@ -394,6 +395,12 @@ function parseStake(value) {
     rarity: cleanText(value?.rarity, 48) || 'CS2',
     rarityColor: /^#[0-9a-f]{3,8}$/i.test(rarityColor) ? rarityColor : '#b0c3d9',
   }
+}
+
+function parseRoyaleStakes(value) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > ROYALE_LIVE_MAX_STAKES) return null
+  const stakes = value.map(parseStake)
+  return stakes.every(Boolean) ? stakes : null
 }
 
 function normalizeMatchState(value) {
@@ -1009,15 +1016,18 @@ function normalizeRoyaleParticipant(value, now) {
   const deviceId = cleanText(value?.deviceId, 64)
   const ticketId = cleanText(value?.ticketId, 64)
   const profileId = cleanText(value?.profileId, 64)
-  const stake = parseStake(value?.stake)
+  // Accept the former single-stake shape while an old in-progress round
+  // naturally expires. New rounds always use a set of 1–10 virtual skins.
+  const stakes = parseRoyaleStakes(Array.isArray(value?.stakes) ? value.stakes : [value?.stake])
   const joinedAt = boundedInteger(value?.joinedAt, now - ROYALE_LIVE_LOBBY_TTL, now, now)
-  if (!ID.test(deviceId) || !ID.test(ticketId) || !stake) return null
+  if (!ID.test(deviceId) || !ID.test(ticketId) || !stakes) return null
   return {
     deviceId,
     ticketId,
     profileId: ID.test(profileId) ? profileId : '',
     name: cleanText(value?.name, 24) || 'Гравець',
-    stake,
+    stakes,
+    total: stakes.reduce((sum, stake) => sum + stake.price, 0),
     joinedAt,
   }
 }
@@ -1065,7 +1075,8 @@ function publicRoyaleRound(round, deviceId, ticketId, now) {
       ticketId: player.ticketId,
       name: player.name,
       profileId: player.profileId,
-      stake: player.stake,
+      stakes: player.stakes,
+      total: player.total,
       joinedAt: player.joinedAt,
       isMine: player.deviceId === deviceId && player.ticketId === ticketId,
     })),
@@ -1073,10 +1084,10 @@ function publicRoyaleRound(round, deviceId, ticketId, now) {
 }
 
 function pickRoyaleWinner(participants) {
-  const total = participants.reduce((sum, player) => sum + Math.max(1, Number(player.stake?.price || 0)), 0)
+  const total = participants.reduce((sum, player) => sum + Math.max(1, Number(player.total || 0)), 0)
   let cursor = (crypto.getRandomValues(new Uint32Array(1))[0] / 0x1_0000_0000) * total
   for (const player of participants) {
-    cursor -= Math.max(1, Number(player.stake?.price || 0))
+    cursor -= Math.max(1, Number(player.total || 0))
     if (cursor <= 0) return player.ticketId
   }
   return participants[participants.length - 1].ticketId
@@ -2098,10 +2109,10 @@ export class PotuzhnoState {
     }
 
     if (action !== 'join') return json({ error: 'Невідома дія Open Bank.' }, 400)
-    const stake = parseStake(body?.stake)
+    const stakes = parseRoyaleStakes(Array.isArray(body?.stakes) ? body.stakes : [body?.stake])
     const name = cleanText(body?.name, 24) || 'Гравець'
     const profileId = cleanText(body?.profileId, 64)
-    if (!stake) return json({ error: 'Обери коректний віртуальний скін для банку.' }, 400)
+    if (!stakes) return json({ error: `Обери від 1 до ${ROYALE_LIVE_MAX_STAKES} коректних віртуальних скінів для банку.` }, 400)
     if (profileId && !ID.test(profileId)) return json({ error: 'Некоректний профіль гравця.' }, 400)
 
     const joined = await this.updateMatchState((state, now) => {
@@ -2118,7 +2129,7 @@ export class PotuzhnoState {
       }
       if (round.status !== 'open') return { error: 'Банк уже синхронізує запуск. Дочекайся наступного раунду.', status: 409 }
       if (round.participants.length >= ROYALE_LIVE_MAX_PLAYERS) return { error: 'Банк уже заповнений. Скоро відкриється новий.', status: 409 }
-      round.participants.push({ deviceId, ticketId, name, profileId: ID.test(profileId) ? profileId : '', stake, joinedAt: now })
+      round.participants.push({ deviceId, ticketId, name, profileId: ID.test(profileId) ? profileId : '', stakes, total: stakes.reduce((sum, stake) => sum + stake.price, 0), joinedAt: now })
       if (round.participants.length >= 2) {
         round.status = 'countdown'
         round.startAt = now + ROYALE_LIVE_START_DELAY
