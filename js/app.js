@@ -5220,9 +5220,11 @@ function getCommunityPlayerPayload() {
   return {
     name: cleanText(account?.nick || currentUser?.name || 'Гравець', 24) || 'Гравець',
     profileId: account?.publicProfile?.enabled ? account.publicProfile.id : '',
-    // Kept under the existing field name for compatibility with community
-    // records, but Steam ID is now the primary server account identity.
-    cloudProfileId: hasReadySteamAccount()
+    // Steam identity is already verified before its game-state snapshot has
+    // finished loading. Send it immediately so a just-opened Android client
+    // and the website collapse into one community entry instead of briefly
+    // creating two anonymous records.
+    cloudProfileId: hasSteamIdentity()
       ? String(currentUser?.steamId || account?.steamId || '')
       : (isCloudProfile(account?.cloud) ? account.cloud.id : ''),
     xp: clampNumber(gameState?.xp, 0, 9_999_999, 0),

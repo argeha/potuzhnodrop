@@ -670,18 +670,20 @@ function normalizeCommunityState(value, now) {
     .map(([visitorHash, player]) => [visitorHash, normalizeCommunityPlayer(player, visitorHash, boundedInteger(player.updatedAt, now - COMMUNITY_PLAYER_TTL, now, now))])
     .filter(([, player]) => Boolean(player))
     .sort(([, left], [, right]) => right.updatedAt - left.updatedAt)
-  // A Steam account can play on both the site and Android.  Those clients
+  // A Steam account can play on both the site and Android. Those clients
   // have different anonymous browser IDs, but they must still occupy exactly
-  // one place in the public ranking.  Keep only the freshest heartbeat for a
-  // verified cross-device account.  Visitors without an account remain
-  // separate, because a nickname is not a safe identity key.
+  // one place in the public ranking. The public profile ID covers an older
+  // heartbeat written just before Steam storage became ready on that device.
+  // A nickname is never used as an identity key.
   const seenAccounts = new Set()
+  const seenProfiles = new Set()
   const players = rawPlayers
     .filter(([, player]) => {
       const accountId = player.cloudProfileId
-      if (!accountId) return true
-      if (seenAccounts.has(accountId)) return false
-      seenAccounts.add(accountId)
+      const profileId = player.profileId
+      if ((accountId && seenAccounts.has(accountId)) || (profileId && seenProfiles.has(profileId))) return false
+      if (accountId) seenAccounts.add(accountId)
+      if (profileId) seenProfiles.add(profileId)
       return true
     })
     .slice(0, COMMUNITY_MAX_PLAYERS)
@@ -2382,9 +2384,11 @@ export class PotuzhnoState {
       // Normalisation cleans old duplicate heartbeats when the state is read.
       // Do the same after writing this heartbeat so a player switching between
       // Android and the website is never rendered twice in this response.
-      if (player.cloudProfileId) {
+      if (player.cloudProfileId || player.profileId) {
         for (const [id, entry] of Object.entries(state.players)) {
-          if (id !== visitorHash && entry?.cloudProfileId === player.cloudProfileId) delete state.players[id]
+          const sameAccount = player.cloudProfileId && entry?.cloudProfileId === player.cloudProfileId
+          const samePublicProfile = player.profileId && entry?.profileId === player.profileId
+          if (id !== visitorHash && (sameAccount || samePublicProfile)) delete state.players[id]
         }
       }
       if (event) state.events = [event, ...state.events.filter(entry => entry.id !== event.id)].slice(0, COMMUNITY_MAX_EVENTS)
