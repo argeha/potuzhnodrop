@@ -828,10 +828,14 @@ function adminCatalogSkin(value) {
   if (!value || typeof value !== 'object') return null
   const id = cleanText(value.id, 128)
   const name = cleanText(value.name, 160)
-  const weapon = cleanText(value.weapon?.name, 64)
-  const category = cleanText(value.category?.name, 64)
-  const rarity = cleanText(value.rarity?.name, 48) || 'Consumer Grade'
-  const img = cleanImage(value.image)
+  // The public catalog uses nested API fields, while the admin gateway passes
+  // the same verified record in a compact, flat shape. Accept both forms here
+  // so a skin selected in the panel can never be rejected by the profile DO.
+  const weapon = cleanText(typeof value.weapon === 'string' ? value.weapon : value.weapon?.name, 64)
+  const category = cleanText(typeof value.category === 'string' ? value.category : value.category?.name, 64)
+  const rarity = cleanText(typeof value.rarity === 'string' ? value.rarity : value.rarity?.name, 48) || 'Consumer Grade'
+  const rarityColor = cleanColor(value.rarityColor || value.rarity?.color)
+  const img = cleanImage(value.img || value.image)
   if (!id || !name || !weapon || !category || !img) return null
   const idText = `${id}:${name}`
   let hash = 2166136261
@@ -854,7 +858,7 @@ function adminCatalogSkin(value) {
     weapon,
     category,
     rarity,
-    rarityColor: cleanColor(value.rarity?.color),
+    rarityColor,
     img,
     price: boundedInteger(price, 10, MAX_PRICE),
   }
