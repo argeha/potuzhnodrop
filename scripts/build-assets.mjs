@@ -26,6 +26,7 @@ await Promise.all([
   copyFile(join(projectRoot, 'js', 'app.js'), join(outputDir, 'js', 'app.js')),
   copyFile(join(projectRoot, 'js', 'admin.js'), join(outputDir, 'js', 'admin.js')),
   cp(join(projectRoot, 'assets', 'audio'), join(outputDir, 'assets', 'audio'), { recursive: true }),
+  cp(join(projectRoot, 'assets', 'arena'), join(outputDir, 'assets', 'arena'), { recursive: true }),
   cp(join(projectRoot, 'assets', 'brand'), join(outputDir, 'assets', 'brand'), { recursive: true }),
   cp(join(projectRoot, 'assets', 'cases'), join(outputDir, 'assets', 'cases'), { recursive: true }),
   cp(join(projectRoot, 'assets', 'cosmetics'), join(outputDir, 'assets', 'cosmetics'), { recursive: true }),

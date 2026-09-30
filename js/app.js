@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 6.8.9 ============ */
+/* ============ ПОТУЖНО DROP 6.9.0 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -1053,6 +1053,54 @@ const TARGET_ARENA_STAKES = Object.freeze([2_500, 10_000, 25_000]);
 const TARGET_ARENA_DURATION_MS = 15_000;
 const TARGET_ARENA_HIT_BONUS_MS = 220;
 const TARGET_ARENA_MAX_BONUS_MS = 5_000;
+const TARGET_ARENA_ASSETS = Object.freeze({
+  backdrop: '/assets/arena/zero-sight-range-v1.png',
+  standard: '/assets/arena/zero-sight-standard-target-v1.png',
+  elite: '/assets/arena/zero-sight-elite-target-v1.png',
+  decoy: '/assets/arena/zero-sight-decoy-target-v1.png'
+});
+const TARGET_ARENA_THEMES = Object.freeze({
+  default: Object.freeze({
+    key: 'zero-sight',
+    cardClass: 'is-zero-sight',
+    name: 'ЕЛІТНИЙ ТИР',
+    kicker: 'ZERO-SIGHT · ОСНОВНИЙ ПОЛІГОН',
+    icon: 'fa-crosshairs',
+    boardCopy: 'ОБЕРИ ЛІНІЮ · ВЛУЧИ ТОЧНО',
+    liveHint: 'Наводься на мішені різної дальності. Далека лінія дає більше очок і часу.',
+    backdrop: TARGET_ARENA_ASSETS.backdrop
+  }),
+  halloween: Object.freeze({
+    key: 'nightfall',
+    cardClass: 'is-halloween',
+    name: 'ГАРБУЗОВИЙ ТИР',
+    kicker: 'NIGHTFALL · ПОЛЮВАННЯ НА СИГНАЛИ',
+    icon: 'fa-ghost',
+    boardCopy: 'ПОЛЮВАННЯ В ТУМАНІ',
+    liveHint: 'Під час Nightfall мішені отримають святкове оформлення без зміни правил.',
+    backdrop: TARGET_ARENA_ASSETS.backdrop
+  }),
+  winter: Object.freeze({
+    key: 'icewire',
+    cardClass: 'is-icewire',
+    name: 'ПОЛЯРНИЙ ТИР',
+    kicker: 'ICEWIRE · ZERO HOUR',
+    icon: 'fa-snowflake',
+    boardCopy: 'КРИЖАНІ ЛІНІЇ НАВЕДЕННЯ',
+    liveHint: 'Під час ICEWIRE мішені отримають крижану тему без зміни правил.',
+    backdrop: TARGET_ARENA_ASSETS.backdrop
+  })
+});
+const TARGET_ARENA_DEPTHS = Object.freeze([
+  Object.freeze({ key: 'near', label: 'БЛИЖНЯ ЛІНІЯ', points: 1, bonusMs: 190, scale: 0.78, minX: 0.06, maxX: 0.32, minY: 0.36, maxY: 0.63, nextMs: 1_050 }),
+  Object.freeze({ key: 'mid', label: 'СЕРЕДНЯ ЛІНІЯ', points: 2, bonusMs: TARGET_ARENA_HIT_BONUS_MS, scale: 0.57, minX: 0.34, maxX: 0.59, minY: 0.28, maxY: 0.59, nextMs: 850 }),
+  Object.freeze({ key: 'far', label: 'ДАЛЬНЯ ЛІНІЯ', points: 3, bonusMs: 290, scale: 0.40, minX: 0.64, maxX: 0.88, minY: 0.17, maxY: 0.53, nextMs: 680 })
+]);
+const TARGET_ARENA_TARGETS = Object.freeze({
+  standard: Object.freeze({ key: 'standard', label: 'ТАКТИЧНА МІШЕНЬ', icon: 'fa-bullseye', asset: TARGET_ARENA_ASSETS.standard, scoreBonus: 0, bonusMs: 0 }),
+  elite: Object.freeze({ key: 'elite', label: 'ЕЛІТНИЙ МАЯК', icon: 'fa-gem', asset: TARGET_ARENA_ASSETS.elite, scoreBonus: 1, bonusMs: 100 }),
+  decoy: Object.freeze({ key: 'decoy', label: 'ХИБНИЙ СИГНАЛ', icon: 'fa-triangle-exclamation', asset: TARGET_ARENA_ASSETS.decoy, scoreBonus: 0, bonusMs: 0 })
+});
 const TARGET_ARENA_PAYOUTS = Object.freeze([
   { minimumScore: 21, multiplier: 1.35, label: 'ЕЛІТА · 135%' },
   { minimumScore: 17, multiplier: 1.10, label: 'МАЙСТЕР · 110%' },
@@ -1543,7 +1591,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.8.9';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.9.0';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -2454,14 +2502,44 @@ function getTargetArenaPayout(score) {
   return TARGET_ARENA_PAYOUTS.find(tier => score >= tier.minimumScore) || TARGET_ARENA_PAYOUTS[TARGET_ARENA_PAYOUTS.length - 1];
 }
 
+function getTargetArenaTheme() {
+  const season = getActiveSeason();
+  if (season?.kind === 'halloween') return TARGET_ARENA_THEMES.halloween;
+  if (season?.kind === 'winter') return TARGET_ARENA_THEMES.winter;
+  return TARGET_ARENA_THEMES.default;
+}
+
+function getTargetArenaDescriptor() {
+  const depthRoll = Math.random();
+  const depth = depthRoll < 0.42
+    ? TARGET_ARENA_DEPTHS[0]
+    : depthRoll < 0.79
+      ? TARGET_ARENA_DEPTHS[1]
+      : TARGET_ARENA_DEPTHS[2];
+  const targetRoll = Math.random();
+  const target = targetRoll < 0.09
+    ? TARGET_ARENA_TARGETS.decoy
+    : targetRoll > 0.82
+      ? TARGET_ARENA_TARGETS.elite
+      : TARGET_ARENA_TARGETS.standard;
+  const decoy = target.key === 'decoy';
+  return {
+    ...target,
+    depth,
+    decoy,
+    points: decoy ? 0 : depth.points + target.scoreBonus,
+    bonusMs: decoy ? 0 : depth.bonusMs + target.bonusMs
+  };
+}
+
 function clearTargetArenaTimers() {
   if (targetArenaTimer) window.clearTimeout(targetArenaTimer);
-  if (targetArenaMoveTimer) window.clearInterval(targetArenaMoveTimer);
+  if (targetArenaMoveTimer) window.clearTimeout(targetArenaMoveTimer);
   targetArenaTimer = 0;
   targetArenaMoveTimer = 0;
 }
 
-function renderTargetArena() {
+function renderLegacyTargetArena() {
   const root = document.getElementById('targetArena');
   if (!root || !gameState) return;
   if (targetArenaSession) {
@@ -2494,7 +2572,7 @@ function renderTargetArena() {
   root.querySelector('[data-arena-start]')?.addEventListener('click', () => startTargetArena(targetArenaSelectedStake));
 }
 
-function renderActiveTargetArena(root) {
+function renderLegacyActiveTargetArena(root) {
   clearTargetArenaTimers();
   const season = getActiveSeason();
   const halloweenActive = season?.kind === 'halloween';
@@ -2546,6 +2624,154 @@ function renderActiveTargetArena(root) {
   updateTimer();
 }
 
+function renderTargetArena() {
+  const root = document.getElementById('targetArena');
+  if (!root || !gameState) return;
+  if (targetArenaSession) {
+    renderActiveTargetArena(root);
+    return;
+  }
+  const arena = getTargetArenaState();
+  const theme = getTargetArenaTheme();
+  const iconHtml = '<i class="fa-solid ' + theme.icon + '"></i>';
+  const payoutRanges = [
+    ['0–4', '0%'],
+    ['5–8', '15%'],
+    ['9–12', '40%'],
+    ['13–16', '75%'],
+    ['17–20', '110%'],
+    ['21+', '135%']
+  ];
+  const payoutMarkup = payoutRanges.map(range => '<div><b>' + range[0] + '</b><em>' + range[1] + '</em></div>').join('');
+  const stakeMarkup = TARGET_ARENA_STAKES.map(stake => '<button type="button" data-arena-stake="' + stake + '" class="' + (targetArenaSelectedStake === stake ? 'is-selected' : '') + '">' + formatCredits(stake) + '</button>').join('');
+  const compactAction = '<div class="target-arena-compact"><span>' + iconHtml + ' Внески від ' + formatCredits(TARGET_ARENA_STAKES[0]) + ' · різні лінії та бонуси часу</span><button type="button" data-arena-open><i class="fa-solid fa-crosshairs"></i> Відкрити тир</button></div>';
+  const fullControls = '<div class="target-arena-body"><div class="target-arena-stakes"><span>ОБЕРИ ВНЕСОК</span><div>' + stakeMarkup + '</div><small>Віртуальна мінігра: без реальних грошей, предметів чи призів.</small></div><div class="target-arena-rules"><span>ВИПЛАТА ЗА ОЧКИ</span><div class="target-arena-payout-scale">' + payoutMarkup + '</div><small>Далека мішень і елітний маяк дають більше очок. Хибний сигнал обриває стрік.</small></div><div class="target-arena-actions"><button type="button" class="target-arena-start" data-arena-start>' + iconHtml + ' ПОЧАТИ ЗА ' + formatCredits(targetArenaSelectedStake) + '<small>15 с · + час за точні влучання</small></button><button type="button" class="target-arena-collapse" data-arena-close>Згорнути</button></div></div>';
+  root.innerHTML = '<article class="target-arena-card arena-theme-' + theme.key + ' ' + theme.cardClass + ' ' + (targetArenaExpanded ? 'is-expanded' : 'is-compact') + '" aria-label="' + theme.name + '"><div class="target-arena-head"><div class="target-arena-icon">' + iconHtml + '</div><div><p>' + theme.kicker + '</p><h2>' + theme.name + '</h2><span>2.5D-полігон із трьома лініями дальності. Точний постріл повертає частину віртуального внеску.</span></div><div class="target-arena-record"><span>РЕКОРД</span><b>' + arena.bestScore + '</b><small>' + arena.rounds + ' спроб</small></div></div>' + (targetArenaExpanded ? fullControls : compactAction) + '</article>';
+  root.querySelector('[data-arena-open]')?.addEventListener('click', () => {
+    targetArenaExpanded = true;
+    renderTargetArena();
+  });
+  root.querySelector('[data-arena-close]')?.addEventListener('click', () => {
+    targetArenaExpanded = false;
+    renderTargetArena();
+  });
+  root.querySelectorAll('[data-arena-stake]').forEach(button => button.addEventListener('click', () => {
+    targetArenaSelectedStake = Number(button.dataset.arenaStake);
+    renderTargetArena();
+  }));
+  root.querySelector('[data-arena-start]')?.addEventListener('click', () => startTargetArena(targetArenaSelectedStake));
+}
+
+function renderActiveTargetArena(root) {
+  clearTargetArenaTimers();
+  const theme = getTargetArenaTheme();
+  const session = targetArenaSession;
+  if (!session) return;
+  const iconHtml = '<i class="fa-solid ' + theme.icon + '"></i>';
+  root.innerHTML = '<article class="target-arena-card arena-theme-' + theme.key + ' ' + theme.cardClass + ' is-active" aria-label="' + theme.name + ', активна спроба"><div class="target-arena-live-head"><div><p>' + iconHtml + ' ' + theme.name + ' · СЕАНС ТРИВАЄ</p><strong id="targetArenaTimer">15.0 с</strong></div><div><span>ВНЕСОК</span><b>' + formatCredits(session.stake) + '</b></div><div><span>ОЧКИ</span><b id="targetArenaScore">0</b><small id="targetArenaHits">0 влучань</small></div><div><span>СТРІК</span><b id="targetArenaStreak">×0</b><small id="targetArenaBonus">+0.00 с</small></div></div><div class="target-arena-board" id="targetArenaBoard" style="--arena-backdrop-image:url(' + theme.backdrop + ')"><div class="target-arena-lane-grid" aria-hidden="true"><span>БЛИЖНЯ</span><span>СЕРЕДНЯ</span><span>ДАЛЬНЯ</span></div><span class="target-arena-board-copy">' + theme.boardCopy + '</span><div class="target-arena-board-status" id="targetArenaCallout" aria-live="polite"><i class="fa-solid fa-satellite-dish"></i> СКАНУВАННЯ ЛІНІЇ...</div><button type="button" class="target-arena-target target-kind-standard" id="targetArenaTarget" aria-label="Влучити в мішень"><span class="target-arena-target-ring" aria-hidden="true"></span><img class="target-arena-target-image" id="targetArenaTargetImage" src="' + TARGET_ARENA_ASSETS.standard + '" alt=""><span class="target-arena-target-meta" id="targetArenaTargetMeta">СИГНАЛ</span></button><span class="target-arena-shot-flash" id="targetArenaFlash" aria-hidden="true"></span></div><p class="target-arena-live-note">' + theme.liveHint + ' Ближня: +1, середня: +2, дальня: +3; елітний маяк дає ще +1.</p></article>';
+
+  const board = root.querySelector('#targetArenaBoard');
+  const target = root.querySelector('#targetArenaTarget');
+  const targetImage = root.querySelector('#targetArenaTargetImage');
+  const targetMeta = root.querySelector('#targetArenaTargetMeta');
+  const callout = root.querySelector('#targetArenaCallout');
+  const flash = root.querySelector('#targetArenaFlash');
+  let activeTarget = null;
+
+  const updateStats = () => {
+    if (!targetArenaSession) return;
+    const score = root.querySelector('#targetArenaScore');
+    const hits = root.querySelector('#targetArenaHits');
+    const streak = root.querySelector('#targetArenaStreak');
+    const bonus = root.querySelector('#targetArenaBonus');
+    if (score) score.textContent = String(targetArenaSession.score);
+    if (hits) hits.textContent = String(targetArenaSession.hits || 0) + ' влучань';
+    if (streak) streak.textContent = '×' + String(targetArenaSession.streak || 0);
+    if (bonus) bonus.textContent = '+' + ((Number(targetArenaSession.bonusMs) || 0) / 1000).toFixed(2) + ' с';
+  };
+
+  const scheduleTarget = delay => {
+    if (targetArenaMoveTimer) window.clearTimeout(targetArenaMoveTimer);
+    targetArenaMoveTimer = window.setTimeout(showTarget, delay);
+  };
+
+  const showTarget = () => {
+    if (!targetArenaSession || !board || !target) return;
+    activeTarget = getTargetArenaDescriptor();
+    const boardWidth = Math.max(board.clientWidth, 1);
+    const boardHeight = Math.max(board.clientHeight, 1);
+    const size = clampNumber(Math.round(Math.min(boardWidth, boardHeight) * activeTarget.depth.scale), 48, 154, 86);
+    const minLeft = Math.max(6, Math.round(boardWidth * activeTarget.depth.minX));
+    const maxLeft = Math.max(minLeft, Math.min(boardWidth - size - 6, Math.round(boardWidth * activeTarget.depth.maxX)));
+    const minTop = Math.max(8, Math.round(boardHeight * activeTarget.depth.minY));
+    const maxTop = Math.max(minTop, Math.min(boardHeight - size - 7, Math.round(boardHeight * activeTarget.depth.maxY)));
+    const left = minLeft + Math.random() * Math.max(0, maxLeft - minLeft);
+    const top = minTop + Math.random() * Math.max(0, maxTop - minTop);
+    target.className = 'target-arena-target target-kind-' + activeTarget.key + ' target-depth-' + activeTarget.depth.key;
+    target.style.width = String(size) + 'px';
+    target.style.height = String(size) + 'px';
+    target.style.left = String(Math.round(left)) + 'px';
+    target.style.top = String(Math.round(top)) + 'px';
+    target.disabled = false;
+    target.setAttribute('aria-label', activeTarget.decoy ? 'Хибний сигнал, не натискати' : 'Влучити: ' + activeTarget.label + ', ' + activeTarget.depth.label);
+    if (targetImage) targetImage.src = activeTarget.asset;
+    if (targetMeta) targetMeta.textContent = activeTarget.decoy ? 'ОБМАНКА' : '+' + activeTarget.points + ' · ' + activeTarget.depth.label.replace(' ЛІНІЯ', '');
+    if (callout) callout.innerHTML = '<i class="fa-solid ' + activeTarget.icon + '"></i> ' + activeTarget.label + ' · ' + activeTarget.depth.label;
+    board.dataset.depth = activeTarget.depth.key;
+    scheduleTarget(activeTarget.depth.nextMs);
+  };
+
+  target?.addEventListener('click', () => {
+    if (!targetArenaSession || !activeTarget || target.disabled) return;
+    if (Date.now() >= targetArenaSession.endsAt) {
+      finishTargetArena();
+      return;
+    }
+    target.disabled = true;
+    target.classList.remove('is-hit', 'is-decoy-hit');
+    void target.offsetWidth;
+    target.classList.add(activeTarget.decoy ? 'is-decoy-hit' : 'is-hit');
+    flash?.classList.remove('is-visible');
+    void flash?.offsetWidth;
+    flash?.classList.add(activeTarget.decoy ? 'is-danger' : 'is-visible');
+    if (activeTarget.decoy) {
+      targetArenaSession.streak = 0;
+      targetArenaSession.decoys = (targetArenaSession.decoys || 0) + 1;
+      if (callout) callout.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> ХИБНИЙ СИГНАЛ · стрік скинуто';
+      beep(165, 0.055, 'sawtooth');
+      updateStats();
+      scheduleTarget(250);
+      return;
+    }
+    targetArenaSession.hits = (targetArenaSession.hits || 0) + 1;
+    targetArenaSession.streak = (targetArenaSession.streak || 0) + 1;
+    targetArenaSession.maxStreak = Math.max(targetArenaSession.maxStreak || 0, targetArenaSession.streak);
+    targetArenaSession.score += activeTarget.points;
+    const previousEnd = targetArenaSession.endsAt;
+    targetArenaSession.endsAt = Math.min(targetArenaSession.maxEndsAt, targetArenaSession.endsAt + activeTarget.bonusMs);
+    targetArenaSession.bonusMs = clampNumber((Number(targetArenaSession.bonusMs) || 0) + (targetArenaSession.endsAt - previousEnd), 0, TARGET_ARENA_MAX_BONUS_MS, 0);
+    if (callout) callout.innerHTML = '<i class="fa-solid fa-check"></i> ТОЧНО · +' + activeTarget.points + ' очки · +' + activeTarget.bonusMs + ' мс';
+    beep(590 + Math.min(650, targetArenaSession.score * 19), 0.042, 'square');
+    updateStats();
+    scheduleTarget(125);
+  });
+
+  showTarget();
+  updateStats();
+  const updateTimer = () => {
+    if (!targetArenaSession) return;
+    const remaining = Math.max(0, targetArenaSession.endsAt - Date.now());
+    const timer = root.querySelector('#targetArenaTimer');
+    if (timer) timer.textContent = (remaining / 1000).toFixed(1) + ' с';
+    if (remaining <= 0) {
+      finishTargetArena();
+      return;
+    }
+    targetArenaTimer = window.setTimeout(updateTimer, 60);
+  };
+  updateTimer();
+}
+
 function startTargetArena(stake) {
   const safeStake = TARGET_ARENA_STAKES.includes(Number(stake)) ? Number(stake) : TARGET_ARENA_STAKES[0];
   if (targetArenaSession || !currentUser || !gameState) return;
@@ -2555,7 +2781,17 @@ function startTargetArena(stake) {
   }
   currentUser.balance -= safeStake;
   const startedAt = Date.now();
-  targetArenaSession = { stake: safeStake, score: 0, bonusMs: 0, endsAt: startedAt + TARGET_ARENA_DURATION_MS, maxEndsAt: startedAt + TARGET_ARENA_DURATION_MS + TARGET_ARENA_MAX_BONUS_MS };
+  targetArenaSession = {
+    stake: safeStake,
+    score: 0,
+    hits: 0,
+    streak: 0,
+    maxStreak: 0,
+    decoys: 0,
+    bonusMs: 0,
+    endsAt: startedAt + TARGET_ARENA_DURATION_MS,
+    maxEndsAt: startedAt + TARGET_ARENA_DURATION_MS + TARGET_ARENA_MAX_BONUS_MS
+  };
   saveState();
   updateBalanceUI();
   renderTargetArena();
