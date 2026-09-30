@@ -1,6 +1,6 @@
 {
   "name": "potuzhno-drop-demo",
-  "version": "6.9.5",
+  "version": "6.9.6",
   "private": true,
   "description": "Potuzhno Drop — transparent virtual CS2 collection game on Cloudflare Workers.",
   "type": "module",
@@ -10,12 +10,26 @@
   "scripts": {
     "build:styles": "tailwindcss -c tailwind.config.cjs -i css/tailwind.input.css -o css/tailwind.css --minify",
     "build:assets": "node scripts/build-assets.mjs",
+    "build:web": "npm run build:styles && npm run build:assets",
+    "mobile:sync": "npm run build:web && npx cap sync android",
+    "mobile:open": "npx cap open android",
+    "mobile:doctor": "npx cap doctor android",
     "check": "node --check js/app.js && node --check src/worker.mjs && npm run build:styles && npm run build:assets && npx wrangler deploy --dry-run",
     "build": "npm run check",
     "dev": "npm run build:styles && npm run build:assets && wrangler dev"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
     "tailwindcss": "^3.4.17",
+    "typescript": "^7.0.2",
     "wrangler": "^4.135.0"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/browser": "^8.0.4",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.3"
   }
 }

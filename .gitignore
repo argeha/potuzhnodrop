@@ -2,6 +2,7 @@ node_modules/
 dist/
 .netlify/
 .wrangler/
+.gradle-build/
 .env
 .env.*
 !.env.example

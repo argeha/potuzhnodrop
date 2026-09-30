@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ПОТУЖНО DROP</string>
+    <string name="title_activity_main">ПОТУЖНО DROP</string>
+    <string name="package_name">com.argeha.potuzhnodrop</string>
+    <string name="custom_url_scheme">potuzhnodrop</string>
+</resources>
