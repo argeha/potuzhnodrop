@@ -16,10 +16,6 @@ const AVATAR_HOSTS = new Set([
   'avatars.akamai.steamstatic.com',
   'avatars.fastly.steamstatic.com',
   'steamcdn-a.akamaihd.net',
-  'lh3.googleusercontent.com',
-  'lh4.googleusercontent.com',
-  'lh5.googleusercontent.com',
-  'lh6.googleusercontent.com',
 ])
 const CATALOG_SOURCES = [
   'https://cdn.jsdelivr.net/gh/ByMykel/CSGO-API@main/public/api/en/skins.json',
@@ -63,14 +59,6 @@ const STEAM_SESSION_COOKIE = 'potuzhno_steam_session'
 const STEAM_AUTH_TTL = 10 * 60_000
 const STEAM_AUTH_COOKIE = 'potuzhno_steam_auth'
 const STEAM_SESSION_VERSION = 'v2'
-// Google is the primary account on web and Android. Steam remains an optional,
-// verified link for profile artwork and the virtual CS2 collection.
-const GOOGLE_SESSION_COOKIE = 'potuzhno_google_session'
-const GOOGLE_SESSION_VERSION = 'g1'
-const GOOGLE_SESSION_TTL = 30 * 24 * 60 * 60_000
-const GOOGLE_LINK_TTL = 10 * 60_000
-const GOOGLE_IDENTITY_STATE = 'google-identity'
-const GOOGLE_JWKS_TTL = 6 * 60 * 60_000
 // A native session is deliberately a separate, revocable credential. It is
 // exchanged only after the Steam OpenID callback has completed in the system
 // browser; the Android WebView never receives the HttpOnly website cookie.
@@ -153,7 +141,6 @@ const RATE_LIMITS = {
   fair: { limit: 80, windowMs: 60_000 },
   matchmaking: { limit: 140, windowMs: 60_000 },
   steamAuth: { limit: 8, windowMs: 10 * 60_000 },
-  google: { limit: 20, windowMs: 60_000 },
   steamInventory: { limit: 16, windowMs: 60_000 },
   steam: { limit: 60, windowMs: 60_000 },
   catalog: { limit: 20, windowMs: 60_000 },
@@ -424,41 +411,6 @@ function mobileSessionToken(request) {
   return match ? match[1].toLowerCase() : ''
 }
 
-function googleSessionToken(request) {
-  const authorization = cleanText(request.headers.get('Authorization'), 180)
-  const bearer = authorization.match(new RegExp(`^Bearer\\s+${GOOGLE_SESSION_VERSION}_([a-f0-9]{64})$`, 'i'))
-  if (bearer) return bearer[1].toLowerCase()
-  const cookie = readCookie(request, GOOGLE_SESSION_COOKIE)
-  const browser = String(cookie || '').match(new RegExp(`^${GOOGLE_SESSION_VERSION}_([a-f0-9]{64})$`, 'i'))
-  return browser ? browser[1].toLowerCase() : ''
-}
-
-function base64UrlBytes(value) {
-  const encoded = String(value || '')
-  if (!/^[A-Za-z0-9_-]+$/.test(encoded)) return null
-  try {
-    const normalized = encoded.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - encoded.length % 4) % 4)
-    const binary = atob(normalized)
-    return Uint8Array.from(binary, char => char.charCodeAt(0))
-  } catch {
-    return null
-  }
-}
-
-function base64UrlJson(value) {
-  try {
-    const bytes = base64UrlBytes(value)
-    return bytes ? JSON.parse(new TextDecoder().decode(bytes)) : null
-  } catch {
-    return null
-  }
-}
-
-function safeGoogleSubject(value) {
-  const subject = cleanText(value, 255)
-  return /^[0-9]{6,64}$/.test(subject) ? subject : ''
-}
-
 function isMobileAppOrigin(origin) {
   return MOBILE_APP_ORIGINS.has(String(origin || '').toLowerCase())
 }
@@ -503,7 +455,6 @@ function rateLimitGroup(path) {
   if (path.startsWith('/api/fair/')) return 'fair'
   if (path === '/api/matchmaking' || path === '/api/royale') return 'matchmaking'
   if (path === '/api/steam/auth') return 'steamAuth'
-  if (path.startsWith('/api/google/')) return 'google'
   if (path === '/api/steam/inventory') return 'steamInventory'
   if (path.startsWith('/api/steam/')) return 'steam'
   if (path === '/api/catalog/skins') return 'catalog'
@@ -1361,8 +1312,6 @@ export class PotuzhnoState {
       // Worker never dispatches /__internal/* to this class.
       if (path === '/__internal/steam-session') return await this.internalSteamSession(request)
       if (path === '/__internal/mobile-session') return await this.internalMobileSession(request)
-      if (path === '/__internal/google-session') return await this.internalGoogleSession(request)
-      if (path === '/__internal/google-link') return await this.internalGoogleLink(request)
       if (path === '/__internal/steam-account') return await this.internalSteamAccount(request)
       if (path === '/__internal/migrate-profile') return await this.internalProfileMigration(request)
       if (path === '/__internal/migrate-public-profile') return await this.internalPublicProfileMigration(request)
@@ -1380,10 +1329,6 @@ export class PotuzhnoState {
       if (path === '/api/royale') return await this.royale(request)
       if (path === '/api/presence') return await this.presence(request)
       if (path === '/api/community') return await this.community(request)
-      if (path === '/api/google/config') return await this.googleConfig(request)
-      if (path === '/api/google/session') return await this.googleSession(request)
-      if (path === '/api/google/logout') return await this.googleLogout(request)
-      if (path === '/api/google/steam-link') return await this.googleSteamLink(request)
       if (path === '/api/steam/auth') return await this.steamAuth(request)
       if (path === '/api/mobile/session') return await this.mobileSession(request)
       if (path === '/api/steam/session') return await this.steamSession(request)
@@ -1404,220 +1349,6 @@ export class PotuzhnoState {
     const raw = await request.text()
     if (encoder.encode(raw).byteLength > limit) throw new RangeError('Збереження завелике.')
     return JSON.parse(raw)
-  }
-
-  googleClientId() {
-    const clientId = cleanText(this.env?.GOOGLE_OAUTH_CLIENT_ID, 256)
-    return /^[0-9A-Za-z-]+\.apps\.googleusercontent\.com$/.test(clientId) ? clientId : ''
-  }
-
-  async internalGoogleSession(request) {
-    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
-    let body
-    try {
-      body = await this.readBody(request, 4_096)
-    } catch {
-      return json({ error: 'Некоректна сесія Google.' }, 400)
-    }
-    const action = cleanText(body?.action, 24)
-    const token = cleanText(body?.token, 128).toLowerCase()
-    if (!/^[a-f0-9]{64}$/.test(token)) return json({ error: 'Некоректна сесія Google.' }, 400)
-    const key = `google-session:${token}`
-    if (action === 'lookup') {
-      const session = await this.storage.get(key)
-      if (!safeGoogleSubject(session?.googleSub) || Number(session?.expiresAt || 0) <= Date.now()) {
-        if (session) await this.storage.delete(key)
-        return json({ connected: false }, 404)
-      }
-      return json({ connected: true, session })
-    }
-    if (action === 'delete') {
-      await this.storage.delete(key)
-      return json({ deleted: true })
-    }
-    if (action !== 'store') return json({ error: 'Невідома дія Google-сесії.' }, 400)
-    const googleSub = safeGoogleSubject(body?.googleSub)
-    const expiresAt = Number(body?.expiresAt || 0)
-    if (!googleSub || expiresAt <= Date.now()) return json({ error: 'Некоректна сесія Google.' }, 400)
-    const session = {
-      googleSub,
-      email: cleanEmail(body?.email),
-      name: cleanText(body?.name, 80),
-      avatar: cleanAvatar(body?.avatar),
-      createdAt: Number(body?.createdAt) || Date.now(),
-      expiresAt,
-    }
-    await this.storage.put(key, session)
-    return json({ stored: true, session })
-  }
-
-  async internalGoogleLink(request) {
-    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
-    let body
-    try {
-      body = await this.readBody(request, 4_096)
-    } catch {
-      return json({ error: 'Некоректний зв’язок Google.' }, 400)
-    }
-    const action = cleanText(body?.action, 24)
-    const googleSub = safeGoogleSubject(body?.googleSub)
-    if (action === 'resolve') {
-      if (!googleSub) return json({ error: 'Некоректний Google-акаунт.' }, 400)
-      const link = await this.storage.get(`google-steam:${googleSub}`)
-      return /^\d{17}$/.test(String(link?.steamId || ''))
-        ? json({ linked: true, steamId: link.steamId, linkedAt: Number(link.linkedAt) || 0 })
-        : json({ linked: false })
-    }
-    if (action === 'issue-ticket') {
-      if (!googleSub) return json({ error: 'Некоректний Google-акаунт.' }, 400)
-      const ticket = randomHex(32)
-      await this.storage.put(`google-link-ticket:${ticket}`, { googleSub, expiresAt: Date.now() + GOOGLE_LINK_TTL })
-      return json({ ticket, expiresAt: Date.now() + GOOGLE_LINK_TTL })
-    }
-    const ticket = cleanText(body?.ticket, 128).toLowerCase()
-    if (action === 'ticket') {
-      if (!/^[a-f0-9]{64}$/.test(ticket)) return json({ error: 'Некоректне посилання Steam.' }, 400)
-      const entry = await this.storage.get(`google-link-ticket:${ticket}`)
-      if (!safeGoogleSubject(entry?.googleSub) || Number(entry?.expiresAt || 0) <= Date.now()) {
-        if (entry) await this.storage.delete(`google-link-ticket:${ticket}`)
-        return json({ error: 'Посилання Steam завершилося. Почни прив’язку знову.' }, 401)
-      }
-      return json({ googleSub: entry.googleSub })
-    }
-    if (action !== 'link' || !googleSub || !/^\d{17}$/.test(String(body?.steamId || ''))) {
-      return json({ error: 'Некоректний зв’язок Google і Steam.' }, 400)
-    }
-    const steamId = String(body.steamId)
-    const result = await this.storage.transaction(async transaction => {
-      const current = await transaction.get(`google-steam:${googleSub}`)
-      const owner = await transaction.get(`steam-google:${steamId}`)
-      if (current?.steamId && current.steamId !== steamId) return { error: 'До цього Google-акаунта вже підключено інший Steam.' }
-      if (owner?.googleSub && owner.googleSub !== googleSub) return { error: 'Цей Steam уже підключено до іншого Google-акаунта.' }
-      const linkedAt = Date.now()
-      await transaction.put(`google-steam:${googleSub}`, { steamId, linkedAt })
-      await transaction.put(`steam-google:${steamId}`, { googleSub, linkedAt })
-      if (/^[a-f0-9]{64}$/.test(ticket)) await transaction.delete(`google-link-ticket:${ticket}`)
-      return { steamId, linkedAt }
-    })
-    return result.error ? json({ error: result.error }, 409) : json({ linked: true, ...result })
-  }
-
-  async identityRequest(path, payload) {
-    const identity = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(GOOGLE_IDENTITY_STATE))
-    const response = await identity.fetch(new Request(`https://internal${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    }))
-    return { ok: response.ok, status: response.status, data: await response.json().catch(() => ({})) }
-  }
-
-  async getGoogleSession(request) {
-    const token = googleSessionToken(request)
-    if (!token) return null
-    const result = await this.identityRequest('/__internal/google-session', { action: 'lookup', token })
-    return result.ok && result.data?.connected ? { token, ...result.data.session } : null
-  }
-
-  async getGoogleSteamLink(googleSub) {
-    const result = await this.identityRequest('/__internal/google-link', { action: 'resolve', googleSub })
-    return result.ok && /^\d{17}$/.test(String(result.data?.steamId || '')) ? String(result.data.steamId) : ''
-  }
-
-  async verifyGoogleIdToken(idToken) {
-    const clientId = this.googleClientId()
-    if (!clientId) throw new Error('Google-вхід ще не налаштовано на сервері.')
-    const parts = String(idToken || '').split('.')
-    if (parts.length !== 3 || parts.some(part => part.length > 8_192)) throw new Error('Google повернув некоректний токен.')
-    const header = base64UrlJson(parts[0])
-    const claims = base64UrlJson(parts[1])
-    if (header?.alg !== 'RS256' || !cleanText(header?.kid, 256) || !claims) throw new Error('Google повернув некоректний токен.')
-    const now = Math.floor(Date.now() / 1000)
-    const audience = Array.isArray(claims.aud) ? claims.aud : [claims.aud]
-    if (!audience.includes(clientId) || !['accounts.google.com', 'https://accounts.google.com'].includes(claims.iss) || Number(claims.exp || 0) <= now || Number(claims.iat || 0) > now + 120) {
-      throw new Error('Токен Google не підходить для цього застосунку.')
-    }
-    const googleSub = safeGoogleSubject(claims.sub)
-    if (!googleSub) throw new Error('Google не повернув коректний ідентифікатор.')
-    let jwks = await this.storage.get('google-jwks')
-    if (!jwks?.keys || Number(jwks.expiresAt || 0) <= Date.now()) {
-      const response = await timedFetch('https://www.googleapis.com/oauth2/v3/certs')
-      const data = response.ok ? await response.json().catch(() => null) : null
-      if (!Array.isArray(data?.keys)) throw new Error('Не вдалося перевірити підпис Google.')
-      jwks = { keys: data.keys, expiresAt: Date.now() + GOOGLE_JWKS_TTL }
-      await this.storage.put('google-jwks', jwks)
-    }
-    const jwk = jwks.keys.find(key => key?.kid === header.kid && key?.kty === 'RSA')
-    const signature = base64UrlBytes(parts[2])
-    if (!jwk || !signature) throw new Error('Не вдалося перевірити підпис Google.')
-    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify'])
-    const valid = await crypto.subtle.verify({ name: 'RSASSA-PKCS1-v1_5' }, key, signature, encoder.encode(`${parts[0]}.${parts[1]}`))
-    if (!valid) throw new Error('Підпис Google не підтверджено.')
-    return { googleSub, email: cleanEmail(claims.email), name: cleanText(claims.name, 80), avatar: cleanAvatar(claims.picture) }
-  }
-
-  async googleConfig(request) {
-    if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
-    const clientId = this.googleClientId()
-    return json({ enabled: Boolean(clientId), clientId })
-  }
-
-  async googleSession(request) {
-    if (request.method === 'GET') {
-      const token = googleSessionToken(request)
-      if (!token) return json({ connected: false }, 401)
-      const session = await this.storage.get(`google-session:${token}`)
-      if (!safeGoogleSubject(session?.googleSub) || Number(session?.expiresAt || 0) <= Date.now()) {
-        if (session) await this.storage.delete(`google-session:${token}`)
-        return json({ connected: false }, 401)
-      }
-      const link = await this.internalGoogleLink(new Request('https://internal/__internal/google-link', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'resolve', googleSub: session.googleSub }) }))
-      const linked = link.ok ? await link.json().catch(() => ({})) : {}
-      return json({ connected: true, profile: { email: session.email, name: session.name, avatar: session.avatar }, linkedSteamId: linked.steamId || '', expiresAt: session.expiresAt })
-    }
-    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
-    let body
-    try {
-      body = await this.readBody(request, 12_288)
-    } catch {
-      return json({ error: 'Некоректний Google-вхід.' }, 400)
-    }
-    try {
-      const profile = await this.verifyGoogleIdToken(cleanText(body?.idToken, 8_192))
-      const token = randomHex(32)
-      const expiresAt = Date.now() + GOOGLE_SESSION_TTL
-      await this.storage.put(`google-session:${token}`, { ...profile, createdAt: Date.now(), expiresAt })
-      const native = isMobileAppOrigin(request.headers.get('Origin'))
-      const payload = { connected: true, profile: { email: profile.email, name: profile.name, avatar: profile.avatar }, expiresAt }
-      if (native) return json({ ...payload, accessToken: `${GOOGLE_SESSION_VERSION}_${token}` })
-      const headers = new Headers(JSON_HEADERS)
-      headers.append('Set-Cookie', sessionCookie(GOOGLE_SESSION_COOKIE, `${GOOGLE_SESSION_VERSION}_${token}`, Math.floor(GOOGLE_SESSION_TTL / 1000), new URL(request.url).protocol === 'https:'))
-      return new Response(JSON.stringify(payload), { status: 200, headers })
-    } catch (error) {
-      return json({ error: error?.message || 'Не вдалося підтвердити Google-акаунт.' }, 401)
-    }
-  }
-
-  async googleLogout(request) {
-    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
-    const token = googleSessionToken(request)
-    if (token) await this.storage.delete(`google-session:${token}`)
-    const headers = new Headers(JSON_HEADERS)
-    headers.append('Set-Cookie', sessionCookie(GOOGLE_SESSION_COOKIE, '', 0, new URL(request.url).protocol === 'https:'))
-    return new Response(JSON.stringify({ connected: false }), { status: 200, headers })
-  }
-
-  async googleSteamLink(request) {
-    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
-    const token = googleSessionToken(request)
-    const session = token ? await this.storage.get(`google-session:${token}`) : null
-    if (!safeGoogleSubject(session?.googleSub) || Number(session?.expiresAt || 0) <= Date.now()) return json({ error: 'Спочатку увійди через Google.' }, 401)
-    const existing = await this.internalGoogleLink(new Request('https://internal/__internal/google-link', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'resolve', googleSub: session.googleSub }) }))
-    const existingLink = existing.ok ? await existing.json().catch(() => ({})) : {}
-    if (/^\d{17}$/.test(String(existingLink?.steamId || ''))) return json({ linked: true, steamId: existingLink.steamId })
-    const issued = await this.internalGoogleLink(new Request('https://internal/__internal/google-link', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'issue-ticket', googleSub: session.googleSub }) }))
-    const data = await issued.json().catch(() => ({}))
-    return issued.ok ? json(data) : json({ error: data?.error || 'Не вдалося почати прив’язку Steam.' }, issued.status)
   }
 
   async internalSteamSession(request) {
@@ -2654,29 +2385,12 @@ export class PotuzhnoState {
       const requestedMobile = url.searchParams.get('client') === 'android'
       const mobile = isMobileSteamRequest(url)
       if (requestedMobile && !mobile) return json({ error: 'Некоректний мобільний запит входу.' }, 400)
-      let googleSub = ''
-      let googleLinkTicket = ''
-      if (mobile) {
-        googleLinkTicket = cleanText(url.searchParams.get('google_link'), 128).toLowerCase()
-        const linked = await this.identityRequest('/__internal/google-link', { action: 'ticket', ticket: googleLinkTicket })
-        googleSub = linked.ok ? safeGoogleSubject(linked.data?.googleSub) : ''
-      } else {
-        googleSub = safeGoogleSubject((await this.getGoogleSession(request))?.googleSub)
-      }
-      if (!googleSub) {
-        const destination = mobile
-          ? mobileAuthRedirect({ error: 'google_required' })
-          : `${origin}/?google_required=1`
-        return new Response(null, { status: 302, headers: { Location: destination, 'Cache-Control': 'no-store' } })
-      }
       const callback = new URL(`${origin}/api/steam/auth`)
       callback.searchParams.set('state', state)
       await this.storage.put(`steam-auth:${state}`, {
         origin,
         mobile,
         mobileChallenge: mobile ? mobileChallengeFromUrl(url) : '',
-        googleSub,
-        googleLinkTicket,
         expiresAt: Date.now() + STEAM_AUTH_TTL,
       })
       const params = new URLSearchParams({
@@ -2731,20 +2445,6 @@ export class PotuzhnoState {
       headers.append('Set-Cookie', clearAuth)
       return new Response(null, { status: 302, headers })
     }
-    const linked = await this.identityRequest('/__internal/google-link', {
-      action: 'link',
-      googleSub: pending.googleSub,
-      steamId,
-      ticket: pending.googleLinkTicket,
-    })
-    if (!linked.ok) {
-      const destination = pending.mobile === true
-        ? mobileAuthRedirect({ error: 'link' })
-        : `${origin}/?steam_error=link`
-      const headers = new Headers({ Location: destination, 'Cache-Control': 'no-store' })
-      headers.append('Set-Cookie', clearAuth)
-      return new Response(null, { status: 302, headers })
-    }
     const createdAt = Date.now()
     const headers = new Headers({ 'Cache-Control': 'no-store' })
     if (pending.mobile === true) {
@@ -2754,7 +2454,6 @@ export class PotuzhnoState {
       const ticket = randomHex(32)
       await this.storage.put(`mobile-ticket:${ticket}`, {
         steamId,
-        googleSub: pending.googleSub,
         challenge: pending.mobileChallenge,
         createdAt,
         expiresAt: createdAt + MOBILE_AUTH_TICKET_TTL,
@@ -2795,10 +2494,6 @@ export class PotuzhnoState {
       if (/^\d{17}$/.test(String(session?.steamId || '')) && Number(session.expiresAt || 0) > Date.now()) return session
       if (session) await this.storage.delete(parsed.sharded ? 'steam-session' : `steam-session:${parsed.token}`)
     }
-    const google = await this.getGoogleSession(request)
-    if (!google?.googleSub) return null
-    const steamId = await this.getGoogleSteamLink(google.googleSub)
-    if (/^\d{17}$/.test(steamId)) return { steamId, expiresAt: google.expiresAt, googleSub: google.googleSub }
     return null
   }
 
@@ -3586,8 +3281,6 @@ async function stateForRequest(request, env, path) {
   } else if (path === '/api/public-profile' && request.method === 'POST') {
     const body = await requestBodyForRouting(request)
     if (ID.test(String(body?.id || ''))) name = `public:${body.id}`
-  } else if (path.startsWith('/api/google/')) {
-    name = GOOGLE_IDENTITY_STATE
   } else if (path.startsWith('/api/steam/') && path !== '/api/steam/auth') {
     const mobileToken = mobileSessionToken(request)
     if (mobileToken) name = `mobile:${mobileToken}`

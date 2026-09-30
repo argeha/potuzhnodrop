@@ -4,9 +4,6 @@
   "main": "src/worker.mjs",
   "compatibility_date": "2026-09-20",
   "workers_dev": true,
-  "vars": {
-    "GOOGLE_OAUTH_CLIENT_ID": "432870073159-el2cimceph3fev73b6h62fe81l607f5h.apps.googleusercontent.com"
-  },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",

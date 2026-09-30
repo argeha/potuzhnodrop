@@ -27,9 +27,9 @@
     accessToken = ''
     try { localStorage.removeItem(sessionStorageKey) } catch {}
   }
-  const isMobileAccessToken = value => /^(?:m1|g1)_[a-f0-9]{64}$/i.test(String(value || ''))
-  // Disconnecting Steam must never silently sign a player out of the Google
-  // account that owns the cross-device identity.
+  const isMobileAccessToken = value => /^m1_[a-f0-9]{64}$/i.test(String(value || ''))
+  // The Steam token is the mobile identity, so disconnecting it clears only
+  // the local app session; the server-side game account remains intact.
   const clearSteamSession = () => {
     if (!/^m1_[a-f0-9]{64}$/i.test(accessToken)) return
     clearSession()
@@ -109,10 +109,7 @@
         })
         const data = await response.json().catch(() => ({}))
         if (!response.ok || !/^m1_[a-f0-9]{64}$/i.test(String(data?.accessToken || ''))) throw new Error(data?.error || 'Не вдалося завершити вхід.')
-        // Google remains the primary mobile credential. The returned m1 token
-        // only proves the short-lived Steam callback and is unnecessary once
-        // the Steam ID is linked to the same Google account.
-        if (!/^g1_[a-f0-9]{64}$/i.test(accessToken)) rememberAccessToken(data.accessToken)
+        rememberAccessToken(data.accessToken)
         try {
           localStorage.removeItem(authVerifierStorageKey)
         } catch {}
@@ -162,29 +159,6 @@
       if (!mobileTicketInFlight) resetSteamButton()
     })
 
-    window.PotuzhnoMobile.signInWithGoogle = async () => {
-      if (!window.PotuzhnoMobile.isConfigured) throw new Error('Мобільний сервер ще не налаштований для цього білду.')
-      const configResponse = await nativeFetch(apiUrl('/api/google/config'), { cache: 'no-store', credentials: 'include' })
-      const config = await configResponse.json().catch(() => ({}))
-      if (!configResponse.ok || config?.enabled !== true || !/^[0-9A-Za-z-]+\.apps\.googleusercontent\.com$/.test(String(config?.clientId || ''))) {
-        throw new Error('Google-вхід ще не налаштовано на сервері.')
-      }
-      const result = await capacitor?.Plugins?.GoogleAuth?.signIn?.({ serverClientId: config.clientId })
-      const idToken = String(result?.idToken || '')
-      if (!idToken) throw new Error('Google не повернув токен входу.')
-      const response = await nativeFetch(apiUrl('/api/google/session'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'PotuzhnoDrop' },
-        body: JSON.stringify({ idToken }),
-      })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok || data?.connected !== true || !rememberAccessToken(data?.accessToken)) {
-        throw new Error(data?.error || 'Не вдалося створити мобільну Google-сесію.')
-      }
-      return data
-    }
-
     document.addEventListener('DOMContentLoaded', () => {
       const browserLogin = window.continueSteamLogin
       window.continueSteamLogin = async () => {
@@ -202,23 +176,10 @@
           return
         }
         try {
-          const linkResponse = await window.fetch('/api/google/steam-link', {
-            method: 'POST',
-            headers: { 'X-Requested-With': 'PotuzhnoDrop' },
-          })
-          const link = await linkResponse.json().catch(() => ({}))
-          if (!linkResponse.ok) throw new Error(link?.error || 'Спочатку увійди через Google.')
-          if (/^\d{17}$/.test(String(link?.steamId || ''))) {
-            await window.restoreSteamSession?.()
-            window.closeModal?.('steamModal')
-            window.showToast?.('Steam уже прив’язано до цього Google-акаунта.', 'success')
-            return
-          }
-          if (!/^[a-f0-9]{64}$/i.test(String(link?.ticket || ''))) throw new Error('Не вдалося почати прив’язку Steam.')
           const verifier = randomHex(32)
           const challenge = await sha256(verifier)
           try { localStorage.setItem(authVerifierStorageKey, verifier) } catch {}
-          await browserPlugin.open({ url: apiUrl(`/api/steam/auth?client=android&challenge=${challenge}&google_link=${encodeURIComponent(link.ticket)}`) })
+          await browserPlugin.open({ url: apiUrl(`/api/steam/auth?client=android&challenge=${challenge}`) })
         } catch (error) {
           resetSteamButton()
           window.showToast?.(error?.message || 'Не вдалося почати прив’язку Steam.', 'error')

@@ -26,18 +26,15 @@ $env:POTUZHNO_MOBILE_API_ORIGIN = 'https://your-production-worker.example'
 npm run mobile:sync
 ```
 
-The sign-in order is Google first, Steam second. Configure the public
-`GOOGLE_OAUTH_CLIENT_ID` Worker variable with a **Web application** client ID
-and authorize the Worker domain in Google Cloud before testing. Android opens
-the system Google account chooser and sends its short ID token to the Worker;
-the Worker verifies it and issues the app a revocable Google session. Steam
-then opens in the system browser and returns through `potuzhnodrop://auth`
-with a one-time ticket and verifier exchange. A browser cookie is deliberately
-not copied into the app. If Steam finishes in the browser without returning to
-the application, the deployed Worker is older than the mobile-auth flow or an
-old APK is installed; deploy the Worker and reinstall the current APK.
-Never put a Steam, Google, Cloudflare or admin secret in this repository or in
-the app bundle.
+Steam is the only game identity. Android opens Steam in the system browser and
+returns through `potuzhnodrop://auth` with a one-time ticket and verifier
+exchange. The Worker stores the game state under the confirmed Steam ID, so
+signing in to the same Steam account on the website or Android loads the same
+progress. A browser cookie is deliberately not copied into the app. If Steam
+finishes in the browser without returning to the application, the deployed
+Worker is older than the mobile-auth flow or an old APK is installed; deploy
+the Worker and reinstall the current APK. Never put a Steam, Cloudflare or
+admin secret in this repository or in the app bundle.
 
 ## Local development
 

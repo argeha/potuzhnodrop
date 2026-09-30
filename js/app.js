@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 6.9.6 ============ */
+/* ============ ПОТУЖНО DROP 6.9.7 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -16,7 +16,6 @@ const STORAGE = {
   pendingWager: 'potuzhno_v6_pending_wager',
   fair: 'potuzhno_v9_fair',
   steamNudge: 'potuzhno_v10_steam_nudge',
-  googleNudge: 'potuzhno_v11_google_nudge',
   adminProfileRefresh: 'potuzhno_v6_admin_profile_refresh',
   adminGameRefresh: 'potuzhno_v6_admin_game_refresh'
 };
@@ -237,10 +236,6 @@ const TRUSTED_IMAGE_HOSTS = new Set([
   'avatars.akamai.steamstatic.com',
   'avatars.fastly.steamstatic.com',
   'steamcdn-a.akamaihd.net',
-  'lh3.googleusercontent.com',
-  'lh4.googleusercontent.com',
-  'lh5.googleusercontent.com',
-  'lh6.googleusercontent.com',
   'raw.githubusercontent.com',
   'cdn.jsdelivr.net'
 ]);
@@ -379,13 +374,6 @@ let publicProfilePublishPromise = null;
 let activePublicProfile = null;
 let profileModeration = { blocked: false, reason: '', updatedAt: 0 };
 let profileVisibility = { hidden: false, updatedAt: 0 };
-// Google is the account that follows a player between the website and the
-// Android application. Steam is intentionally a link beneath that identity.
-let googleIdentity = { connected: false, profile: null, linkedSteamId: '', expiresAt: 0 };
-let googleClientConfig = null;
-let googleIdentityLibraryPromise = null;
-let googleSignInBusy = false;
-
 function normalizeProfileModeration(value) {
   const blocked = value?.blocked === true;
   return {
@@ -1632,7 +1620,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.9.6';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.9.7';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -3060,40 +3048,38 @@ function saveAccountNick() {
   showToast('Нікнейм збережено', 'success');
 }
 
-function renderGoogleAccountPanel() {
+function renderSteamAccountPanel() {
   const modal = document.getElementById('accountModal');
   if (!modal) return;
-  let panel = document.getElementById('googleAccountPanel');
+  let panel = document.getElementById('steamAccountPanel');
   if (!panel) {
     const nickLabel = modal.querySelector('label');
     if (!nickLabel) return;
     panel = document.createElement('div');
-    panel.id = 'googleAccountPanel';
-    panel.className = 'mb-4 rounded-xl border border-white/15 bg-white/5 p-3';
-    panel.innerHTML = '<div class="flex items-center justify-between gap-3"><div class="min-w-0"><p class="text-[11px] font-extrabold text-white"><i class="fa-brands fa-google mr-1.5"></i>Google-акаунт</p><p id="googleAccountStatus" class="mt-1 break-words text-[10px] leading-4 text-gray-400"></p></div><button id="googleAccountLoginBtn" class="shrink-0 rounded-lg border border-white/30 bg-white px-3 py-2 text-[10px] font-extrabold text-slate-950 hover:bg-slate-100"></button></div>';
+    panel.id = 'steamAccountPanel';
+    panel.className = 'mb-4 rounded-xl border border-cyan-400/25 bg-cyan-500/5 p-3';
+    panel.innerHTML = '<div class="flex items-center justify-between gap-3"><div class="min-w-0"><p class="text-[11px] font-extrabold text-cyan-50"><i class="fa-brands fa-steam mr-1.5 text-cyan-300"></i>Steam — головний акаунт</p><p id="steamAccountStatus" class="mt-1 break-words text-[10px] leading-4 text-gray-400"></p></div><button id="steamAccountPanelLoginBtn" class="shrink-0 rounded-lg border border-cyan-400/40 bg-cyan-400/10 px-3 py-2 text-[10px] font-extrabold text-cyan-100 hover:bg-cyan-400/20"></button></div>';
     nickLabel.before(panel);
   }
-  const status = panel.querySelector('#googleAccountStatus');
-  const button = panel.querySelector('#googleAccountLoginBtn');
-  if (status) status.textContent = isGoogleConnected()
-    ? `${googleIdentity.profile?.email || googleIdentity.profile?.name || 'Підключено'} · сайт і Android синхронізовані`
-    : 'Підключи Google, щоб один профіль працював на сайті й Android.';
+  const status = panel.querySelector('#steamAccountStatus');
+  const button = panel.querySelector('#steamAccountPanelLoginBtn');
+  const steamId = String(currentUser?.steamId || account?.steamId || '');
+  const connected = /^\d{17}$/.test(steamId);
+  if (status) status.textContent = connected
+    ? `Steam ID ${steamId} · сайт і Android синхронізовані`
+    : 'Увійди через Steam, щоб один профіль працював на сайті й Android.';
   if (button) {
-    button.textContent = isGoogleConnected() ? 'Підключено' : 'Увійти';
-    button.classList.toggle('border-emerald-400/35', isGoogleConnected());
-    button.classList.toggle('bg-emerald-500/15', isGoogleConnected());
-    button.classList.toggle('text-emerald-100', isGoogleConnected());
-    button.classList.toggle('border-white/30', !isGoogleConnected());
-    button.classList.toggle('bg-white', !isGoogleConnected());
-    button.classList.toggle('text-slate-950', !isGoogleConnected());
-    button.onclick = isGoogleConnected
-      ? () => showToast('Google-акаунт підключено. Steam можна керувати нижче.', 'info')
-      : startGoogleLogin;
+    button.textContent = connected ? 'Підключено' : 'Увійти';
+    button.disabled = connected;
+    button.classList.toggle('opacity-60', connected);
+    button.onclick = connected
+      ? () => showToast('Steam-акаунт підключено. Прогрес уже зберігається на сервері.', 'info')
+      : startSteamLogin;
   }
 }
 
 function updateAccountUI() {
-  renderGoogleAccountPanel();
+  renderSteamAccountPanel();
   const n = document.getElementById('profileName');
   if (n) n.textContent = account?.nick || 'Гість';
   const headerName = document.getElementById('headerSteamName');
@@ -3473,19 +3459,6 @@ function renderCloudSyncUI() {
   const visibilityStatus = document.getElementById('steamProfileVisibilityStatus');
   const makePublic = document.getElementById('steamProfilePublicBtn');
   const makePrivate = document.getElementById('steamProfilePrivateBtn');
-  if (!isGoogleConnected()) {
-    if (steamLogin) {
-      steamLogin.classList.remove('hidden');
-      steamLogin.onclick = startGoogleLogin;
-      steamLogin.innerHTML = '<i class="fa-brands fa-google mr-1"></i>Увійти через Google';
-    }
-    if (steamSave) steamSave.classList.add('hidden');
-    if (steamLoad) steamLoad.classList.add('hidden');
-    if (status) status.textContent = 'Google — головний вхід для сайту й Android';
-    if (details) details.textContent = 'Спочатку увійди через Google, а потім прив’яжи Steam. Так один прогрес відкриватиметься на будь-якому твоєму пристрої.';
-    [create, save, load, code, legacyConnect].forEach(button => button?.classList.add('hidden'));
-    return;
-  }
   const updateVisibility = () => {
     const canChange = steamReady && !isProfileBlocked();
     if (visibilityPanel) visibilityPanel.classList.toggle('hidden', !steamLinked);
@@ -3527,8 +3500,8 @@ function renderCloudSyncUI() {
   }
   if (steamSave) steamSave.classList.add('hidden');
   if (steamLoad) steamLoad.classList.add('hidden');
-  if (status) status.textContent = 'Google підключено — прив’яжи Steam для CS2-профілю';
-  if (details) details.textContent = 'Steam ID перевіряється на сервері та прив’язується саме до цього Google-акаунта. Після входу прогрес синхронізується між сайтом і Android.';
+  if (status) status.textContent = 'Увійди через Steam, щоб увімкнути серверне збереження';
+  if (details) details.textContent = 'Твій Steam ID стане ключем до серверного прогресу. Увійди тим самим Steam на сайті чи Android — прогрес синхронізується автоматично.';
   [create, save, load, code, legacyConnect].forEach(button => button?.classList.add('hidden'));
   updateVisibility();
 }
@@ -4755,220 +4728,8 @@ function loadState() {
   updateAvatarBadge();
 }
 
-function isGoogleConnected() {
-  return googleIdentity?.connected === true;
-}
-
-function renderGoogleIdentityUI() {
-  const googleButton = document.getElementById('googleAuthBtn');
-  const googleNudge = document.getElementById('googleNudge');
-  const connected = isGoogleConnected();
-  if (googleButton) {
-    googleButton.classList.remove('hidden');
-    googleButton.classList.toggle('bg-white', !connected);
-    googleButton.classList.toggle('hover:bg-slate-100', !connected);
-    googleButton.classList.toggle('text-slate-950', !connected);
-    googleButton.classList.toggle('bg-emerald-500/15', connected);
-    googleButton.classList.toggle('hover:bg-emerald-500/25', connected);
-    googleButton.classList.toggle('text-emerald-100', connected);
-    googleButton.innerHTML = connected
-      ? '<i class="fa-solid fa-circle-check text-base"></i><span class="hidden md:inline">Google</span>'
-      : '<i class="fa-brands fa-google text-base"></i><span class="hidden md:inline">Google</span>';
-    googleButton.onclick = connected ? () => showPage('profile') : startGoogleLogin;
-    googleButton.title = connected
-      ? `Google: ${cleanText(googleIdentity?.profile?.email || googleIdentity?.profile?.name || 'підключено', 80)}`
-      : 'Увійти через Google';
-  }
-  if (googleNudge) {
-    const shouldShow = localStorage.getItem(STORAGE.consent) === 'accepted'
-      && !connected
-      && localStorage.getItem(STORAGE.googleNudge) !== 'dismissed';
-    googleNudge.classList.toggle('hidden', !shouldShow);
-  }
-}
-
-function applyGoogleIdentity(session, { announce = false } = {}) {
-  if (!session?.connected) {
-    googleIdentity = { connected: false, profile: null, linkedSteamId: '', expiresAt: 0 };
-    renderGoogleIdentityUI();
-    return false;
-  }
-  const profile = session.profile && typeof session.profile === 'object' ? session.profile : {};
-  googleIdentity = {
-    connected: true,
-    profile: {
-      name: cleanText(profile.name, 80),
-      email: cleanText(profile.email, 254),
-      avatar: cleanImageUrl(profile.avatar),
-    },
-    linkedSteamId: /^\d{17}$/.test(String(session.linkedSteamId || '')) ? String(session.linkedSteamId) : '',
-    expiresAt: clampNumber(session.expiresAt, 0, Number.MAX_SAFE_INTEGER, 0),
-  };
-  account = { ...(account || {}), googleProfile: googleIdentity.profile };
-  const isGenericName = !account.nick || account.nick.startsWith('Гравець_') || account.nick === 'Гравець';
-  if (isGenericName && googleIdentity.profile.name && !currentUser?.steamId) {
-    account.nick = cleanText(googleIdentity.profile.name, 24);
-    if (currentUser) currentUser.name = account.nick;
-  }
-  try { localStorage.setItem(STORAGE.account, JSON.stringify(account)); } catch {}
-  localStorage.removeItem(STORAGE.googleNudge);
-  renderGoogleIdentityUI();
-  if (currentUser) applyLoggedInUI();
-  updateAccountUI();
-  if (announce) showToast('Google-акаунт підключено. Тепер можеш прив’язати Steam.', 'success');
-  return true;
-}
-
-async function fetchGoogleConfig({ refresh = false } = {}) {
-  if (googleClientConfig && !refresh) return googleClientConfig;
-  const response = await fetch('/api/google/config', { cache: 'no-store', credentials: 'same-origin' });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(cleanText(data?.error || 'Не вдалося підготувати Google-вхід.', 180));
-  googleClientConfig = {
-    enabled: data?.enabled === true && /^[0-9A-Za-z-]+\.apps\.googleusercontent\.com$/.test(String(data?.clientId || '')),
-    clientId: cleanText(data?.clientId, 256),
-  };
-  return googleClientConfig;
-}
-
-async function fetchGoogleSession() {
-  const response = await fetch('/api/google/session', { cache: 'no-store', credentials: 'same-origin' });
-  const data = await response.json().catch(() => ({}));
-  if (response.status === 401 || data?.connected === false) return { connected: false };
-  if (!response.ok) throw new Error(cleanText(data?.error || 'Не вдалося перевірити Google-акаунт.', 180));
-  return data;
-}
-
-async function restoreGoogleSession() {
-  try {
-    return applyGoogleIdentity(await fetchGoogleSession());
-  } catch {
-    renderGoogleIdentityUI();
-    return false;
-  }
-}
-
-function dismissGoogleNudge() {
-  localStorage.setItem(STORAGE.googleNudge, 'dismissed');
-  renderGoogleIdentityUI();
-}
-
-function setGoogleLoginUI(loading, hint = '') {
-  const button = document.getElementById('googleLoginContinueBtn');
-  const message = document.getElementById('googleLoginHint');
-  if (button) {
-    button.disabled = loading;
-    button.innerHTML = loading
-      ? '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Відкриваємо Google…'
-      : '<i class="fa-brands fa-google mr-2"></i>Продовжити з Google';
-  }
-  if (message && hint) message.textContent = hint;
-}
-
-async function loadGoogleIdentityLibrary() {
-  if (window.google?.accounts?.id) return window.google;
-  if (googleIdentityLibraryPromise) return googleIdentityLibraryPromise;
-  googleIdentityLibraryPromise = new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true;
-    script.defer = true;
-    script.onload = () => window.google?.accounts?.id ? resolve(window.google) : reject(new Error('Google Sign-In не завантажився.'));
-    script.onerror = () => reject(new Error('Не вдалося завантажити Google Sign-In. Перевір інтернет.'));
-    document.head.append(script);
-  });
-  return googleIdentityLibraryPromise;
-}
-
-async function finishGoogleLogin(idToken) {
-  const response = await fetch('/api/google/session', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'PotuzhnoDrop' },
-    body: JSON.stringify({ idToken }),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || data?.connected !== true) throw new Error(cleanText(data?.error || 'Google не підтвердив вхід.', 180));
-  applyGoogleIdentity(data, { announce: true });
-  closeModal('googleModal');
-  return data;
-}
-
-function startGoogleLogin() {
-  if (isGoogleConnected()) {
-    showToast('Google-акаунт уже підключено. Тепер можна прив’язати Steam.', 'info');
-    return;
-  }
-  document.getElementById('googleLoginContinueBtn')?.classList.remove('hidden');
-  const mount = document.getElementById('googleWebButton');
-  if (mount) {
-    mount.replaceChildren();
-    mount.classList.add('hidden');
-    mount.classList.remove('flex');
-  }
-  setGoogleLoginUI(false, 'Google з’єднає цей профіль із сайтом та Android-застосунком.');
-  openModal('googleModal');
-}
-
-async function continueGoogleLogin() {
-  if (googleSignInBusy) return;
-  googleSignInBusy = true;
-  setGoogleLoginUI(true);
-  try {
-    if (window.PotuzhnoMobile?.isNative) {
-      const data = await window.PotuzhnoMobile.signInWithGoogle?.();
-      if (!data?.connected) throw new Error('Не вдалося підтвердити Google-акаунт у застосунку.');
-      applyGoogleIdentity(data, { announce: true });
-      closeModal('googleModal');
-      return;
-    }
-    const config = await fetchGoogleConfig();
-    if (!config.enabled) throw new Error('Google-вхід ще не налаштовано. Додай Google Client ID у налаштуваннях сервера.');
-    const google = await loadGoogleIdentityLibrary();
-    google.accounts.id.initialize({
-      client_id: config.clientId,
-      callback: credential => {
-        if (!credential?.credential) {
-          googleSignInBusy = false;
-          setGoogleLoginUI(false, 'Google не повернув підтвердження. Спробуй ще раз.');
-          return;
-        }
-        void finishGoogleLogin(credential.credential)
-          .catch(error => showToast(error?.message || 'Не вдалося увійти через Google.', 'error'))
-          .finally(() => {
-            googleSignInBusy = false;
-            setGoogleLoginUI(false);
-          });
-      },
-      auto_select: false,
-      cancel_on_tap_outside: true,
-      ux_mode: 'popup',
-    });
-    // Render Google's official button rather than relying only on One Tap.
-    // This works when third-party cookies or automatic prompts are disabled.
-    const mount = document.getElementById('googleWebButton');
-    const button = document.getElementById('googleLoginContinueBtn');
-    if (!mount || !button) throw new Error('Не вдалося підготувати кнопку Google-входу.');
-    mount.replaceChildren();
-    google.accounts.id.renderButton(mount, {
-      type: 'standard', theme: 'outline', size: 'large', text: 'continue_with',
-      shape: 'pill', logo_alignment: 'left', locale: 'uk', width: 320,
-    });
-    button.classList.add('hidden');
-    mount.classList.remove('hidden');
-    mount.classList.add('flex');
-    googleSignInBusy = false;
-    setGoogleLoginUI(false, 'Вибери свій Google-акаунт у офіційній кнопці нижче.');
-  } catch (error) {
-    showToast(error?.message || 'Не вдалося увійти через Google.', 'error');
-    setGoogleLoginUI(false, error?.message || 'Спробуй ще раз.');
-    googleSignInBusy = false;
-  }
-}
-
 function applyLoggedInUI() {
   if (!currentUser) return;
-  renderGoogleIdentityUI();
   const sb = document.getElementById('steamAuthBtn');
   const ab = document.getElementById('userAvatarBox');
   if (currentUser.steamId) {
@@ -5002,7 +4763,7 @@ function applyLoggedInUI() {
   } else {
     if (sb) {
       sb.style.removeProperty('display');
-      sb.classList.toggle('hidden', !isGoogleConnected());
+      sb.classList.remove('hidden');
     }
     ab?.classList.add('hidden');
     const headerName = document.getElementById('headerSteamName');
@@ -6018,10 +5779,8 @@ function acceptRiskNotice() {
   const el = document.getElementById('riskNotice');
   el?.classList.add('hidden');
   el?.classList.remove('flex');
-  // Identity suggestions appear only after the safety notice is acknowledged.
-  // They are dismissible in-page cards, never automatic external redirects.
+  // Steam-login suggestions appear only after the safety notice is acknowledged.
   setTimeout(() => {
-    renderGoogleIdentityUI();
     renderSteamNudge();
   }, 250);
 }
@@ -6030,7 +5789,6 @@ function renderSteamNudge() {
   const nudge = document.getElementById('steamNudge');
   if (!nudge) return;
   const shouldShow = localStorage.getItem(STORAGE.consent) === 'accepted'
-    && isGoogleConnected()
     && !currentUser?.steamId
     && localStorage.getItem(STORAGE.steamNudge) !== 'dismissed';
   nudge.classList.toggle('hidden', !shouldShow);
@@ -6139,22 +5897,11 @@ function resetSteamLoginModal() {
 }
 
 function startSteamLogin() {
-  if (!isGoogleConnected()) {
-    showToast('Спочатку увійди через Google — це збереже один профіль для сайту та Android.', 'info');
-    startGoogleLogin();
-    return;
-  }
   resetSteamLoginModal();
   openModal('steamModal');
 }
 
 function continueSteamLogin() {
-  if (!isGoogleConnected()) {
-    closeModal('steamModal');
-    showToast('Спочатку увійди через Google.', 'info');
-    startGoogleLogin();
-    return;
-  }
   const button = document.getElementById('steamLoginContinueBtn');
   if (button?.disabled) return;
   if (button) {
@@ -11168,7 +10915,6 @@ window.addEventListener('DOMContentLoaded', () => {
   renderContractSlots();
   renderProfileInventory();
   void (async () => {
-    await restoreGoogleSession();
     const returnedFromSteam = await processSteamCallback();
     if (!returnedFromSteam) await restoreSteamSession();
     const requestedProfile = new URLSearchParams(location.search).get('profile');
@@ -11335,9 +11081,6 @@ window.openPublicProfile = openPublicProfile;
 window.openOwnBattleRoom = openOwnBattleRoom;
 window.joinPublicProfileBattle = joinPublicProfileBattle;
 window.leaveBattleRoom = leaveBattleRoom;
-window.startGoogleLogin = startGoogleLogin;
-window.continueGoogleLogin = continueGoogleLogin;
-window.dismissGoogleNudge = dismissGoogleNudge;
 window.startSteamLogin = startSteamLogin;
 window.continueSteamLogin = continueSteamLogin;
 window.syncSteamInventory = syncSteamInventory;

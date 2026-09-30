@@ -19,7 +19,6 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     protected void load() {
-        registerPlugin(GoogleAuthPlugin.class);
         super.load();
         configureWebView();
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
