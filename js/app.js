@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 6.9.1 ============ */
+/* ============ ПОТУЖНО DROP 6.9.2 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -1601,7 +1601,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.9.1';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.9.2';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'

@@ -517,7 +517,10 @@
     if (!email || !role) return
     const saved = await mutateMember({ action: 'grant', email, role, name }, 'Запрошення створено. Скопіюй посилання та передай його людині.')
     if (saved) {
-      memberForm.reset()
+      // inviteUrl is in this form too. A full reset would erase the one-time
+      // URL immediately after the server returned it.
+      $('#memberEmail').value = ''
+      $('#memberName').value = ''
       renderRoleSelect()
     }
   })
@@ -709,6 +712,10 @@
 
   $('#copyInviteButton').addEventListener('click', async () => {
     const input = $('#inviteUrl')
+    if (!input.value.trim()) {
+      showToast('Посилання ще не згенеровано. Створи запрошення ще раз.', 'error')
+      return
+    }
     try {
       await navigator.clipboard.writeText(input.value)
     } catch {
