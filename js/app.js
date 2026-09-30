@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 6.8.8 ============ */
+/* ============ ПОТУЖНО DROP 6.8.9 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -742,7 +742,7 @@ function createCaseSVG(theme) {
 }
 
 const CASE_ARTWORK = Object.freeze({
-  icewire_cache:    '/assets/cases/icewire-cache-v1.png',
+  icewire_cache:    '/assets/cases/icewire-cache-v2.png',
   halloween_night:  '/assets/cases/halloween-night-v1.png',
   dragon_lair:      '/assets/cases/dragon-lair-v3.png',
   covert_ops:       '/assets/cases/covert-ops-v3.png',
@@ -1543,7 +1543,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.8.8';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.8.9';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
