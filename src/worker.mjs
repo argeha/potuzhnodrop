@@ -41,7 +41,12 @@ const BATTLE_LISTING_LIMIT = 60
 const ROYALE_LIVE_MAX_PLAYERS = 8
 const ROYALE_LIVE_MAX_STAKES = 10
 const ROYALE_LIVE_LOBBY_TTL = 12 * 60_000
-const ROYALE_LIVE_RESULT_TTL = 30_000
+// The live board may move on to a new round right after a draw. Keep a
+// short-lived authoritative receipt separately so every participant can still
+// receive the same result and virtual bank after a delayed poll or reload.
+const ROYALE_LIVE_RESULT_TTL = 10 * 60_000
+const ROYALE_LIVE_RECEIPT_TTL = 24 * 60 * 60_000
+const ROYALE_LIVE_RECEIPT_LIMIT = 80
 const ROYALE_LIVE_START_DELAY = 5_000
 const PUBLIC_PROFILE_TTL = 90 * 24 * 60 * 60_000
 const PUBLIC_PROFILE_TITLES = new Set(['night_hunter_2026', 'midnight_keeper_2026', 'rift_breaker_2026', 'aurora_conductor_2026', 'icewire_survivor_2026'])
@@ -409,6 +414,7 @@ function normalizeMatchState(value) {
     matches: Array.isArray(value?.matches) ? value.matches : [],
     listings: Array.isArray(value?.listings) ? value.listings : [],
     royale: value?.royale && typeof value.royale === 'object' && !Array.isArray(value.royale) ? value.royale : null,
+    royaleReceipts: Array.isArray(value?.royaleReceipts) ? value.royaleReceipts : [],
   }
 }
 
@@ -1043,18 +1049,56 @@ function normalizeRoyaleRound(value, now) {
   const status = ['open', 'countdown', 'settled'].includes(value.status) ? value.status : 'open'
   const startAt = boundedInteger(value.startAt, createdAt, createdAt + ROYALE_LIVE_LOBBY_TTL, 0)
   const winnerTicketId = cleanText(value.winnerTicketId, 64)
+  const isSettled = status === 'settled' || (status === 'countdown' && now >= startAt)
+  const settledAt = isSettled ? boundedInteger(value.settledAt, startAt, now, startAt) : 0
   if (!participants.length) return null
   if (status === 'open' && now - createdAt > ROYALE_LIVE_LOBBY_TTL) return null
-  if (status === 'settled' && now - startAt > ROYALE_LIVE_RESULT_TTL) return null
+  if (isSettled && now - settledAt > ROYALE_LIVE_RESULT_TTL) return null
   if (status !== 'open' && (!startAt || !ID.test(winnerTicketId))) return null
   return {
     id: cleanText(value.id, 64) || randomHex(12),
     createdAt,
-    status: status === 'countdown' && now >= startAt ? 'settled' : status,
+    status: isSettled ? 'settled' : status,
     startAt,
+    settledAt,
     winnerTicketId,
     participants,
   }
+}
+
+function normalizeRoyaleReceipt(value, now) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const id = cleanText(value.id, 64)
+  const settledAt = boundedInteger(value.settledAt, now - ROYALE_LIVE_RECEIPT_TTL, now, 0)
+  const winnerTicketId = cleanText(value.winnerTicketId, 64)
+  const participants = (Array.isArray(value.participants) ? value.participants : [])
+    .map(entry => normalizeRoyaleParticipant(entry, now))
+    .filter(Boolean)
+    .filter((entry, index, all) => all.findIndex(candidate => candidate.deviceId === entry.deviceId) === index)
+    .slice(0, ROYALE_LIVE_MAX_PLAYERS)
+  if (!id || !settledAt || !ID.test(winnerTicketId) || !participants.length) return null
+  if (!participants.some(player => player.ticketId === winnerTicketId)) return null
+  return {
+    id,
+    createdAt: boundedInteger(value.createdAt, 0, settledAt, settledAt),
+    status: 'settled',
+    startAt: boundedInteger(value.startAt, 0, settledAt, settledAt),
+    settledAt,
+    winnerTicketId,
+    participants,
+  }
+}
+
+function archiveRoyaleSettlement(state, now) {
+  const round = state.royale
+  if (!round || round.status !== 'settled') return
+  const receipt = normalizeRoyaleReceipt(round, now)
+  if (!receipt || state.royaleReceipts.some(entry => entry?.id === receipt.id)) return
+  state.royaleReceipts.unshift(receipt)
+}
+
+function royaleReceiptForTicket(state, ticketId) {
+  return state.royaleReceipts.find(round => round.participants.some(player => player.ticketId === ticketId)) || null
 }
 
 function publicRoyaleRound(round, deviceId, ticketId, now) {
@@ -1065,6 +1109,7 @@ function publicRoyaleRound(round, deviceId, ticketId, now) {
     status: round.status,
     createdAt: round.createdAt,
     startAt: round.startAt || 0,
+    settledAt: isSettled ? round.settledAt || round.startAt || 0 : 0,
     startInMs: round.status === 'countdown' ? Math.max(0, round.startAt - now) : 0,
     // The winning ticket is intentionally withheld until the server starts
     // the draw, so the pre-spin wheel cannot reveal the outcome.
@@ -1101,7 +1146,13 @@ function cleanMatchState(state, now) {
     .filter(Boolean)
     .sort((left, right) => right.createdAt - left.createdAt)
     .slice(0, BATTLE_LISTING_LIMIT)
+  state.royaleReceipts = state.royaleReceipts
+    .map(entry => normalizeRoyaleReceipt(entry, now))
+    .filter(Boolean)
+    .sort((left, right) => right.settledAt - left.settledAt)
+    .slice(0, ROYALE_LIVE_RECEIPT_LIMIT)
   state.royale = normalizeRoyaleRound(state.royale, now)
+  archiveRoyaleSettlement(state, now)
 }
 
 function publicMatch(match, now) {
@@ -2092,13 +2143,21 @@ export class PotuzhnoState {
     if (!ID.test(deviceId) || !ID.test(ticketId)) return json({ error: 'Некоректний квиток Royale.' }, 400)
 
     if (action === 'status') {
-      return json(await this.updateMatchState((state, now) => ({
-        ...publicRoyaleRound(state.royale, deviceId, ticketId, now),
-      })))
+      return json(await this.updateMatchState((state, now) => {
+        // A receipt wins over the active lobby only for its participant. This
+        // prevents a freshly opened bank from hiding the previous bank's draw.
+        const receipt = royaleReceiptForTicket(state, ticketId)
+        return {
+          ...publicRoyaleRound(receipt || state.royale, deviceId, ticketId, now),
+          isSettlementReceipt: Boolean(receipt),
+        }
+      }))
     }
 
     if (action === 'leave') {
       return json(await this.updateMatchState((state, now) => {
+        const receipt = royaleReceiptForTicket(state, ticketId)
+        if (receipt) return { ...publicRoyaleRound(receipt, deviceId, ticketId, now), isSettlementReceipt: true }
         const round = state.royale
         if (!round) return { status: 'idle', canJoin: true, maxPlayers: ROYALE_LIVE_MAX_PLAYERS }
         if (round.status !== 'open') return publicRoyaleRound(round, deviceId, ticketId, now)

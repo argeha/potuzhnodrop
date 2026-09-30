@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 6.9.3 ============ */
+/* ============ ПОТУЖНО DROP 6.9.4 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -1601,7 +1601,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.9.3';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.9.4';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -10002,6 +10002,10 @@ function scheduleLiveRoyaleCountdown(round) {
   }, 160);
 }
 
+function hasLiveRoyaleReceipt(roundId) {
+  return Boolean(roundId && Array.isArray(gameState?.royaleLiveSettledRounds) && gameState.royaleLiveSettledRounds.includes(roundId));
+}
+
 function applyLiveRoyaleState(round) {
   if (!round || round.status === 'idle') {
     if (royaleLiveTicket) releaseLiveRoyaleReservation({ announce: true });
@@ -10025,13 +10029,20 @@ function applyLiveRoyaleState(round) {
     royaleInProgress = amParticipant;
     scheduleLiveRoyaleCountdown(round);
   } else if (round.status === 'settled') {
-    const alreadySettledHere = royalePhase === 'settled' && royaleLiveSpinRoundId === round.id;
+    // The server returns the same result receipt even if another player has
+    // already opened the next bank.  A stored receipt also makes a refresh
+    // harmless: never spin or award the same virtual bank twice.
+    const alreadySettledHere = hasLiveRoyaleReceipt(round.id) || (royalePhase === 'settled' && royaleLiveSpinRoundId === round.id);
     royalePhase = alreadySettledHere ? 'settled' : 'spinning';
     royaleInProgress = amParticipant && !alreadySettledHere;
     if (!alreadySettledHere && amParticipant && round.winnerTicketId && royaleLiveSpinRoundId !== round.id) {
-      royaleLiveSpinRoundId = round.id;
       const wagerId = royaleLiveTicket?.wagerId;
-      if (wagerId && isPendingWager(wagerId)) spinRoyaleRound(wagerId, round.winnerTicketId);
+      // Do not mark the receipt as handled until the local reservation is
+      // present. This lets a delayed state recovery retry the synced spin.
+      if (wagerId && isPendingWager(wagerId)) {
+        royaleLiveSpinRoundId = round.id;
+        spinRoyaleRound(wagerId, round.winnerTicketId);
+      }
     }
   }
   renderRoyaleDeck();
