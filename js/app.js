@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 6.8.5 ============ */
+/* ============ ПОТУЖНО DROP 6.8.7 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -1542,7 +1542,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.8.5';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.8.7';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -9483,8 +9483,14 @@ function updateRoyaleUI() {
   if (wheelSub) wheelSub.textContent = royalePhase === 'countdown' ? `${remaining} секунд` : royalePhase === 'spinning' ? 'серверний ритм' : royalePlayerSkins.length ? 'місце у банку' : 'додай скін';
   if (hint) hint.textContent = isLive
     ? (royaleLiveRound?.participants?.length ? 'Банк синхронізовано сервером. AI у цьому режимі не бере участі.' : 'Відкрий банк із 1–10 віртуальними скінами — інші гравці можуть приєднатися.')
-    : royalePlayerSkins.length ? 'Ставки ботів зафіксовані: кожен додатковий скін підвищує твій шанс.' : 'Додай перший скін — боти сформують чесні стартові ставки.';
-  if (addButton) addButton.disabled = royaleInProgress || liveLocked || royalePlayerSkins.length >= skinLimit;
+    : royalePlayerSkins.length ? `Кожен бот ставить по ${royalePlayerSkins.length} ${royalePlayerSkins.length === 1 ? 'скіну' : royalePlayerSkins.length < 5 ? 'скіни' : 'скінів'} — банк росте разом із твоїм внеском.` : 'Додай перший скін — боти сформують стартовий банк.';
+  if (addButton) {
+    const remainingSkins = Math.max(0, skinLimit - royalePlayerSkins.length);
+    addButton.disabled = royaleInProgress || liveLocked || !remainingSkins;
+    addButton.innerHTML = remainingSkins
+      ? `<i class="fa-solid fa-plus"></i> Додати скіни <span class="opacity-70">(${royalePlayerSkins.length}/${skinLimit})</span>`
+      : `<i class="fa-solid fa-check"></i> Ліміт скінів набрано`;
+  }
   if (startButton) {
     startButton.disabled = royaleInProgress || (!liveLocked && !royalePlayerSkins.length);
     startButton.innerHTML = royalePhase === 'countdown'
@@ -9546,15 +9552,21 @@ function bindRoyaleControls() {
   });
 }
 
-function royaleCreateBotPool(targetValue, botIndex) {
+function royaleCreateBotPool(targetValue, botIndex, requestedCount = 1) {
   const catalog = (CS2_SKINS || []).filter(isUsableSkin);
   if (!catalog.length) return [];
-  const itemCount = targetValue > 4_000 ? 3 : targetValue > 900 ? 2 : 1;
-  const weights = itemCount === 3 ? [0.52, 0.31, 0.17] : itemCount === 2 ? [0.64, 0.36] : [1];
-  return weights.map((weight, index) => {
+  const itemCount = Math.max(1, Math.min(ROYALE_MAX_SKINS, Math.floor(Number(requestedCount) || 1)));
+  const target = Math.max(itemCount, Math.round(Number(targetValue) || itemCount));
+  const rawWeights = Array.from({ length: itemCount }, () => 0.8 + Math.random() * 0.55);
+  const totalWeight = rawWeights.reduce((sum, weight) => sum + weight, 0);
+  let allocated = 0;
+  return rawWeights.map((weight, index) => {
     const source = catalog[Math.floor(Math.random() * catalog.length)];
     const wear = rollWear ? rollWear() : { code: 'FT', mult: 1 };
-    const price = Math.max(1, Math.round(targetValue * weight));
+    const price = index === itemCount - 1
+      ? Math.max(1, target - allocated)
+      : Math.max(1, Math.floor(target * (weight / totalWeight)));
+    allocated += price;
     return { ...source, id: `royale-ai-${botIndex}-${Date.now()}-${index}`, wear, basePrice: price, price, virtual: true };
   });
 }
@@ -9566,8 +9578,13 @@ function royaleGenerateBots(referenceValue = 0) {
   }
   const config = royaleConfig();
   const reference = Math.max(20, Number(referenceValue || 0), royalePlayerSkins.reduce((sum, skin) => sum + Number(skin.price || 0), 0));
-  const factors = royaleMode === 'live' ? [0.78, 0.98] : [0.58, 0.84, 1.12];
-  royaleBotPools = factors.slice(0, config.bots).map((factor, index) => royaleCreateBotPool(reference * factor, index));
+  const playerSkinCount = Math.max(1, royalePlayerSkins.length);
+  // Every player skin unlocks one skin per bot. Their total stake grows too,
+  // but less aggressively than the player's contribution, so a fuller stack
+  // makes the bank richer and still improves the player's odds.
+  const playerBoost = Math.min(0.4, Math.max(0, playerSkinCount - 1) * 0.045);
+  const factors = [0.58, 0.84, 1.12].map(factor => factor * (1 - playerBoost));
+  royaleBotPools = factors.slice(0, config.bots).map((factor, index) => royaleCreateBotPool(reference * factor, index, playerSkinCount));
 }
 
 function royaleAddSkin() {
@@ -9576,28 +9593,46 @@ function royaleAddSkin() {
   if (royalePlayerSkins.length >= limit) return showToast(`Максимум ${limit} ${limit === 1 ? 'скін' : 'скінів'} для цього режиму`, 'warn');
   const available = userInventory.filter(skin => !royalePlayerSkins.some(selected => selected.id === skin.id));
   if (!available.length) return showToast('У сховищі немає доступних скінів.', 'warn');
-  const grid = document.getElementById('battlePickGrid');
-  if (!grid) return;
-  grid.innerHTML = available.map(skin => `<button type="button" data-royale-pick="${escapeHtml(String(skin.id))}" class="bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 flex flex-col items-center transition"><span class="wear-badge wear-${getWear(skin).code} self-start">${getWear(skin).code}</span><img src="${escapeHtml(getSkinImageSrc(skin))}" alt="" class="h-16 object-contain mt-1" onerror="handleSkinImageError(this)"><p class="mt-1 text-xs font-bold text-white truncate w-full text-center">${escapeHtml(skin.name)}</p><p class="text-amber-400 text-xs font-extrabold">${formatCredits(skin.price)}</p></button>`).join('');
-  grid.querySelectorAll('[data-royale-pick]').forEach(button => button.addEventListener('click', () => {
-    const skin = userInventory.find(entry => String(entry.id) === button.dataset.royalePick);
-    if (!skin || royalePlayerSkins.some(selected => selected.id === skin.id)) return;
-    const isFirstBotStake = royaleMode === 'bots' && royalePlayerSkins.length === 0;
-    royalePlayerSkins.push(skin);
-    // Bot stakes are set once from the first skin. Every following skin is a
-    // genuine extra contribution, so the displayed chance must rise instead
-    // of being neutralized by larger bot pools.
-    if (isFirstBotStake) royaleGenerateBots(skin.price || 0);
+  const grid = document.getElementById('royalePickGrid');
+  const count = document.getElementById('royalePickCount');
+  const confirm = document.getElementById('royalePickConfirm');
+  if (!grid || !count || !confirm) return;
+  const remaining = limit - royalePlayerSkins.length;
+  const selectedIds = new Set();
+  const renderPicker = () => {
+    const selectedCount = selectedIds.size;
+    count.textContent = `Вибрано ${selectedCount} із ${remaining}`;
+    confirm.disabled = !selectedCount;
+    confirm.innerHTML = `<i class="fa-solid fa-plus mr-2"></i>Додати ${selectedCount || ''} ${selectedCount === 1 ? 'скін' : 'скінів'}`;
+    grid.innerHTML = available.map(skin => {
+      const isSelected = selectedIds.has(String(skin.id));
+      const wear = getWear(skin);
+      return `<button type="button" data-royale-select="${escapeHtml(String(skin.id))}" aria-pressed="${isSelected}" class="relative bg-brand-card border rounded-xl p-3 flex flex-col items-center transition ${isSelected ? 'border-amber-400 bg-amber-400/10 ring-1 ring-amber-300/50' : 'border-brand-border hover:bg-gray-800'}"><span class="wear-badge wear-${wear.code} self-start">${wear.code}</span>${isSelected ? '<span class="absolute right-2 top-2 grid h-5 w-5 place-items-center rounded-full bg-amber-400 text-[10px] text-slate-950"><i class="fa-solid fa-check"></i></span>' : ''}<img src="${escapeHtml(getSkinImageSrc(skin))}" alt="" class="h-16 object-contain mt-1" onerror="handleSkinImageError(this)"><p class="mt-1 text-xs font-bold text-white truncate w-full text-center">${escapeHtml(skin.name)}</p><p class="text-amber-400 text-xs font-extrabold">${formatCredits(skin.price)}</p></button>`;
+    }).join('');
+    grid.querySelectorAll('[data-royale-select]').forEach(button => button.addEventListener('click', () => {
+      const id = button.dataset.royaleSelect;
+      if (selectedIds.has(id)) selectedIds.delete(id);
+      else if (selectedIds.size < remaining) selectedIds.add(id);
+      else return showToast(`Можна додати ще ${remaining} ${remaining === 1 ? 'скін' : 'скінів'} у цей раунд.`, 'warn');
+      renderPicker();
+    }));
+  };
+  confirm.onclick = () => {
+    const selected = available.filter(skin => selectedIds.has(String(skin.id)));
+    if (!selected.length) return;
+    royalePlayerSkins.push(...selected);
+    if (royaleMode === 'bots') royaleGenerateBots();
     renderRoyaleDeck();
-    closeModal('battlePickModal');
-  }));
-  openModal('battlePickModal');
+    closeModal('royalePickModal');
+  };
+  renderPicker();
+  openModal('royalePickModal');
 }
 
 function royaleRemoveSkin(index) {
   if (royaleInProgress || (royaleMode === 'live' && royaleLiveTicket)) return;
   royalePlayerSkins.splice(index, 1);
-  if (royaleMode === 'bots' && !royalePlayerSkins.length) royaleGenerateBots();
+  if (royaleMode === 'bots') royaleGenerateBots();
   renderRoyaleDeck();
 }
 
