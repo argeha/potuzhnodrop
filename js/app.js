@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 6.9.0 ============ */
+/* ============ ПОТУЖНО DROP 6.9.1 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -1057,7 +1057,11 @@ const TARGET_ARENA_ASSETS = Object.freeze({
   backdrop: '/assets/arena/zero-sight-range-v1.png',
   standard: '/assets/arena/zero-sight-standard-target-v1.png',
   elite: '/assets/arena/zero-sight-elite-target-v1.png',
-  decoy: '/assets/arena/zero-sight-decoy-target-v1.png'
+  decoy: '/assets/arena/zero-sight-decoy-target-v1.png',
+  nightfallBackdrop: '/assets/arena/nightfall-range-v1.png',
+  nightfallTarget: '/assets/arena/nightfall-pumpkin-target-v1.png',
+  icewireBackdrop: '/assets/arena/icewire-range-v1.png',
+  icewireTarget: '/assets/arena/icewire-core-target-v1.png'
 });
 const TARGET_ARENA_THEMES = Object.freeze({
   default: Object.freeze({
@@ -1068,7 +1072,9 @@ const TARGET_ARENA_THEMES = Object.freeze({
     icon: 'fa-crosshairs',
     boardCopy: 'ОБЕРИ ЛІНІЮ · ВЛУЧИ ТОЧНО',
     liveHint: 'Наводься на мішені різної дальності. Далека лінія дає більше очок і часу.',
-    backdrop: TARGET_ARENA_ASSETS.backdrop
+    backdrop: TARGET_ARENA_ASSETS.backdrop,
+    targetAsset: '',
+    targetLabels: Object.freeze({})
   }),
   halloween: Object.freeze({
     key: 'nightfall',
@@ -1077,8 +1083,10 @@ const TARGET_ARENA_THEMES = Object.freeze({
     kicker: 'NIGHTFALL · ПОЛЮВАННЯ НА СИГНАЛИ',
     icon: 'fa-ghost',
     boardCopy: 'ПОЛЮВАННЯ В ТУМАНІ',
-    liveHint: 'Під час Nightfall мішені отримають святкове оформлення без зміни правил.',
-    backdrop: TARGET_ARENA_ASSETS.backdrop
+    liveHint: 'Гарбузові маяки й хибні сигнали ховаються у тумані. Правила та баланс лишаються чесними.',
+    backdrop: TARGET_ARENA_ASSETS.nightfallBackdrop,
+    targetAsset: TARGET_ARENA_ASSETS.nightfallTarget,
+    targetLabels: Object.freeze({ standard: 'ГАРБУЗОВИЙ МАЯК', elite: 'КОРОЛІВСЬКИЙ ГАРБУЗ', decoy: 'ПРОКЛЯТИЙ ГАРБУЗ' })
   }),
   winter: Object.freeze({
     key: 'icewire',
@@ -1087,8 +1095,10 @@ const TARGET_ARENA_THEMES = Object.freeze({
     kicker: 'ICEWIRE · ZERO HOUR',
     icon: 'fa-snowflake',
     boardCopy: 'КРИЖАНІ ЛІНІЇ НАВЕДЕННЯ',
-    liveHint: 'Під час ICEWIRE мішені отримають крижану тему без зміни правил.',
-    backdrop: TARGET_ARENA_ASSETS.backdrop
+    liveHint: 'Крижані ядра станції світяться крізь мороз. Правила та баланс лишаються чесними.',
+    backdrop: TARGET_ARENA_ASSETS.icewireBackdrop,
+    targetAsset: TARGET_ARENA_ASSETS.icewireTarget,
+    targetLabels: Object.freeze({ standard: 'КРИЖАНЕ ЯДРО', elite: 'ПОЛЯРНИЙ МАЯК', decoy: 'ТРІСНУТЕ ЯДРО' })
   })
 });
 const TARGET_ARENA_DEPTHS = Object.freeze([
@@ -1591,7 +1601,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.9.0';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.9.1';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -2509,7 +2519,7 @@ function getTargetArenaTheme() {
   return TARGET_ARENA_THEMES.default;
 }
 
-function getTargetArenaDescriptor() {
+function getTargetArenaDescriptor(theme = getTargetArenaTheme()) {
   const depthRoll = Math.random();
   const depth = depthRoll < 0.42
     ? TARGET_ARENA_DEPTHS[0]
@@ -2527,6 +2537,8 @@ function getTargetArenaDescriptor() {
     ...target,
     depth,
     decoy,
+    asset: theme.targetAsset || target.asset,
+    label: theme.targetLabels?.[target.key] || target.label,
     points: decoy ? 0 : depth.points + target.scoreBonus,
     bonusMs: decoy ? 0 : depth.bonusMs + target.bonusMs
   };
@@ -2697,7 +2709,7 @@ function renderActiveTargetArena(root) {
 
   const showTarget = () => {
     if (!targetArenaSession || !board || !target) return;
-    activeTarget = getTargetArenaDescriptor();
+    activeTarget = getTargetArenaDescriptor(theme);
     const boardWidth = Math.max(board.clientWidth, 1);
     const boardHeight = Math.max(board.clientHeight, 1);
     const size = clampNumber(Math.round(Math.min(boardWidth, boardHeight) * activeTarget.depth.scale), 48, 154, 86);
