@@ -665,11 +665,25 @@ function normalizeCommunityEvent(value, now) {
 function normalizeCommunityState(value, now) {
   const season = communitySeasonKey()
   const source = value?.season === season && value && typeof value === 'object' ? value : {}
-  const players = Object.entries(source.players && typeof source.players === 'object' ? source.players : {})
+  const rawPlayers = Object.entries(source.players && typeof source.players === 'object' ? source.players : {})
     .filter(([visitorHash, player]) => /^[a-f0-9]{64}$/i.test(visitorHash) && player && now - Number(player.updatedAt || 0) < COMMUNITY_PLAYER_TTL)
     .map(([visitorHash, player]) => [visitorHash, normalizeCommunityPlayer(player, visitorHash, boundedInteger(player.updatedAt, now - COMMUNITY_PLAYER_TTL, now, now))])
     .filter(([, player]) => Boolean(player))
     .sort(([, left], [, right]) => right.updatedAt - left.updatedAt)
+  // A Steam account can play on both the site and Android.  Those clients
+  // have different anonymous browser IDs, but they must still occupy exactly
+  // one place in the public ranking.  Keep only the freshest heartbeat for a
+  // verified cross-device account.  Visitors without an account remain
+  // separate, because a nickname is not a safe identity key.
+  const seenAccounts = new Set()
+  const players = rawPlayers
+    .filter(([, player]) => {
+      const accountId = player.cloudProfileId
+      if (!accountId) return true
+      if (seenAccounts.has(accountId)) return false
+      seenAccounts.add(accountId)
+      return true
+    })
     .slice(0, COMMUNITY_MAX_PLAYERS)
   const events = (Array.isArray(source.events) ? source.events : [])
     .map(event => normalizeCommunityEvent(event, now))
@@ -2365,6 +2379,14 @@ export class PotuzhnoState {
     const result = await this.storage.transaction(async transaction => {
       const state = normalizeCommunityState(await transaction.get('community:season'), now)
       state.players[visitorHash] = player
+      // Normalisation cleans old duplicate heartbeats when the state is read.
+      // Do the same after writing this heartbeat so a player switching between
+      // Android and the website is never rendered twice in this response.
+      if (player.cloudProfileId) {
+        for (const [id, entry] of Object.entries(state.players)) {
+          if (id !== visitorHash && entry?.cloudProfileId === player.cloudProfileId) delete state.players[id]
+        }
+      }
       if (event) state.events = [event, ...state.events.filter(entry => entry.id !== event.id)].slice(0, COMMUNITY_MAX_EVENTS)
       if (circuitPulse && player.hidden !== true) applyCommunityCircuitPulse(state.circuit, visitorHash, player, circuitPulse, now)
       if (riftPulse && player.hidden !== true) applyCommunityRiftPulse(state.rift, visitorHash, player, riftPulse, now)
