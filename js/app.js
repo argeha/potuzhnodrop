@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 6.8.3 ============ */
+/* ============ ПОТУЖНО DROP 6.8.4 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -1542,7 +1542,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.8.3';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.8.4';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -9483,7 +9483,7 @@ function updateRoyaleUI() {
   if (wheelSub) wheelSub.textContent = royalePhase === 'countdown' ? `${remaining} секунд` : royalePhase === 'spinning' ? 'серверний ритм' : royalePlayerSkins.length ? 'місце у банку' : 'додай скін';
   if (hint) hint.textContent = isLive
     ? (royaleLiveRound?.participants?.length ? 'Банк синхронізовано сервером. AI у цьому режимі не бере участі.' : 'Відкрий банк із 1–10 віртуальними скінами — інші гравці можуть приєднатися.')
-    : 'Ставки ботів підлаштовуються під твій внесок.';
+    : royalePlayerSkins.length ? 'Ставки ботів зафіксовані: кожен додатковий скін підвищує твій шанс.' : 'Додай перший скін — боти сформують чесні стартові ставки.';
   if (addButton) addButton.disabled = royaleInProgress || liveLocked || royalePlayerSkins.length >= skinLimit;
   if (startButton) {
     startButton.disabled = royaleInProgress || (!liveLocked && !royalePlayerSkins.length);
@@ -9582,8 +9582,12 @@ function royaleAddSkin() {
   grid.querySelectorAll('[data-royale-pick]').forEach(button => button.addEventListener('click', () => {
     const skin = userInventory.find(entry => String(entry.id) === button.dataset.royalePick);
     if (!skin || royalePlayerSkins.some(selected => selected.id === skin.id)) return;
+    const isFirstBotStake = royaleMode === 'bots' && royalePlayerSkins.length === 0;
     royalePlayerSkins.push(skin);
-    if (royaleMode === 'bots') royaleGenerateBots();
+    // Bot stakes are set once from the first skin. Every following skin is a
+    // genuine extra contribution, so the displayed chance must rise instead
+    // of being neutralized by larger bot pools.
+    if (isFirstBotStake) royaleGenerateBots(skin.price || 0);
     renderRoyaleDeck();
     closeModal('battlePickModal');
   }));
@@ -9593,7 +9597,7 @@ function royaleAddSkin() {
 function royaleRemoveSkin(index) {
   if (royaleInProgress || (royaleMode === 'live' && royaleLiveTicket)) return;
   royalePlayerSkins.splice(index, 1);
-  if (royaleMode === 'bots') royaleGenerateBots();
+  if (royaleMode === 'bots' && !royalePlayerSkins.length) royaleGenerateBots();
   renderRoyaleDeck();
 }
 
