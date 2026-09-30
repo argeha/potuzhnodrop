@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 6.8.4 ============ */
+/* ============ ПОТУЖНО DROP 6.8.5 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -1542,7 +1542,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.8.4';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.8.5';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -9859,8 +9859,13 @@ function spinRoyaleRound(wagerId, serverWinnerTicketId = '') {
   const before = fractions.slice(0, winnerIndex).reduce((sum, share) => sum + share, 0);
   const target = -((before + fractions[winnerIndex] / 2) * Math.PI * 2);
   const matchSeed = participants.map(entry => entry.name).join(':').split('').reduce((sum, char) => ((sum * 33) + char.charCodeAt(0)) >>> 0, 0);
-  const finalAngle = target - (7 + (matchSeed % 3)) * Math.PI * 2;
   const startAngle = royaleWheelAngle;
+  const fullTurn = Math.PI * 2;
+  const minimumTravel = (7 + (matchSeed % 3)) * fullTurn;
+  // The winner stays beneath the pointer, but the same angular point must be
+  // far enough ahead of the previous round to never look like a short spin.
+  let finalAngle = target;
+  while (finalAngle > startAngle - minimumTravel) finalAngle -= fullTurn;
   const startedAt = performance.now();
   const duration = 5_300;
   document.getElementById('royaleWheelWrap')?.classList.add('is-spinning');
