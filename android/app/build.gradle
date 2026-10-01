@@ -1,5 +1,13 @@
 apply plugin: 'com.android.application'
 
+def releaseKeystoreFile = rootProject.file('keystore.properties')
+def releaseKeystore = new Properties()
+if (releaseKeystoreFile.exists()) {
+    releaseKeystoreFile.withInputStream { releaseKeystore.load(it) }
+}
+def hasReleaseSigning = ['storeFile', 'storePassword', 'keyAlias', 'keyPassword']
+    .every { key -> releaseKeystore.getProperty(key, '').trim() }
+
 android {
     namespace = "com.argeha.potuzhnodrop"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,13 +15,23 @@ android {
         applicationId "com.argeha.potuzhnodrop"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 4
-        versionName "6.9.7-mobile.4"
+        versionCode 5
+        versionName "6.9.8-mobile.5"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        release {
+            if (hasReleaseSigning) {
+                storeFile rootProject.file(releaseKeystore.getProperty('storeFile'))
+                storePassword releaseKeystore.getProperty('storePassword')
+                keyAlias releaseKeystore.getProperty('keyAlias')
+                keyPassword releaseKeystore.getProperty('keyPassword')
+            }
         }
     }
     buildTypes {
@@ -23,6 +41,15 @@ android {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) signingConfig signingConfigs.release
+        }
+    }
+}
+
+tasks.configureEach { task ->
+    if ((task.name == 'bundleRelease' || task.name == 'assembleRelease') && !hasReleaseSigning) {
+        task.doFirst {
+            throw new GradleException('Release signing is not configured. Create android/keystore.properties from keystore.properties.example and keep the upload key outside Git.')
         }
     }
 }

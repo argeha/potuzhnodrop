@@ -46,11 +46,37 @@ npm run mobile:open
 Android Studio and the Android SDK are required to build an AAB. The AAB is
 what gets uploaded to Play Console; an APK is only for local testing.
 
+### Signed AAB
+
+The Android Gradle Plugin in this project requires **JDK 21**. Install it,
+then create one upload key and store its passwords and backup outside Git:
+
+```powershell
+cd android
+Copy-Item keystore.properties.example keystore.properties
+keytool -genkeypair -v -keystore play-upload.jks -alias potuzhno-drop-upload -keyalg RSA -keysize 4096 -validity 10000
+```
+
+Enter long unique passwords when `keytool` asks, put the same values into the
+ignored `keystore.properties`, then build:
+
+```powershell
+cd ..
+npm run mobile:sync
+cd android
+.\gradlew.bat bundleRelease
+```
+
+The resulting signed file is
+`android/app/build/outputs/bundle/release/app-release.aab`. Keep a backup of
+`play-upload.jks` and its passwords: replacing an upload key later requires a
+Play Console key-reset procedure.
+
 ## Publication gates
 
 1. Configure verified sign-in and mobile token exchange.
-2. Add in-app account deletion plus a public deletion page.
-3. Finish privacy policy and Play Data Safety declaration.
+2. Verify in-app account deletion and the public `/account-delete.html` page.
+3. Publish `/privacy.html`, then fill in the matching Play Data Safety declaration and a public developer contact email in Play Console.
 4. Keep all items, PC and rewards virtual: no withdrawal, transfers or
    real-world prizes.
 5. Run a closed test, then create a signed `.aab` in Android Studio.

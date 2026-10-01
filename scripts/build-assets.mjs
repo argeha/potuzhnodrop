@@ -19,6 +19,8 @@ await mkdir(join(outputDir, 'js'), { recursive: true })
 await Promise.all([
   copyFile(join(projectRoot, 'index.html'), join(outputDir, 'index.html')),
   copyFile(join(projectRoot, 'admin.html'), join(outputDir, 'admin.html')),
+  copyFile(join(projectRoot, 'privacy.html'), join(outputDir, 'privacy.html')),
+  copyFile(join(projectRoot, 'account-delete.html'), join(outputDir, 'account-delete.html')),
   copyFile(join(projectRoot, '_headers'), join(outputDir, '_headers')),
   copyFile(join(projectRoot, 'css', 'style.css'), join(outputDir, 'css', 'style.css')),
   copyFile(join(projectRoot, 'css', 'admin.css'), join(outputDir, 'css', 'admin.css')),

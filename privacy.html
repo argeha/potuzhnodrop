@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#080a0f">
+  <title>Політика приватності — ПОТУЖНО DROP</title>
+  <style>
+    :root { color-scheme: dark; --bg:#080a0f; --panel:#121727; --line:#283654; --ink:#f4f7ff; --muted:#a8b3c9; --cyan:#75e8ff; --amber:#ffc54d; }
+    * { box-sizing:border-box; } body { margin:0; min-width:320px; background:radial-gradient(circle at 75% -10%, #173354 0, transparent 38%), var(--bg); color:var(--ink); font:16px/1.62 system-ui,-apple-system,"Segoe UI",sans-serif; }
+    main { width:min(900px, calc(100% - 32px)); margin:0 auto; padding:42px 0 64px; } .brand { color:var(--amber); font-weight:900; letter-spacing:.08em; text-decoration:none; } .eyebrow { color:var(--cyan); font-weight:800; font-size:.75rem; letter-spacing:.14em; text-transform:uppercase; } h1 { font-size:clamp(2rem,6vw,3.5rem); line-height:1.06; margin:.35rem 0 1rem; } h2 { font-size:1.25rem; line-height:1.25; margin:2rem 0 .55rem; } p, li { color:var(--muted); } strong { color:var(--ink); } .card { margin-top:1.5rem; border:1px solid var(--line); border-radius:20px; padding:20px 22px; background:linear-gradient(145deg,rgba(24,31,50,.95),rgba(12,15,25,.95)); } a { color:var(--cyan); } .note { border-left:3px solid var(--amber); padding-left:14px; } footer { margin-top:42px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:.9rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <a class="brand" href="/">P ПОТУЖНО DROP</a>
+    <p class="eyebrow">Політика приватності</p>
+    <h1>Твій ігровий профіль — під твоїм контролем</h1>
+    <p>Оновлено 1 жовтня 2026 року. Ця політика описує вебсайт і Android-застосунок ПОТУЖНО DROP.</p>
+
+    <section class="card">
+      <h2>Коротко</h2>
+      <p>ПОТУЖНО DROP — віртуальна CS2-гра. У ній немає депозитів, ставок реальними грошима, виведення предметів, Trade Offers, реклами чи покупок. Ми не запитуємо пароль Steam, Steam Guard, API-ключі або платіжні дані.</p>
+    </section>
+
+    <section class="card">
+      <h2>Які дані обробляються</h2>
+      <ul>
+        <li><strong>Steam ID, публічний нік і аватар</strong> — лише якщо ти сам обираєш «Увійти через Steam». Steam ID є ключем до одного ігрового профілю на сайті й Android.</li>
+        <li><strong>Ігровий прогрес</strong> — нікнейм, XP, віртуальні PC, віртуальний інвентар, результати режимів, налаштування та видимість профілю.</li>
+        <li><strong>Технічні ідентифікатори, cookie й короткочасні токени</strong> — щоб захистити Steam-вхід, зберегти сесію та не допустити повторної видачі віртуальної нагороди.</li>
+        <li><strong>Публічний профіль і рейтинг</strong> — тільки коли гравець зробив профіль або участь у спільному режимі видимими. Прихований профіль не показується іншим гравцям.</li>
+        <li><strong>Публічний Steam-інвентар</strong> — лише за окремою дією імпорту і лише коли він відкритий у Steam. Він не передається, не продається й не використовується для реальних ставок.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Навіщо це потрібно</h2>
+      <p>Дані потрібні для збереження твого прогресу, синхронізації між сайтом і Android, показу добровільно публічних профілів та захисту гри від помилок і зловживань. Ми не продаємо персональні дані й не використовуємо їх для рекламного профілювання.</p>
+    </section>
+
+    <section class="card">
+      <h2>Де обробляються дані</h2>
+      <p>Серверна частина працює в Cloudflare Workers та Durable Objects. Під час входу Steam обробляє OpenID-підтвердження і, за потреби, дані відкритого профілю або інвентарю. Android-застосунок не отримує браузерні cookie Steam: після входу він використовує короткочасний одноразовий токен.</p>
+    </section>
+
+    <section class="card">
+      <h2>Зберігання та видалення</h2>
+      <p>Ігровий профіль зберігається, поки ти ним користуєшся. Ти можеш <a href="/account-delete.html">видалити акаунт</a> у будь-який момент: підтверджений Steam-профіль, прогрес, віртуальний інвентар, публічний профіль, запис у рейтингу та активна сесія будуть видалені з ігрових сховищ. Технічні журнали можуть зберігатися Cloudflare протягом строку, визначеного його політиками безпеки та зберігання.</p>
+      <p class="note"><strong>Видалення незворотне.</strong> Після нього той самий Steam ID зможе створити лише новий порожній ігровий профіль.</p>
+    </section>
+
+    <section class="card">
+      <h2>Вік і безпека</h2>
+      <p>Сервіс призначений для користувачів від 13 років. Не надсилай нам паролі, коди Steam Guard або платіжні дані. Якщо виявиш проблему з приватністю чи безпекою, створи приватне звернення через <a href="https://github.com/argeha/potuzhnodrop/issues">сторінку підтримки проєкту</a>.</p>
+    </section>
+
+    <footer><a href="/">← Повернутися до гри</a> · <a href="/account-delete.html">Видалити акаунт</a></footer>
+  </main>
+</body>
+</html>

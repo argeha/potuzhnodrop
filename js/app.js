@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 6.9.7 ============ */
+/* ============ ПОТУЖНО DROP 6.9.8 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -1620,7 +1620,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.9.7';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.9.8';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -1628,8 +1628,8 @@ function applyHalloweenSeasonCopy(active) {
     : 'NIGHTFALL DROP — це тимчасове ігрове перевтілення. Тут немає реальних виграшів, депозитів, трейдів або виведення скінів. Усі предмети та нічні кредити існують лише у віртуальній грі.';
   setSeasonalParagraph(document.getElementById('brandRiskText'), riskText, Boolean(active));
   const footerHtml = active?.kind === 'winter'
-    ? 'ICEWIRE DROP · ZERO HOUR — тимчасова віртуальна зимова подія без реальних грошей, скінів або призів. <a href="#about" onclick="showPage(\'about\');return false" class="text-cyan-300 hover:text-cyan-200">Правила й безпека</a>'
-    : 'NIGHTFALL DROP · THE 13TH SIGNAL — тимчасова віртуальна Halloween-подія без реальних грошей, скінів або призів. <a href="#about" onclick="showPage(\'about\');return false" class="text-cyan-300 hover:text-cyan-200">Правила й безпека</a>';
+    ? 'ICEWIRE DROP · ZERO HOUR — тимчасова віртуальна зимова подія без реальних грошей, скінів або призів. <a href="#about" onclick="showPage(\'about\');return false" class="text-cyan-300 hover:text-cyan-200">Правила й безпека</a> · <a href="privacy.html" class="text-cyan-300 hover:text-cyan-200">Приватність</a>'
+    : 'NIGHTFALL DROP · THE 13TH SIGNAL — тимчасова віртуальна Halloween-подія без реальних грошей, скінів або призів. <a href="#about" onclick="showPage(\'about\');return false" class="text-cyan-300 hover:text-cyan-200">Правила й безпека</a> · <a href="privacy.html" class="text-cyan-300 hover:text-cyan-200">Приватність</a>';
   setSeasonalHtml(document.getElementById('brandFooterText'), footerHtml, Boolean(active));
 }
 
@@ -3061,8 +3061,17 @@ function renderSteamAccountPanel() {
     panel.innerHTML = '<div class="flex items-center justify-between gap-3"><div class="min-w-0"><p class="text-[11px] font-extrabold text-cyan-50"><i class="fa-brands fa-steam mr-1.5 text-cyan-300"></i>Steam — головний акаунт</p><p id="steamAccountStatus" class="mt-1 break-words text-[10px] leading-4 text-gray-400"></p></div><button id="steamAccountPanelLoginBtn" class="shrink-0 rounded-lg border border-cyan-400/40 bg-cyan-400/10 px-3 py-2 text-[10px] font-extrabold text-cyan-100 hover:bg-cyan-400/20"></button></div>';
     nickLabel.before(panel);
   }
+  let privacyPanel = document.getElementById('accountPrivacyPanel');
+  if (!privacyPanel) {
+    privacyPanel = document.createElement('div');
+    privacyPanel.id = 'accountPrivacyPanel';
+    privacyPanel.className = 'mb-4 rounded-xl border border-white/10 bg-black/15 p-3';
+    privacyPanel.innerHTML = '<p class="text-[10px] leading-4 text-gray-400">Керуєш даними самостійно: <a href="privacy.html" class="font-bold text-cyan-300 hover:text-cyan-200">політика приватності</a>.</p><button id="steamAccountDeleteBtn" class="mt-2 hidden rounded-lg border border-red-400/35 bg-red-500/10 px-3 py-2 text-[10px] font-extrabold text-red-100 hover:bg-red-500/20"><i class="fa-solid fa-trash-can mr-1"></i>Видалити акаунт і прогрес</button>';
+    panel.after(privacyPanel);
+  }
   const status = panel.querySelector('#steamAccountStatus');
   const button = panel.querySelector('#steamAccountPanelLoginBtn');
+  const deleteButton = privacyPanel.querySelector('#steamAccountDeleteBtn');
   const steamId = String(currentUser?.steamId || account?.steamId || '');
   const connected = /^\d{17}$/.test(steamId);
   if (status) status.textContent = connected
@@ -3075,6 +3084,10 @@ function renderSteamAccountPanel() {
     button.onclick = connected
       ? () => showToast('Steam-акаунт підключено. Прогрес уже зберігається на сервері.', 'info')
       : startSteamLogin;
+  }
+  if (deleteButton) {
+    deleteButton.classList.toggle('hidden', !connected);
+    deleteButton.onclick = deleteSteamAccount;
   }
 }
 
@@ -3715,17 +3728,52 @@ function setSteamAccountMeta(steamId, data = {}) {
   };
 }
 
-async function requestSteamAccount(action, { payload, revision, hidden, keepalive = false } = {}) {
+async function requestSteamAccount(action, { payload, revision, hidden, confirmation, keepalive = false } = {}) {
   const options = action === 'load'
     ? { method: 'GET', credentials: 'same-origin', cache: 'no-store' }
     : {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, payload, revision, hidden }),
+      body: JSON.stringify({ action, payload, revision, hidden, confirmation }),
       ...(keepalive ? { keepalive: true } : {})
     };
   return requestJson('/api/steam/account', options, 12_000);
+}
+
+function clearLocalGameDataAfterAccountDeletion() {
+  Object.values(STORAGE).forEach(key => {
+    try { localStorage.removeItem(key); } catch {}
+  });
+  try { localStorage.removeItem('potuzhno_mobile_access_v1'); } catch {}
+  try { localStorage.removeItem('potuzhno_mobile_auth_verifier_v1'); } catch {}
+  window.PotuzhnoMobile?.clearSteamSession?.();
+}
+
+async function deleteSteamAccount() {
+  const steamId = String(currentUser?.steamId || account?.steamId || '');
+  if (!/^\d{17}$/.test(steamId)) {
+    showToast('Спочатку увійди через Steam.', 'warn');
+    return;
+  }
+  const approved = window.confirm('Видалити Steam-акаунт, віртуальний інвентар, прогрес, публічний профіль і запис у рейтингу? Це неможливо скасувати.');
+  if (!approved) return;
+  const deleteButton = document.getElementById('steamAccountDeleteBtn');
+  if (deleteButton) {
+    deleteButton.disabled = true;
+    deleteButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Видаляємо…';
+  }
+  try {
+    await requestSteamAccount('delete', { confirmation: 'DELETE' });
+    clearLocalGameDataAfterAccountDeletion();
+    window.location.replace('account-delete.html?deleted=1');
+  } catch (error) {
+    if (deleteButton) {
+      deleteButton.disabled = false;
+      deleteButton.innerHTML = '<i class="fa-solid fa-trash-can mr-1"></i>Видалити акаунт і прогрес';
+    }
+    showToast(error?.message || 'Не вдалося видалити акаунт. Спробуй ще раз.', 'error');
+  }
 }
 
 function buildSteamAccountSave() {
@@ -11087,6 +11135,7 @@ window.startSteamLogin = startSteamLogin;
 window.continueSteamLogin = continueSteamLogin;
 window.syncSteamInventory = syncSteamInventory;
 window.disconnectSteam = disconnectSteam;
+window.deleteSteamAccount = deleteSteamAccount;
 window.dismissSteamNudge = dismissSteamNudge;
 window.handleSteamAvatarError = handleSteamAvatarError;
 window.handleCaseArtworkError = handleCaseArtworkError;

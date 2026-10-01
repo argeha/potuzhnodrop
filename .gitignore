@@ -3,6 +3,12 @@ dist/
 .netlify/
 .wrangler/
 .gradle-build/
+android/.gradle-build/
+android/.jdk-21/
+android/.android-home/
+android/keystore.properties
+android/*.jks
+android/*.keystore
 .env
 .env.*
 !.env.example

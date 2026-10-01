@@ -1328,14 +1328,17 @@ export class PotuzhnoState {
       // Worker never dispatches /__internal/* to this class.
       if (path === '/__internal/steam-session') return await this.internalSteamSession(request)
       if (path === '/__internal/mobile-session') return await this.internalMobileSession(request)
+      if (path === '/__internal/steam-session-valid') return await this.internalSteamSessionValidity(request)
       if (path === '/__internal/steam-account') return await this.internalSteamAccount(request)
       if (path === '/__internal/migrate-profile') return await this.internalProfileMigration(request)
       if (path === '/__internal/migrate-public-profile') return await this.internalPublicProfileMigration(request)
+      if (path === '/__internal/delete-public-profile') return await this.internalDeletePublicProfile(request)
       if (path === '/__internal/profile-visibility') return await this.internalProfileVisibility(request)
       if (path === '/__internal/admin-profile') return await this.internalAdminProfile(request)
       if (path === '/__internal/admin-player-directory') return await this.internalAdminPlayerDirectory(request)
       if (path === '/__internal/admin-community-players') return await this.internalCommunityPlayers(request)
       if (path === '/__internal/community-visibility') return await this.internalCommunityVisibility(request)
+      if (path === '/__internal/community-delete-account') return await this.internalCommunityDeleteAccount(request)
       if (path === '/api/profile/sync') return await this.profile(request)
       if (path === '/api/public-profile') return await this.publicProfile(request)
       if (path === '/api/public-avatar') return await this.publicAvatar(request)
@@ -1405,6 +1408,21 @@ export class PotuzhnoState {
     return json({ stored: true })
   }
 
+  async internalSteamSessionValidity(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request, 4_096)
+    } catch {
+      return json({ error: 'Некоректна перевірка сесії.' }, 400)
+    }
+    const steamId = String(body?.steamId || '')
+    const createdAt = Number(body?.createdAt || 0)
+    if (!/^\d{17}$/.test(steamId) || !Number.isFinite(createdAt) || createdAt <= 0) return json({ error: 'Некоректна Steam-сесія.' }, 400)
+    const deletedAt = Number(await this.storage.get('steam-account:deleted-at') || 0)
+    return json({ valid: !(deletedAt > 0 && createdAt <= deletedAt) })
+  }
+
   // A Steam account is deliberately stored in a stable object named after the
   // verified Steam ID, not in the short-lived browser-session object. The
   // browser never supplies a Steam ID for this endpoint: the session object
@@ -1429,6 +1447,26 @@ export class PotuzhnoState {
       if (!entry || !isPayload(entry.payload)) return json({ error: 'Steam-акаунт ще не має збереження.' }, 404)
       await this.indexGameProfile(steamId, entry, 'steam')
       return json({ payload: entry.payload, updatedAt: entry.updatedAt, revision: Math.max(1, Math.floor(Number(entry.revision) || 1)) })
+    }
+
+    if (action === 'delete') {
+      if (body?.confirmation !== 'DELETE') return json({ error: 'Підтверди видалення акаунта.' }, 400)
+      const deletedAt = Date.now()
+      const deleted = await this.storage.transaction(async transaction => {
+        const current = await transaction.get(key)
+        if (!current) return { existed: false, publicProfile: null }
+        if (current.steamId !== steamId) return { error: 'Помилка ізоляції Steam-акаунта.', status: 403 }
+        const identity = current?.payload?.account?.publicProfile
+        const publicProfile = ID.test(String(identity?.id || '')) && SEED.test(String(identity?.writeKey || ''))
+          ? { id: String(identity.id), writeKey: String(identity.writeKey) }
+          : null
+        await transaction.delete(key)
+        await transaction.put('steam-account:deleted-at', deletedAt)
+        return { existed: true, publicProfile }
+      })
+      if (deleted.error) return json({ error: deleted.error }, deleted.status)
+      await this.cleanupDeletedSteamAccount(steamId, deleted.publicProfile)
+      return json({ deleted: true, existed: deleted.existed })
     }
 
     if (action === 'create') {
@@ -1543,6 +1581,39 @@ export class PotuzhnoState {
     // See profile migration above: retain the legacy copy until it is safe to
     // clean up asynchronously; all new traffic goes to the per-profile shard.
     return json({ migrated: true, entry })
+  }
+
+  async internalDeletePublicProfile(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request, 4_096)
+    } catch {
+      return json({ error: 'Некоректний запит.' }, 400)
+    }
+    const id = String(body?.id || '')
+    const writeKey = String(body?.writeKey || '')
+    const legacyOnly = body?.legacyOnly === true
+    if (!ID.test(id) || !SEED.test(writeKey)) return json({ error: 'Некоректні дані публічного профілю.' }, 400)
+    const key = `public-profile:${id}`
+    const writeHash = await sha256(writeKey)
+    const existing = legacyOnly ? await this.storage.get(key) : await this.publicProfileEntry(id)
+    if (existing && !equalHash(existing.writeHash, writeHash)) return json({ error: 'Неможливо підтвердити публічний профіль.' }, 403)
+    if (existing) await this.storage.delete(key)
+    if (!legacyOnly) {
+      const global = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName('global'))
+      try {
+        await global.fetch(new Request('https://internal/__internal/delete-public-profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, writeKey, legacyOnly: true }),
+        }))
+      } catch {
+        // The public shard was already cleared. A stale migration copy naturally
+        // expires if the legacy cleanup request is temporarily unavailable.
+      }
+    }
+    return json({ deleted: Boolean(existing) })
   }
 
   async internalAdminProfile(request) {
@@ -1728,6 +1799,19 @@ export class PotuzhnoState {
     }
     const key = 'admin:player-directory:v1'
     const action = cleanText(body?.action, 16)
+    if (action === 'delete-account') {
+      const accountId = cleanText(body?.accountId, 64)
+      if (!isGameAccountId(accountId)) return json({ error: 'Некоректний акаунт.' }, 400)
+      await this.storage.transaction(async transaction => {
+        const stored = await transaction.get(key)
+        const existing = stored?.players && typeof stored.players === 'object' && !Array.isArray(stored.players) ? stored.players : {}
+        const players = Object.entries(existing)
+          .map(([entryKey, entry]) => [entryKey, normalizeAdminPlayerDirectoryEntry(entry)])
+          .filter(([, player]) => player && player.accountId !== accountId)
+        await transaction.put(key, { version: 2, players: Object.fromEntries(players) })
+      })
+      return json({ deleted: true })
+    }
     if (action === 'upsert') {
       const player = normalizeAdminPlayerDirectoryEntry(body?.player)
       if (!player) return json({ error: 'Некоректний профіль гравця.' }, 400)
@@ -1806,6 +1890,60 @@ export class PotuzhnoState {
       await transaction.put('community:season', state)
     })
     return json({ updated: true })
+  }
+
+  async internalCommunityDeleteAccount(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request, 4_096)
+    } catch {
+      return json({ error: 'Некоректний запит видалення.' }, 400)
+    }
+    const accountId = cleanText(body?.accountId, 64)
+    if (!isGameAccountId(accountId)) return json({ error: 'Некоректний акаунт.' }, 400)
+    const now = Date.now()
+    await this.storage.transaction(async transaction => {
+      const state = normalizeCommunityState(await transaction.get('community:season'), now)
+      const removed = new Set(Object.entries(state.players)
+        .filter(([, player]) => player?.cloudProfileId === accountId)
+        .map(([visitorHash]) => visitorHash))
+      for (const visitorHash of removed) delete state.players[visitorHash]
+      if (removed.size) {
+        state.events = state.events.filter(entry => !removed.has(entry.playerId))
+        state.circuit.recent = state.circuit.recent.filter(entry => !removed.has(entry.playerId))
+        state.rift.recent = state.rift.recent.filter(entry => !removed.has(entry.playerId))
+      }
+      await transaction.put('community:season', state)
+    })
+    return json({ deleted: true })
+  }
+
+  async cleanupDeletedSteamAccount(steamId, publicProfile) {
+    const tasks = []
+    if (publicProfile) {
+      const profile = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(`public:${publicProfile.id}`))
+      tasks.push(profile.fetch(new Request('https://internal/__internal/delete-public-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(publicProfile),
+      })))
+    }
+    const community = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName('community'))
+    const global = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName('global'))
+    tasks.push(
+      community.fetch(new Request('https://internal/__internal/community-delete-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountId: steamId }),
+      })),
+      global.fetch(new Request('https://internal/__internal/admin-player-directory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete-account', accountId: steamId }),
+      })),
+    )
+    await Promise.allSettled(tasks)
   }
 
   async indexGameProfile(accountId, entry, accountType = gameAccountType(accountId)) {
@@ -2410,12 +2548,16 @@ export class PotuzhnoState {
       const state = randomHex(32)
       const requestedMobile = url.searchParams.get('client') === 'android'
       const mobile = isMobileSteamRequest(url)
+      const continuePath = !mobile && url.searchParams.get('continue') === '/account-delete.html'
+        ? '/account-delete.html'
+        : ''
       if (requestedMobile && !mobile) return json({ error: 'Некоректний мобільний запит входу.' }, 400)
       const callback = new URL(`${origin}/api/steam/auth`)
       callback.searchParams.set('state', state)
       await this.storage.put(`steam-auth:${state}`, {
         origin,
         mobile,
+        continuePath,
         mobileChallenge: mobile ? mobileChallengeFromUrl(url) : '',
         expiresAt: Date.now() + STEAM_AUTH_TTL,
       })
@@ -2499,25 +2641,48 @@ export class PotuzhnoState {
         headers.append('Set-Cookie', clearAuth)
         return new Response(null, { status: 302, headers })
       }
-      headers.set('Location', `${origin}/?steam_connected=1`)
+      const destination = pending.continuePath === '/account-delete.html'
+        ? `${origin}${pending.continuePath}?steam_connected=1`
+        : `${origin}/?steam_connected=1`
+      headers.set('Location', destination)
       headers.append('Set-Cookie', sessionCookie(STEAM_SESSION_COOKIE, `${STEAM_SESSION_VERSION}_${sessionToken}`, maxAge, url.protocol === 'https:'))
     }
     headers.append('Set-Cookie', clearAuth)
     return new Response(null, { status: 302, headers })
   }
 
+  async isSteamSessionValid(session) {
+    const steamId = String(session?.steamId || '')
+    const createdAt = Number(session?.createdAt || 0)
+    if (!/^\d{17}$/.test(steamId) || !Number.isFinite(createdAt) || createdAt <= 0) return false
+    try {
+      const accountState = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(`steam-account:${steamId}`))
+      const response = await accountState.fetch(new Request('https://internal/__internal/steam-session-valid', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ steamId, createdAt }),
+      }))
+      const data = await response.json().catch(() => ({}))
+      return response.ok && data?.valid === true
+    } catch {
+      // Failing closed ensures a just-deleted account cannot be revived by a
+      // session whose validation status is temporarily unknown.
+      return false
+    }
+  }
+
   async getSteamSession(request) {
     const mobileToken = mobileSessionToken(request)
     if (mobileToken) {
       const session = await this.storage.get('mobile-session')
-      if (/^\d{17}$/.test(String(session?.steamId || '')) && Number(session.expiresAt || 0) > Date.now()) return session
+      if (/^\d{17}$/.test(String(session?.steamId || '')) && Number(session.expiresAt || 0) > Date.now() && await this.isSteamSessionValid(session)) return session
       await this.storage.delete('mobile-session')
       return null
     }
     const parsed = steamSessionToken(readCookie(request, STEAM_SESSION_COOKIE))
     if (parsed) {
       const session = await this.storage.get(parsed.sharded ? 'steam-session' : `steam-session:${parsed.token}`)
-      if (/^\d{17}$/.test(String(session?.steamId || '')) && Number(session.expiresAt || 0) > Date.now()) return session
+      if (/^\d{17}$/.test(String(session?.steamId || '')) && Number(session.expiresAt || 0) > Date.now() && await this.isSteamSessionValid(session)) return session
       if (session) await this.storage.delete(parsed.sharded ? 'steam-session' : `steam-session:${parsed.token}`)
     }
     return null
@@ -2695,7 +2860,7 @@ export class PotuzhnoState {
       }
     }
     const action = String(body?.action || '')
-    if (!['load', 'create', 'save', 'set-visibility'].includes(action)) return json({ error: 'Невідома дія Steam-акаунта.' }, 400)
+    if (!['load', 'create', 'save', 'set-visibility', 'delete'].includes(action)) return json({ error: 'Невідома дія Steam-акаунта.' }, 400)
 
     const accountState = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(`steam-account:${session.steamId}`))
     const response = await accountState.fetch(new Request('https://internal/__internal/steam-account', {
@@ -2704,6 +2869,20 @@ export class PotuzhnoState {
       body: JSON.stringify({ ...body, action, steamId: session.steamId }),
     }))
     const data = await response.json().catch(() => ({ error: 'Steam-акаунт повернув некоректну відповідь.' }))
+    if (action === 'delete' && response.ok) {
+      const headers = new Headers(JSON_HEADERS)
+      const mobileToken = mobileSessionToken(request)
+      if (mobileToken) {
+        await this.storage.delete('mobile-session')
+      } else {
+        const parsed = steamSessionToken(readCookie(request, STEAM_SESSION_COOKIE))
+        if (parsed) await this.storage.delete(parsed.sharded ? 'steam-session' : `steam-session:${parsed.token}`)
+        headers.append('Set-Cookie', sessionCookie(STEAM_SESSION_COOKIE, '', 0, new URL(request.url).protocol === 'https:'))
+        headers.append('Set-Cookie', sessionCookie(STEAM_AUTH_COOKIE, '', 0, new URL(request.url).protocol === 'https:'))
+      }
+      await this.storage.delete(`steam-profile:${session.steamId}`)
+      return new Response(JSON.stringify(data), { status: response.status, headers })
+    }
     return json(data, response.status)
   }
 
