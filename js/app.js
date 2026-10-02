@@ -5322,7 +5322,7 @@ function renderLeaderboard() {
   if (seasonLabel) seasonLabel.textContent = communitySnapshot?.season ? `Сезон ${communitySnapshot.season}` : 'Сезонний топ';
 
   if (!rows.length) {
-    list.innerHTML = '<div class="rounded-xl border border-dashed border-gray-700 px-4 py-6 text-center text-xs font-bold text-gray-500">Рейтинг з’явиться після першої синхронізації.</div>';
+    list.innerHTML = '<div class="rounded-xl border border-dashed border-gray-700 px-4 py-6 text-center text-xs font-bold text-gray-500">Рейтинг з’явиться після входу першого гравця через Steam.</div>';
     return;
   }
   list.innerHTML = rows.map((row, index) => {

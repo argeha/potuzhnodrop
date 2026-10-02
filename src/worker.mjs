@@ -630,9 +630,17 @@ function normalizeCommunityPlayer(value, visitorHash, now) {
     inventoryTotal: boundedInteger(value?.inventoryTotal, 0, ADMIN_GAME_MAX_INVENTORY),
     level: boundedInteger(value?.level, 1, 9_999),
     prestige: boundedInteger(value?.prestige, 0, 99),
+    // This marker is written only after the server matches the submitted
+    // Steam ID to the authenticated Steam session for this exact request.
+    // It is deliberately not trusted when it comes from the browser.
+    steamVerifiedAt: boundedInteger(value?.steamVerifiedAt, 0, now, 0),
     hidden: value?.hidden === true,
     updatedAt: now,
   }
+}
+
+function isVerifiedSteamCommunityPlayer(player) {
+  return /^\d{17}$/.test(String(player?.cloudProfileId || '')) && Number(player?.steamVerifiedAt || 0) > 0
 }
 
 function normalizeCommunityEvent(value, now) {
@@ -696,8 +704,9 @@ function normalizeCommunityState(value, now) {
 }
 
 function communityResponse(state, visitorHash) {
+  const isPublicPlayer = player => player?.hidden !== true && isVerifiedSteamCommunityPlayer(player)
   const rows = Object.values(state.players)
-    .filter(player => player.hidden !== true)
+    .filter(isPublicPlayer)
     .sort((left, right) => right.xp - left.xp || right.wins - left.wins || right.collectionValue - left.collectionValue || right.updatedAt - left.updatedAt)
   const leaderboard = rows.slice(0, 12).map((player, index) => ({
     rank: index + 1,
@@ -713,7 +722,7 @@ function communityResponse(state, visitorHash) {
   }))
   const ownRank = rows.findIndex(player => player.id === visitorHash) + 1
   const events = state.events
-    .filter(event => state.players[event.playerId]?.hidden !== true)
+    .filter(event => isPublicPlayer(state.players[event.playerId]))
     .map(event => {
       const player = state.players[event.playerId]
       return {
@@ -729,12 +738,12 @@ function communityResponse(state, visitorHash) {
     })
   const circuit = normalizeCommunityCircuit(state.circuit, Date.now())
   const recent = circuit.recent
-    .filter(entry => state.players[entry.playerId]?.hidden !== true)
+    .filter(entry => isPublicPlayer(state.players[entry.playerId]))
     .map(entry => ({ name: entry.name, at: entry.at }))
   const phase = Math.min(COMMUNITY_CIRCUIT_PHASES, Math.floor(circuit.total / COMMUNITY_CIRCUIT_PHASE_SIZE) + 1)
   const rift = normalizeCommunityRift(state.rift, Date.now())
   const riftRecent = rift.recent
-    .filter(entry => state.players[entry.playerId]?.hidden !== true)
+    .filter(entry => isPublicPlayer(state.players[entry.playerId]))
     .map(entry => ({ name: entry.name, damage: entry.damage, at: entry.at }))
   return {
     season: state.season,
@@ -1328,6 +1337,7 @@ export class PotuzhnoState {
       // Worker never dispatches /__internal/* to this class.
       if (path === '/__internal/steam-session') return await this.internalSteamSession(request)
       if (path === '/__internal/mobile-session') return await this.internalMobileSession(request)
+      if (path === '/__internal/session-subject') return await this.internalSessionSubject(request)
       if (path === '/__internal/steam-session-valid') return await this.internalSteamSessionValidity(request)
       if (path === '/__internal/steam-account') return await this.internalSteamAccount(request)
       if (path === '/__internal/migrate-profile') return await this.internalProfileMigration(request)
@@ -1406,6 +1416,28 @@ export class PotuzhnoState {
       expiresAt: Number(session.expiresAt),
     })
     return json({ stored: true })
+  }
+
+  // A community heartbeat is handled by its own Durable Object, so it cannot
+  // read this session object's storage directly. This narrow internal route
+  // proves the current session's Steam subject without exposing the token or
+  // accepting a Steam ID supplied by the client.
+  async internalSessionSubject(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request, 4_096)
+    } catch {
+      return json({ error: 'Некоректна перевірка Steam-сесії.' }, 400)
+    }
+    const legacyToken = cleanText(body?.legacyToken, 80)
+    const session = await this.storage.get('steam-session')
+      || await this.storage.get('mobile-session')
+      || (/^[a-f0-9]{64}$/i.test(legacyToken) ? await this.storage.get(`steam-session:${legacyToken}`) : null)
+    if (!/^\d{17}$/.test(String(session?.steamId || '')) || Number(session?.expiresAt || 0) <= Date.now() || !await this.isSteamSessionValid(session)) {
+      return json({ error: 'Steam-сесія не підтверджена.' }, 401)
+    }
+    return json({ steamId: String(session.steamId) })
   }
 
   async internalSteamSessionValidity(request) {
@@ -2499,16 +2531,25 @@ export class PotuzhnoState {
     const visitorHash = await sha256(visitorId)
     const player = normalizeCommunityPlayer(body?.player, visitorHash, now)
     if (!player) return json({ error: 'Некоректні дані гравця.' }, 400)
-    if (player.cloudProfileId) {
-      const accountType = gameAccountType(player.cloudProfileId)
-      const profile = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(accountType === 'steam' ? `steam-account:${player.cloudProfileId}` : `profile:${player.cloudProfileId}`))
+    // Guests can use all single-player mechanics, but the public community is
+    // reserved for a Steam identity authenticated for this very heartbeat.
+    // A client-side cloud/profile ID is never sufficient proof of identity.
+    const sessionSteamId = await this.authenticatedSteamIdForCommunity(request)
+    const claimedSteamId = /^\d{17}$/.test(player.cloudProfileId) ? player.cloudProfileId : ''
+    if (sessionSteamId && sessionSteamId === claimedSteamId) {
+      player.cloudProfileId = sessionSteamId
+      player.steamVerifiedAt = now
+      const profile = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(`steam-account:${sessionSteamId}`))
       try {
-        const visibilityResponse = await profile.fetch(new Request('https://internal/__internal/profile-visibility', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId: player.cloudProfileId, accountType }) }))
+        const visibilityResponse = await profile.fetch(new Request('https://internal/__internal/profile-visibility', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId: sessionSteamId, accountType: 'steam' }) }))
         const visibility = await visibilityResponse.json()
         player.hidden = visibility?.hidden === true
       } catch {
         // The public sync must continue when a profile shard is momentarily unavailable.
       }
+    } else {
+      player.cloudProfileId = ''
+      player.steamVerifiedAt = 0
     }
     const rawEvent = body?.event && typeof body.event === 'object'
       ? { ...body.event, playerId: visitorHash, name: player.name, profileId: player.profileId, level: player.level, prestige: player.prestige, at: now }
@@ -2530,13 +2571,46 @@ export class PotuzhnoState {
         }
       }
       if (event) state.events = [event, ...state.events.filter(entry => entry.id !== event.id)].slice(0, COMMUNITY_MAX_EVENTS)
-      if (circuitPulse && player.hidden !== true) applyCommunityCircuitPulse(state.circuit, visitorHash, player, circuitPulse, now)
-      if (riftPulse && player.hidden !== true) applyCommunityRiftPulse(state.rift, visitorHash, player, riftPulse, now)
+      if (circuitPulse && player.hidden !== true && isVerifiedSteamCommunityPlayer(player)) applyCommunityCircuitPulse(state.circuit, visitorHash, player, circuitPulse, now)
+      if (riftPulse && player.hidden !== true && isVerifiedSteamCommunityPlayer(player)) applyCommunityRiftPulse(state.rift, visitorHash, player, riftPulse, now)
       await transaction.put('community:season', state)
       return communityResponse(state, visitorHash)
     })
     await this.indexVisitedPlayer(visitorHash, player)
     return json(result)
+  }
+
+  async authenticatedSteamIdForCommunity(request) {
+    const mobileToken = mobileSessionToken(request)
+    let sessionState = null
+    let body = {}
+    if (mobileToken) {
+      sessionState = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(`mobile:${mobileToken}`))
+    } else {
+      const parsed = steamSessionToken(readCookie(request, STEAM_SESSION_COOKIE))
+      if (!parsed) return ''
+      if (parsed.sharded) {
+        sessionState = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(`steam:${parsed.token}`))
+      } else {
+        // Compatibility with a pre-v2 cookie: those sessions were stored in
+        // the global shard under a token-derived key.
+        sessionState = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName('global'))
+        body = { legacyToken: parsed.token }
+      }
+    }
+    try {
+      const response = await sessionState.fetch(new Request('https://internal/__internal/session-subject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }))
+      const data = await response.json().catch(() => ({}))
+      return response.ok && /^\d{17}$/.test(String(data?.steamId || '')) ? String(data.steamId) : ''
+    } catch {
+      // The leaderboard must fail closed when the Steam-session shard is not
+      // available, otherwise an unverified ID could appear as a real player.
+      return ''
+    }
   }
 
   async steamAuth(request) {
