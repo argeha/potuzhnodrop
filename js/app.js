@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 6.9.8 ============ */
+/* ============ ПОТУЖНО DROP 7.0.0 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -12,8 +12,9 @@ const STORAGE = {
   account: 'potuzhno_v6_account',
   topup: 'potuzhno_v5_topup',
   pendingReferral: 'potuzhno_v7_pending_referral',
+  economyVersion: 'potuzhno_v7_usd_economy',
   freeCase: 'potuzhno_v5_freecase',
-  catalogCache: 'potuzhno_catalog_cache_v40',
+  catalogCache: 'potuzhno_catalog_cache_v41',
   pendingWager: 'potuzhno_v6_pending_wager',
   fair: 'potuzhno_v9_fair',
   steamNudge: 'potuzhno_v10_steam_nudge',
@@ -112,6 +113,22 @@ const WEAR_TIERS = [
   { code: 'BS', name: 'Battle-Scarred', min: 0.45, max: 1, mult: 0.70 }
 ];
 
+// PC is a virtual balance with a one-to-one USD reference in 7.0.0. It is not
+// money, cannot be withdrawn and cannot be exchanged for Steam inventory.
+const PC_USD_RATE = 1;
+const LEGACY_ECONOMY_SCALE = 0.01;
+const USD_ECONOMY_VERSION = 'usd-v1';
+
+function roundPc(value, fallback = 0) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.round((number + Number.EPSILON) * 100) / 100;
+}
+
+function legacyPc(value, fallback = 0) {
+  return roundPc((Number(value) || fallback) * LEGACY_ECONOMY_SCALE);
+}
+
 function rollWear(randomValue = Math.random()) {
   const r = clampNumber(randomValue, 0, 0.999999999, Math.random());
   if (r < 0.10) return WEAR_TIERS[0];
@@ -126,7 +143,7 @@ function getWear(i) {
 }
 
 function priceWithWear(b, w) {
-  return Math.max(1, Math.round((Number(b) || 0) * (w?.mult || 1)));
+  return Math.max(0.01, roundPc((Number(b) || 0) * (w?.mult || 1), 0.01));
 }
 
 let CS2_SKINS = [
@@ -219,14 +236,20 @@ const FEATURED_SKIN_IMAGES = Object.freeze({
 });
 
 function applyFeaturedSkinMetadata(skin) {
+  const featuredFallback = FEATURED_SKIN_PRICES[skin.name];
   return {
   ...skin,
   img: FEATURED_SKIN_IMAGES[skin.name] || skin.img,
-  price: FEATURED_SKIN_PRICES[skin.name] ?? skin.price
+  // A local reference is used only while Steam has no cached quote. A server
+  // quote always replaces it and is never fetched directly by the browser.
+  price: roundPc(skin.marketPrice ?? skin.price ?? legacyPc(FEATURED_SKIN_PRICES[skin.name], 1), 1),
+  fallbackPrice: roundPc(skin.fallbackPrice ?? (Number.isFinite(Number(featuredFallback)) ? legacyPc(featuredFallback, 1) : skin.price), 0.01)
   };
 }
 
-CS2_SKINS = CS2_SKINS.map(applyFeaturedSkinMetadata);
+CS2_SKINS = CS2_SKINS
+  .map(skin => ({ ...skin, price: legacyPc(skin.price, 1) }))
+  .map(applyFeaturedSkinMetadata);
 
 const MAX_STORED_ITEM_VALUE = 1_000_000;
 const MAX_STORED_BALANCE = 10_000_000;
@@ -304,8 +327,9 @@ function normalizeStoredItem(item, index = 0) {
   if (!item || typeof item !== 'object') return null;
   const id = cleanText(item.id || `import-${Date.now()}-${index}`, 128);
   const name = cleanText(item.name || 'CS2 Skin', 160);
-  const basePrice = clampNumber(item.basePrice ?? item.price, 1, MAX_STORED_ITEM_VALUE, 1);
+  const basePrice = clampNumber(item.basePrice ?? item.price, 0.01, MAX_STORED_ITEM_VALUE, 0.01);
   const wear = normalizeWear(item.wear);
+  const marketPrice = clampNumber(item.marketPrice, 0, MAX_STORED_ITEM_VALUE, 0);
   return {
     id,
     sourceSkinId: cleanText(item.sourceSkinId || item.id || '', 128),
@@ -318,7 +342,10 @@ function normalizeStoredItem(item, index = 0) {
     img: cleanImageUrl(item.img),
     basePrice,
     wear,
-    price: priceWithWear(basePrice, wear),
+    marketPrice: marketPrice || 0,
+    marketHashName: cleanText(item.marketHashName, 200),
+    marketUpdatedAt: clampNumber(item.marketUpdatedAt, 0, Number.MAX_SAFE_INTEGER, 0),
+    price: marketPrice || priceWithWear(basePrice, wear),
     virtual: item.virtual !== false,
     exclusive: item.exclusive === true,
     addedAt: clampNumber(item.addedAt, 0, Number.MAX_SAFE_INTEGER, Date.now())
@@ -332,6 +359,11 @@ function normalizeCatalogSkin(skin, index = 0) {
   const category = cleanText(skin.category, 64);
   const img = cleanImageUrl(skin.img);
   if (!name || !weapon || !category || !img) return null;
+  const marketPrices = skin.marketPrices && typeof skin.marketPrices === 'object' && !Array.isArray(skin.marketPrices)
+    ? Object.fromEntries(Object.entries(skin.marketPrices)
+      .filter(([wear, price]) => WEAR_TIERS.some(tier => tier.code === wear) && Number(price) > 0)
+      .map(([wear, price]) => [wear, clampNumber(roundPc(price), 0.01, MAX_STORED_ITEM_VALUE, 0.01)]))
+    : {};
   return {
     id: cleanText(skin.id || `cs2-${index}`, 128),
     name,
@@ -340,8 +372,20 @@ function normalizeCatalogSkin(skin, index = 0) {
     rarity: cleanText(skin.rarity || 'Consumer Grade', 48),
     rarityColor: cleanColor(skin.rarityColor),
     img,
-    price: clampNumber(skin.price, 1, MAX_STORED_ITEM_VALUE, 1)
+    wears: Array.isArray(skin.wears) ? skin.wears.map(wear => cleanText(wear?.name || wear, 32)).filter(Boolean).slice(0, 5) : [],
+    marketPrices,
+    marketUpdatedAt: clampNumber(skin.marketUpdatedAt, 0, Number.MAX_SAFE_INTEGER, 0),
+    marketSource: cleanText(skin.marketSource, 48),
+    price: clampNumber(roundPc(skin.marketPrice ?? skin.price), 0.01, MAX_STORED_ITEM_VALUE, 0.01)
   };
+}
+
+function marketPriceForWear(skin, wear) {
+  const code = normalizeWear(wear).code;
+  const quote = Number(skin?.marketPrices?.[code]);
+  return Number.isFinite(quote) && quote > 0
+    ? roundPc(quote)
+    : priceWithWear(skin?.price, normalizeWear(wear));
 }
 
 let currentUser = null;
@@ -471,19 +515,19 @@ let contractActiveSlot = -1;
 let profileInvFilter = 'all';
 let profileInvSort = 'price-desc';
 
-const DEMO_STARTING_BALANCE = 1200;
-const ECONOMY_TASK_REWARD_MULTIPLIER = 0.4;
-const REWARDED_COIN_AMOUNT = 100;
+const DEMO_STARTING_BALANCE = 12;
+const ECONOMY_TASK_REWARD_MULTIPLIER = 0.004;
+const REWARDED_COIN_AMOUNT = 0.10;
 const REWARDED_DAILY_LIMIT = 20;
-const REFERRAL_OWNER_REWARD = 250;
-const REFERRAL_NEW_PLAYER_REWARD = 100;
+const REFERRAL_OWNER_REWARD = 2;
+const REFERRAL_NEW_PLAYER_REWARD = 1;
 
-function economyReward(amount, minimum = 20) {
-  return Math.max(minimum, Math.round((Math.max(0, Number(amount) || 0) * ECONOMY_TASK_REWARD_MULTIPLIER) / 10) * 10);
+function economyReward(amount, minimum = 0.20) {
+  return Math.max(minimum, roundPc((Math.max(0, Number(amount) || 0) * ECONOMY_TASK_REWARD_MULTIPLIER)));
 }
 const SAFE_MODE_CHANCE_MULTIPLIER = 1.15;
 const BONUS_MODE_RATE = 0.05;
-const POWER_CASE_COST = 300;
+const POWER_CASE_COST = 3;
 const FREE_CASE_COOLDOWN = 24 * 60 * 60 * 1000;
 // Progression is intentionally long-term: levels and the seasonal pass should
 // represent steady play, not a few quick rounds.
@@ -721,6 +765,12 @@ const CASE_TYPES = {
   premium: { id: 'premium', aliasTo: 'awp_king', cost: 1000, name: 'Преміум кейс', category: 'weapons', theme: 'purple' },
   legendary: { id: 'legendary', aliasTo: 'dragon_lair', cost: 5000, name: 'Легендарний кейс', category: 'hot', theme: 'red' }
 };
+
+// Case values were authored in the pre-7.0.0 economy. Their virtual USD
+// reference is migrated once at boot, rather than multiplying player rewards.
+Object.values(CASE_TYPES).forEach(config => {
+  config.cost = legacyPc(config.cost, 0.01);
+});
 
 /* ===== ВБУДОВАНІ SVG-КЕЙСИ ===== */
 function createCaseSVG(theme) {
@@ -976,7 +1026,7 @@ const BATTLE_PASS_SEASON = Object.freeze({
   title: 'БОЙОВИЙ ПРОПУСК',
   tiers: 30,
   tierXp: 750,
-  price: 10_000,
+  price: 100,
 });
 
 // A small daily loop for 6.0. Rewards stay deliberately modest: it is a
@@ -1080,7 +1130,7 @@ const ICEWIRE_ROUTE_RUN_MS = 20_000;
 const ICEWIRE_ROUTE_MAX_RUNS = 3;
 let icewireRouteRun = null;
 
-const TARGET_ARENA_STAKES = Object.freeze([2_500, 10_000, 25_000]);
+const TARGET_ARENA_STAKES = Object.freeze([25, 100, 250]);
 const TARGET_ARENA_DURATION_MS = 15_000;
 const TARGET_ARENA_HIT_BONUS_MS = 220;
 const TARGET_ARENA_MAX_BONUS_MS = 5_000;
@@ -1191,6 +1241,10 @@ const BATTLE_PASS_PREMIUM_PC = [150, 180, 210, 240, 0, 300, 340, 380, 420, 0, 50
 const BATTLE_PASS_FREE_TICKETS = new Set([7, 18]);
 const BATTLE_PASS_PREMIUM_TICKETS = new Set([4, 12, 22]);
 
+for (const rewards of [BATTLE_PASS_FREE_PC, BATTLE_PASS_PREMIUM_PC]) {
+  rewards.forEach((amount, index) => { rewards[index] = legacyPc(amount); });
+}
+
 const BATTLE_PASS_REWARDS = Object.freeze(Array.from({ length: BATTLE_PASS_SEASON.tiers }, (_, index) => {
   const tier = index + 1;
   const rewardFor = (skin, amount, ticket) => skin
@@ -1298,7 +1352,11 @@ function getCurrencyToken() {
 }
 
 function formatCreditValue(v) {
-  return Math.max(0, Math.round(Number(v) || 0)).toLocaleString('uk-UA');
+  const value = Math.max(0, roundPc(v));
+  return value.toLocaleString('en-US', {
+    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
+    maximumFractionDigits: 2
+  });
 }
 
 function formatCredits(v) {
@@ -1636,7 +1694,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '6.9.8';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.0.0';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -2826,7 +2884,7 @@ function startTargetArena(stake) {
     showToast(`Для Елітного тиру потрібно ${formatCredits(safeStake)}.`, 'warn');
     return;
   }
-  currentUser.balance -= safeStake;
+  currentUser.balance = roundPc(currentUser.balance - safeStake);
   const startedAt = Date.now();
   targetArenaSession = {
     stake: safeStake,
@@ -2963,7 +3021,7 @@ function buyBattlePass() {
     showToast(`Потрібно ${formatCredits(BATTLE_PASS_SEASON.price)} для Potuzhno Pass.`, 'warn');
     return;
   }
-  currentUser.balance -= BATTLE_PASS_SEASON.price;
+  currentUser.balance = roundPc(currentUser.balance - BATTLE_PASS_SEASON.price);
   pass.premium = true;
   saveState();
   updateBalanceUI();
@@ -3668,13 +3726,13 @@ function compactCloudInventoryItem(item, index = 0) {
   if (!normalized) return null;
   const isSteamItem = Boolean(normalized.steamImported && normalized.steamAssetId && normalized.steamOwnerId);
   return isSteamItem
-    ? [1, normalized.steamAssetId, normalized.steamOwnerId, normalized.name, normalized.rarity, normalized.rarityColor, normalized.img, normalized.basePrice, normalized.wear.code, normalized.virtual ? 1 : 0, normalized.exclusive ? 1 : 0, normalized.addedAt]
-    : [0, normalized.id, normalized.sourceSkinId, normalized.name, normalized.rarity, normalized.rarityColor, normalized.img, normalized.basePrice, normalized.wear.code, normalized.virtual ? 1 : 0, normalized.exclusive ? 1 : 0, normalized.addedAt];
+    ? [1, normalized.steamAssetId, normalized.steamOwnerId, normalized.name, normalized.rarity, normalized.rarityColor, normalized.img, normalized.basePrice, normalized.wear.code, normalized.virtual ? 1 : 0, normalized.exclusive ? 1 : 0, normalized.addedAt, normalized.marketPrice || 0, normalized.marketHashName || '', normalized.marketUpdatedAt || 0]
+    : [0, normalized.id, normalized.sourceSkinId, normalized.name, normalized.rarity, normalized.rarityColor, normalized.img, normalized.basePrice, normalized.wear.code, normalized.virtual ? 1 : 0, normalized.exclusive ? 1 : 0, normalized.addedAt, normalized.marketPrice || 0, normalized.marketHashName || '', normalized.marketUpdatedAt || 0];
 }
 
 function expandCloudInventoryItem(record, index = 0) {
   if (!Array.isArray(record) || record.length < 12) return null;
-  const [isSteamItem, primaryId, secondaryId, name, rarity, rarityColor, img, basePrice, wearCode, virtual, exclusive, addedAt] = record;
+  const [isSteamItem, primaryId, secondaryId, name, rarity, rarityColor, img, basePrice, wearCode, virtual, exclusive, addedAt, marketPrice, marketHashName, marketUpdatedAt] = record;
   const steamImported = isSteamItem === 1;
   return normalizeStoredItem({
     id: steamImported ? `steam-copy-${secondaryId}-${primaryId}` : primaryId,
@@ -3687,6 +3745,9 @@ function expandCloudInventoryItem(record, index = 0) {
     rarityColor,
     img,
     basePrice,
+    marketPrice,
+    marketHashName,
+    marketUpdatedAt,
     wear: { code: wearCode },
     virtual: virtual !== 0,
     exclusive: exclusive === 1,
@@ -3696,7 +3757,7 @@ function expandCloudInventoryItem(record, index = 0) {
 
 function buildPortableSave() {
   return {
-    version: '5.1',
+    version: '7.0.0',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -3719,7 +3780,7 @@ function buildCloudSave() {
   const portable = buildPortableSave();
   const cloudSave = {
     ...portable,
-    version: '5.1-cloud',
+    version: '7.0.0-cloud',
     inventoryEncoding: CLOUD_INVENTORY_ENCODING,
     inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
   };
@@ -3801,7 +3862,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '6.6.1-steam',
+    version: '7.0.0-steam',
     account: {
       ...snapshot.account,
       steamId,
@@ -4021,6 +4082,7 @@ function applyPortableSave(data, { skipCloudAutoSync = false, skipSteamAutoSync 
       balance: clampNumber(portable.balance, 0, MAX_STORED_BALANCE, currentUser.balance)
     };
   }
+  migrateToUsdEconomy();
   ensureDailyState();
   ensureWeeklyState();
   saveState({ skipCloudAutoSync, skipSteamAutoSync });
@@ -4533,21 +4595,42 @@ function makeDemoItem(skin, suffix = '', wearRandom = null) {
     rarity: cleanText(skin?.rarity || 'CS2', 48),
     rarityColor: cleanColor(skin?.rarityColor),
     img: cleanImageUrl(skin?.img),
-    price: clampNumber(skin?.basePrice ?? skin?.price, 1, MAX_STORED_ITEM_VALUE, 1)
+    price: clampNumber(skin?.basePrice ?? skin?.price, 0.01, MAX_STORED_ITEM_VALUE, 0.01)
   };
   const wear = skin.wear ? normalizeWear(skin.wear) : rollWear(wearRandom === null ? Math.random() : wearRandom);
-  const basePrice = clampNumber(skin.basePrice ?? safeSkin.price, 1, MAX_STORED_ITEM_VALUE, 1);
-  return {
+  const basePrice = clampNumber(skin.basePrice ?? safeSkin.price, 0.01, MAX_STORED_ITEM_VALUE, 0.01);
+  const quotedPrice = marketPriceForWear(safeSkin, wear);
+  const item = {
     ...safeSkin,
     sourceSkinId: cleanText(skin.sourceSkinId || safeSkin.id, 128),
     id: `demo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${suffix}`,
     basePrice,
     wear,
-    price: priceWithWear(basePrice, wear),
+    marketPrice: Number(safeSkin.marketPrices?.[wear.code]) || 0,
+    marketHashName: cleanText(safeSkin.marketHashName, 200),
+    marketUpdatedAt: clampNumber(safeSkin.marketUpdatedAt, 0, Number.MAX_SAFE_INTEGER, 0),
+    price: quotedPrice,
     virtual: true,
     exclusive: skin.exclusive === true,
     addedAt: Date.now()
   };
+  // The skin can be created immediately with the last known reference. The
+  // server quote then replaces the exact wear's value if Steam has it; this
+  // keeps animation responsive without pretending a browser estimate is live.
+  void refreshMarketPriceForSkin(safeSkin, wear).then(quote => {
+    const price = Number(quote?.price);
+    if (!Number.isFinite(price) || price <= 0) return;
+    item.marketPrice = roundPc(price);
+    item.marketHashName = cleanText(quote.marketHashName, 200);
+    item.marketUpdatedAt = Number(quote.updatedAt) || Date.now();
+    item.price = item.marketPrice;
+    if (userInventory.some(entry => entry.id === item.id)) {
+      saveState();
+      renderInventoryGrid();
+      renderProfileInventory();
+    }
+  });
+  return item;
 }
 
 function createStarterInventory() {
@@ -4748,6 +4831,31 @@ function recoverInterruptedWager() {
   showToast('Незавершений раунд скасовано: ставку повернено.', 'info');
 }
 
+function migrateToUsdEconomy() {
+  if (!currentUser || !gameState || gameState.economyVersion === USD_ECONOMY_VERSION) return false;
+  currentUser.balance = legacyPc(currentUser.balance, DEMO_STARTING_BALANCE);
+  userInventory = userInventory.map((item, index) => normalizeStoredItem({
+    ...item,
+    basePrice: legacyPc(item.basePrice ?? item.price, 0.01),
+    price: legacyPc(item.price ?? item.basePrice, 0.01),
+    marketPrice: item.marketPrice ? legacyPc(item.marketPrice, 0.01) : 0
+  }, index)).filter(Boolean);
+
+  const scaleFields = (source, fields) => {
+    if (!source || typeof source !== 'object') return;
+    fields.forEach(field => {
+      if (Number.isFinite(Number(source[field]))) source[field] = legacyPc(source[field]);
+    });
+  };
+  scaleFields(gameState.stats, ['bestValue']);
+  scaleFields(gameState.daily, ['sellValue', 'targetValue', 'bestWinValue']);
+  scaleFields(gameState.weekly, ['bestWinValue']);
+  scaleFields(gameState.allTime, ['bestValue']);
+  gameState.economyVersion = USD_ECONOMY_VERSION;
+  try { localStorage.setItem(STORAGE.economyVersion, USD_ECONOMY_VERSION); } catch {}
+  return true;
+}
+
 function loadState() {
   loadGameState();
   loadAccount();
@@ -4782,7 +4890,10 @@ function loadState() {
   if (!started) {
     currentUser.balance = DEMO_STARTING_BALANCE;
     userInventory = createStarterInventory();
+    gameState.economyVersion = USD_ECONOMY_VERSION;
     saveState();
+  } else if (migrateToUsdEconomy()) {
+    saveState({ skipCloudAutoSync: true, skipSteamAutoSync: true });
   }
 
   recoverInterruptedWager();
@@ -6286,8 +6397,8 @@ function claimDailyBonus() {
     return;
   }
   const streak = claimDailyStreak();
-  const reward = 100 + Math.min(60, streak.extra);
-  currentUser.balance += reward;
+  const reward = roundPc(1 + Math.min(0.60, streak.extra / 100));
+  currentUser.balance = roundPc(currentUser.balance + reward);
   localStorage.setItem(STORAGE.bonusAt, String(now));
   updateBalanceUI();
   saveState();
@@ -6426,10 +6537,10 @@ function topupLevelReward() {
     showToast('Уже отримано', 'warn');
     return;
   }
-  const reward = 30 * lvl;
+  const reward = roundPc(0.30 * lvl);
   st.levelClaimed = lvl;
   localStorage.setItem(k, JSON.stringify(st));
-  currentUser.balance += reward;
+  currentUser.balance = roundPc(currentUser.balance + reward);
   updateBalanceUI();
   saveState();
   checkAchievements();
@@ -6438,7 +6549,7 @@ function topupLevelReward() {
 
 function updateTopupUI() {
   const el = document.getElementById('topupLevelRewardLabel');
-  if (el) el.textContent = `+${30 * getPlayerLevel()} ${CURRENCY_TOKEN}`;
+  if (el) el.textContent = `+${formatCredits(roundPc(0.30 * getPlayerLevel()))}`;
 }
 
 function doPrestige() {
@@ -6485,7 +6596,7 @@ function renderInventoryGrid() {
           <p class="text-amber-400 font-extrabold text-xs mt-1">${formatCredits(s.price)}</p>
         </div>
       </button>
-      <button type="button" data-sell-id="${escapeHtml(String(s.id))}" title="Продати за ${formatCredits(Math.round((s.price || 0) * SELL_RATE))}" class="mt-2 w-full rounded-lg bg-emerald-500/15 border border-emerald-500/40 hover:bg-emerald-500 hover:text-black text-emerald-200 text-[11px] font-extrabold uppercase py-1.5 transition flex items-center justify-center gap-1">
+      <button type="button" data-sell-id="${escapeHtml(String(s.id))}" title="Продати за ${formatCredits(roundPc((s.price || 0) * SELL_RATE))}" class="mt-2 w-full rounded-lg bg-emerald-500/15 border border-emerald-500/40 hover:bg-emerald-500 hover:text-black text-emerald-200 text-[11px] font-extrabold uppercase py-1.5 transition flex items-center justify-center gap-1">
         <i class="fa-solid fa-sack-dollar text-[10px]"></i>Продати
       </button>
     </div>`;
@@ -6587,7 +6698,7 @@ function renderProfileInventory() {
     const wear = getWear(s);
     const k = normalizeSkinName(s.name) + '|' + (wear.code || '');
     const dupes = nameCounts.get(k) || 0;
-    const sellPrice = Math.round((s.price || 0) * SELL_RATE);
+    const sellPrice = roundPc((s.price || 0) * SELL_RATE);
     const isShowcased = gameState?.showcase?.includes(String(s.id));
     const [weaponPart, ...skinParts] = String(s.name || 'CS2 Skin').split('|');
     const weapon = cleanText(weaponPart, 48) || 'CS2';
@@ -6635,7 +6746,7 @@ function showItemDetail(itemId) {
   const it = userInventory.find(x => String(x.id) === String(itemId));
   if (!it) return;
   const wear = getWear(it);
-  const sellPrice = Math.round((it.price || 0) * SELL_RATE);
+  const sellPrice = roundPc((it.price || 0) * SELL_RATE);
   const market = getMarketSnapshot(it);
   const marketSign = market.change >= 0 ? '+' : '−';
   const cat = categorizeWeapon(it.name);
@@ -6682,9 +6793,9 @@ function sellInventoryItem(itemId, fromProfile = false) {
   const idx = userInventory.findIndex(i => String(i.id) === String(itemId));
   if (idx === -1) return;
   const it = userInventory[idx];
-  const payout = Math.round((it.price || 0) * SELL_RATE);
+  const payout = roundPc((it.price || 0) * SELL_RATE);
   userInventory.splice(idx, 1);
-  currentUser.balance += payout;
+  currentUser.balance = roundPc(currentUser.balance + payout);
   ensureDailyState();
   ensureWeeklyState();
   gameState.stats.sells = (gameState.stats.sells || 0) + 1;
@@ -6736,12 +6847,12 @@ function sellAllDuplicates() {
     showToast('Дублікатів немає', 'info');
     return;
   }
-  const total = toSell.reduce((s, it) => s + Math.round((it.price || 0) * SELL_RATE), 0);
+  const total = roundPc(toSell.reduce((s, it) => s + roundPc((it.price || 0) * SELL_RATE), 0));
   if (!window.confirm(`Продати ${toSell.length} дублікатів за ${formatCredits(total)}?`)) return;
 
   const soldIds = new Set(toSell.map(i => i.id));
   userInventory = userInventory.filter(it => keep.has(it.id));
-  currentUser.balance += total;
+  currentUser.balance = roundPc(currentUser.balance + total);
   ensureDailyState();
   ensureWeeklyState();
   gameState.stats.sells = (gameState.stats.sells || 0) + toSell.length;
@@ -7151,8 +7262,8 @@ function quickSellUpgradedSkin() {
   if (_rua) _rua.classList.add('hidden');
   closeModal('resultModal');
   const price = won.price || 0;
-  const earned = Math.round(price * SELL_RATE);
-  currentUser.balance += earned;
+  const earned = roundPc(price * SELL_RATE);
+  currentUser.balance = roundPc(currentUser.balance + earned);
   userInventory = userInventory.filter(i => i.id !== won.id);
   ensureDailyState();
   ensureWeeklyState();
@@ -8182,11 +8293,11 @@ function quickSellCaseResult() {
   const idsToSell = new Set(itemsToSell.map(it => it.id));
 
   itemsToSell.forEach(it => {
-    totalRefund += Math.max(1, Math.round((Number(it.price) || 0) * SELL_RATE));
+    totalRefund += Math.max(0.01, roundPc((Number(it.price) || 0) * SELL_RATE));
   });
 
   userInventory = userInventory.filter(it => !idsToSell.has(it.id));
-  currentUser.balance += totalRefund;
+  currentUser.balance = roundPc(currentUser.balance + totalRefund);
 
   ensureDailyState();
   ensureWeeklyState();
@@ -8492,8 +8603,8 @@ function renderBattleListingJoinBanner() {
     banner.replaceChildren();
     return;
   }
-  const lower = Math.round(Number(listing.stake?.price || 0) * BATTLE_LISTING_MIN_RATIO);
-  const upper = Math.round(Number(listing.stake?.price || 0) * BATTLE_LISTING_MAX_RATIO);
+  const lower = roundPc(Number(listing.stake?.price || 0) * BATTLE_LISTING_MIN_RATIO);
+  const upper = roundPc(Number(listing.stake?.price || 0) * BATTLE_LISTING_MAX_RATIO);
   banner.classList.remove('hidden');
   banner.innerHTML = `<b>Ти приймаєш бій ${escapeHtml(listing.name)} за «${escapeHtml(listing.stake?.name || 'скін')}» (${formatCredits(listing.stake?.price || 0)}).</b><small>Обери свій предмет вартістю від ${formatCredits(lower)} до ${formatCredits(upper)} — після цього монетка буде готова.</small>`;
 }
@@ -8510,8 +8621,8 @@ function renderBattleListings() {
     const stake = listing.stake || {};
     const image = cleanImageUrl(stake.img) || createSkinPreview(stake.name || 'CS2 Skin');
     const remaining = getBattleListingRemaining(listing);
-    const lower = Math.round(Number(stake.price || 0) * BATTLE_LISTING_MIN_RATIO);
-    const upper = Math.round(Number(stake.price || 0) * BATTLE_LISTING_MAX_RATIO);
+    const lower = roundPc(Number(stake.price || 0) * BATTLE_LISTING_MIN_RATIO);
+    const upper = roundPc(Number(stake.price || 0) * BATTLE_LISTING_MAX_RATIO);
     return `<article class="battle-listing-card ${listing.isMine ? 'is-mine' : ''}">
       <div class="battle-listing-kicker"><b>${escapeHtml(listing.name || 'Гравець')}</b><span>${listing.isMine ? 'Твій бій' : `ще ${formatBattleListingTime(remaining)}`}</span></div>
       <div class="battle-listing-skin"><img src="${escapeHtml(image)}" alt="" data-skin-name="${escapeHtml(stake.name || 'CS2 Skin')}" onerror="handleSkinImageError(this)"><div><strong>${escapeHtml(stake.name || 'CS2 Skin')}</strong><span>${formatCredits(stake.price || 0)}</span></div></div>
@@ -8589,7 +8700,7 @@ function toPublicBattleStake(item) {
   return {
     name: cleanText(item?.name, 160),
     img: cleanImageUrl(item?.img),
-    price: Math.round(clampNumber(item?.price, 1, MAX_STORED_ITEM_VALUE, 1)),
+    price: roundPc(clampNumber(item?.price, 0.01, MAX_STORED_ITEM_VALUE, 0.01)),
     rarity: cleanText(item?.rarity || 'CS2', 48),
     rarityColor: cleanColor(item?.rarityColor),
   };
@@ -8862,8 +8973,8 @@ async function acceptBattleListing() {
   const listing = battleListingJoin;
   if (!listing || !battlePlayerItem || battleInProgress || pendingWager) return;
   if (!isCompatibleBattleListing(listing, battlePlayerItem)) {
-    const lower = Math.round(Number(listing.stake?.price || 0) * BATTLE_LISTING_MIN_RATIO);
-    const upper = Math.round(Number(listing.stake?.price || 0) * BATTLE_LISTING_MAX_RATIO);
+    const lower = roundPc(Number(listing.stake?.price || 0) * BATTLE_LISTING_MIN_RATIO);
+    const upper = roundPc(Number(listing.stake?.price || 0) * BATTLE_LISTING_MAX_RATIO);
     showToast(`Потрібен скін від ${formatCredits(lower)} до ${formatCredits(upper)}.`, 'warn');
     return;
   }
@@ -9002,7 +9113,7 @@ function pickBotOpponent(basePrice) {
   const pool = CS2_SKINS.filter(s => isUsableSkin(s) && s.price >= lo && s.price <= hi);
   const pick = pool.length ? pool[Math.floor(Math.random() * pool.length)] : CS2_SKINS[Math.floor(Math.random() * CS2_SKINS.length)];
   const wear = rollWear();
-  setBattleOpponent({ ...pick, wear, price: priceWithWear(pick.price, wear) }, ['Bot_Bohdan', 'Bot_Voxxa', 'Bot_Fennec', 'Bot_Raven', 'Bot_M0rsik'][Math.floor(Math.random() * 5)], true);
+  setBattleOpponent({ ...pick, wear, price: marketPriceForWear(pick, wear) }, ['Bot_Bohdan', 'Bot_Voxxa', 'Bot_Fennec', 'Bot_Raven', 'Bot_M0rsik'][Math.floor(Math.random() * 5)], true);
 }
 
 function rerollBattleBot() {
@@ -9491,7 +9602,7 @@ function legacyRoyaleGenerateBots() {
         ...s,
         id: 'bot_' + Math.random().toString(36).slice(2),
         wear,
-        price: priceWithWear ? priceWithWear(s.price, wear) : (s.price || 100),
+        price: marketPriceForWear ? marketPriceForWear(s, wear) : (s.price || 1),
       });
     }
     return pool;
@@ -10737,6 +10848,122 @@ async function fetchSkinCatalog(url) {
 
 let completeSkinCatalogReady = false;
 let completeSkinCatalogPromise = null;
+let steamMarketPricePromise = null;
+
+function marketDescriptor(skin, wear = WEAR_TIERS[2]) {
+  const id = cleanText(skin?.id, 128);
+  const code = normalizeWear(wear).code;
+  return id ? { id, wear: code } : null;
+}
+
+function applySteamMarketQuotes(quotes) {
+  const bySkin = new Map();
+  (Array.isArray(quotes) ? quotes : []).forEach(quote => {
+    const id = cleanText(quote?.id, 128);
+    const wear = cleanText(quote?.wear, 2).toUpperCase();
+    const price = Number(quote?.price);
+    if (!id || !WEAR_TIERS.some(tier => tier.code === wear) || !Number.isFinite(price) || price <= 0) return;
+    const entry = bySkin.get(id) || {};
+    entry[wear] = roundPc(price);
+    bySkin.set(id, entry);
+  });
+  if (!bySkin.size) return false;
+  CS2_SKINS = CS2_SKINS.map(skin => {
+    const incoming = bySkin.get(String(skin.id));
+    if (!incoming) return skin;
+    const marketPrices = { ...(skin.marketPrices || {}), ...incoming };
+    const defaultPrice = marketPrices.FT || marketPrices.MW || marketPrices.FN || skin.price;
+    return applyFeaturedSkinMetadata({
+      ...skin,
+      marketPrices,
+      marketPrice: defaultPrice,
+      marketUpdatedAt: Date.now(),
+      marketSource: 'Steam Community Market'
+    });
+  });
+  _casePoolCache.clear();
+  _dropChanceCache.clear();
+  _caseMetricsCache.clear();
+  try { sessionStorage.setItem(STORAGE.catalogCache, JSON.stringify(CS2_SKINS)); } catch {}
+  return true;
+}
+
+async function syncSteamMarketPrices(skins, wear = WEAR_TIERS[2]) {
+  const requested = [...new Map((Array.isArray(skins) ? skins : [])
+    .map(skin => marketDescriptor(skin, wear))
+    .filter(Boolean)
+    .map(item => [`${item.id}:${item.wear}`, item])).values()];
+  if (!requested.length) return [];
+  const batches = [];
+  for (let index = 0; index < requested.length; index += 8) batches.push(requested.slice(index, index + 8));
+  const quotes = [];
+  for (const items of batches) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 14_000);
+    try {
+      const response = await fetch(gameApiUrl('/api/catalog/market-prices'), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+        signal: controller.signal
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && Array.isArray(data?.quotes)) quotes.push(...data.quotes);
+    } catch {
+      // The existing virtual reference remains visible while Steam or a
+      // connection is unavailable. We never invent a market price locally.
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  if (applySteamMarketQuotes(quotes)) {
+    filterShop();
+    renderCaseTopDrops();
+    renderCaseButtons();
+  }
+  return quotes;
+}
+
+function refreshMarketPriceForSkin(skin, wear = WEAR_TIERS[2]) {
+  const descriptor = marketDescriptor(skin, wear);
+  if (!descriptor) return Promise.resolve(null);
+  return syncSteamMarketPrices([skin], wear).then(quotes => quotes.find(quote => quote?.available && String(quote.id) === descriptor.id && quote.wear === descriptor.wear) || null);
+}
+
+async function refreshRecentInventoryMarketPrices(limit = 8) {
+  const candidates = userInventory
+    .filter(item => !item.marketPrice && cleanText(item?.name, 160))
+    .sort((left, right) => Number(right.addedAt || 0) - Number(left.addedAt || 0))
+    .slice(0, limit);
+  if (!candidates.length) return;
+  const catalogByName = new Map(CS2_SKINS.map(skin => [normalizeSkinName(skin.name), skin]));
+  const groups = new Map();
+  candidates.forEach(item => {
+    const skin = catalogByName.get(normalizeSkinName(item.name));
+    const wear = getWear(item);
+    if (!skin) return;
+    const bucket = groups.get(wear.code) || { wear, skins: [] };
+    bucket.skins.push(skin);
+    groups.set(wear.code, bucket);
+  });
+  await Promise.all([...groups.values()].map(group => syncSteamMarketPrices(group.skins, group.wear)));
+  let changed = false;
+  candidates.forEach(item => {
+    const skin = catalogByName.get(normalizeSkinName(item.name));
+    const quote = skin && Number(skin.marketPrices?.[getWear(item).code]);
+    if (!Number.isFinite(quote) || quote <= 0) return;
+    item.marketPrice = roundPc(quote);
+    item.price = item.marketPrice;
+    item.marketUpdatedAt = Date.now();
+    changed = true;
+  });
+  if (changed) {
+    saveState();
+    renderInventoryGrid();
+    renderProfileInventory();
+  }
+}
 
 function loadCompleteSkinCatalog() {
   if (completeSkinCatalogReady) return Promise.resolve();
@@ -10771,6 +10998,11 @@ function loadCompleteSkinCatalog() {
       renderGameHub();
       renderCaseTopDrops();
       renderCaseButtons();
+      // Warm only the featured cards. Further quotes are requested when a
+      // skin is actually created, so opening the catalogue never mass-queries
+      // Steam for thousands of names.
+      void syncSteamMarketPrices(CS2_SKINS.filter(skin => Object.hasOwn(FEATURED_SKIN_PRICES, skin.name)).slice(0, 8))
+        .then(() => refreshRecentInventoryMarketPrices());
       return;
     }
 
@@ -10793,7 +11025,8 @@ function loadCompleteSkinCatalog() {
       rarity: skin.rarity?.name || 'Consumer Grade',
       rarityColor: skin.rarity?.color || '#b0c3d9',
       img: skin.image,
-      price: ex.get(skin.name) || estimateSkinPrice(skin)
+      wears: skin.wears,
+      price: ex.get(skin.name) || legacyPc(estimateSkinPrice(skin), 0.01)
     }, index)).filter(Boolean);
     if (normalizedCatalog.length < 50) throw new Error('Catalog validation failed');
     CS2_SKINS = normalizedCatalog
@@ -10813,6 +11046,8 @@ function loadCompleteSkinCatalog() {
     renderGameHub();
     renderCaseTopDrops();
     renderCaseButtons();
+    void syncSteamMarketPrices(CS2_SKINS.filter(skin => Object.hasOwn(FEATURED_SKIN_PRICES, skin.name)).slice(0, 8))
+      .then(() => refreshRecentInventoryMarketPrices());
   } catch {
     filteredSkins = CS2_SKINS;
     renderShopGrid(filteredSkins);

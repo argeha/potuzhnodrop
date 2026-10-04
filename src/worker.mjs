@@ -55,6 +55,21 @@ const STEAM_PROFILE_TTL = 6 * 60 * 60_000
 const STEAM_SESSION_TTL = 30 * 24 * 60 * 60_000
 const CATALOG_TTL = 6 * 60 * 60_000
 const CATALOG_STALE_TTL = 7 * 24 * 60 * 60_000
+// Steam Community Market is an external reference, not a payment rail. Keep
+// requests small and cache quotes in the catalog Durable Object so one busy
+// screen cannot turn into a browser-side scrape of Steam.
+const STEAM_MARKET_APP_ID = '730'
+const STEAM_MARKET_CURRENCY = '1' // USD
+const STEAM_MARKET_BATCH_LIMIT = 8
+const STEAM_MARKET_TTL = 6 * 60 * 60_000
+const STEAM_MARKET_STALE_TTL = 72 * 60 * 60_000
+const STEAM_WEAR_NAMES = Object.freeze({
+  FN: 'Factory New',
+  MW: 'Minimal Wear',
+  FT: 'Field-Tested',
+  WW: 'Well-Worn',
+  BS: 'Battle-Scarred',
+})
 const STEAM_SESSION_COOKIE = 'potuzhno_steam_session'
 const STEAM_AUTH_TTL = 10 * 60_000
 const STEAM_AUTH_COOKIE = 'potuzhno_steam_auth'
@@ -104,8 +119,8 @@ const ADMIN_PLAYER_DIRECTORY_PAGE_SIZE = 600
 // Referral bonuses are intentionally modest, virtual, and account-bound. A
 // successful share alone never credits coins: a distinct new profile has to
 // start playing through the shared link first.
-const REFERRAL_OWNER_REWARD = 250
-const REFERRAL_NEW_PLAYER_REWARD = 100
+const REFERRAL_OWNER_REWARD = 2
+const REFERRAL_NEW_PLAYER_REWARD = 1
 const REFERRAL_DAILY_OWNER_LIMIT = 20
 const REFERRAL_NEW_ACCOUNT_WINDOW = 7 * 24 * 60 * 60_000
 const ADMIN_ROLES = Object.freeze({
@@ -466,7 +481,7 @@ function rateLimitGroup(path) {
   if (path === '/api/steam/auth') return 'steamAuth'
   if (path === '/api/steam/inventory') return 'steamInventory'
   if (path.startsWith('/api/steam/')) return 'steam'
-  if (path === '/api/catalog/skins') return 'catalog'
+  if (path === '/api/catalog/skins' || path === '/api/catalog/market-prices') return 'catalog'
   if (path === '/api/presence') return 'presence'
   if (path === '/api/community') return 'community'
   return 'api'
@@ -479,8 +494,9 @@ function hasFairSecret(env) {
 function parseStake(value) {
   const name = cleanText(value?.name, 160)
   const img = cleanImage(value?.img)
-  const price = Math.round(Number(value?.price))
-  if (!name || !img || !Number.isFinite(price) || price < 1 || price > MAX_PRICE) return null
+  const rawPrice = Number(value?.price)
+  if (!name || !img || !Number.isFinite(rawPrice) || rawPrice < 0.01 || rawPrice > MAX_PRICE) return null
+  const price = boundedMoney(rawPrice, 0.01, MAX_PRICE)
   const rarityColor = cleanText(value?.rarityColor, 16)
   return {
     name,
@@ -518,6 +534,16 @@ function normalizePresenceState(value, now) {
 function boundedInteger(value, min = 0, max = Number.MAX_SAFE_INTEGER, fallback = min) {
   const number = Math.round(Number(value))
   return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback
+}
+
+// PC is referenced one-to-one to USD in the virtual game. Monetary values are
+// therefore stored with at most two fraction digits; counters and XP remain
+// integers and continue using boundedInteger.
+function boundedMoney(value, min = 0, max = Number.MAX_SAFE_INTEGER, fallback = min) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return fallback
+  const rounded = Math.round((number + Number.EPSILON) * 100) / 100
+  return Math.max(min, Math.min(max, rounded))
 }
 
 function communitySeasonKey() {
@@ -834,7 +860,7 @@ function safeAdminInventoryItem(value, index = 0) {
     rarity: cleanText(compact ? compact[4] : value.rarity, 48) || 'CS2',
     rarityColor: cleanColor(compact ? compact[5] : value.rarityColor),
     img: cleanImage(compact ? compact[6] : value.img),
-    price: boundedInteger(compact ? compact[7] : (value.price ?? value.basePrice), 1, MAX_PRICE),
+    price: boundedMoney(compact ? compact[7] : (value.price ?? value.basePrice), 0.01, MAX_PRICE),
     addedAt: boundedInteger(compact ? compact[11] : value.addedAt, 0, Number.MAX_SAFE_INTEGER, index),
     exclusive: compact ? compact[10] === 1 : value.exclusive === true,
   }
@@ -854,7 +880,7 @@ function adminProfileSummary(accountId, entry, accountType = gameAccountType(acc
     name: cleanText(payload.account?.nick, 24) || 'Гравець',
     updatedAt: boundedInteger(entry.updatedAt, 0, Number.MAX_SAFE_INTEGER),
     revision: boundedInteger(entry.revision, 1, Number.MAX_SAFE_INTEGER, 1),
-    balance: boundedInteger(payload.balance, 0, ADMIN_GAME_MAX_BALANCE),
+    balance: boundedMoney(payload.balance, 0, ADMIN_GAME_MAX_BALANCE),
     xp,
     level: Math.floor(xp / ADMIN_GAME_PLAYER_LEVEL_XP) + 1,
     prestige: boundedInteger(gameState.prestige, 0, ADMIN_GAME_MAX_PRESTIGE),
@@ -954,7 +980,7 @@ function adminCatalogSkin(value) {
     rarity,
     rarityColor,
     img,
-    price: boundedInteger(price, 10, MAX_PRICE),
+    price: boundedMoney(price, 0.01, MAX_PRICE),
   }
 }
 
@@ -1282,7 +1308,7 @@ function publicBattleListing(listing, deviceId, now) {
 }
 
 function compatibleBattleStakes(first, second) {
-  const ratio = Number(second?.price || 0) / Math.max(1, Number(first?.price || 0))
+  const ratio = Number(second?.price || 0) / Math.max(0.01, Number(first?.price || 0))
   return ratio >= 0.65 && ratio <= 1.45
 }
 
@@ -1357,6 +1383,7 @@ export class PotuzhnoState {
       if (path === '/api/steam/avatar') return await this.steamAvatar(request)
       if (path === '/api/steam/inventory') return await this.steamInventory(request)
       if (path === '/api/catalog/skins') return await this.skinCatalog(request)
+      if (path === '/api/catalog/market-prices') return await this.marketPrices(request)
       return json({ error: 'Маршрут API не знайдено.' }, 404)
     } catch (error) {
       console.error('API error', path, error)
@@ -1693,10 +1720,11 @@ export class PotuzhnoState {
       }
       let detail = ''
       if (operation === 'pc_add' || operation === 'pc_set') {
-        const amount = integer(0, ADMIN_GAME_MAX_BALANCE)
-        if (amount === null) return { error: 'Некоректна кількість PC.', status: 400 }
+        const rawAmount = Number(body?.amount)
+        if (!Number.isFinite(rawAmount) || rawAmount < 0 || rawAmount > ADMIN_GAME_MAX_BALANCE) return { error: 'Некоректна кількість PC.', status: 400 }
+        const amount = boundedMoney(rawAmount, 0, ADMIN_GAME_MAX_BALANCE)
         next.balance = operation === 'pc_add'
-          ? Math.min(ADMIN_GAME_MAX_BALANCE, boundedInteger(next.balance, 0, ADMIN_GAME_MAX_BALANCE) + amount)
+          ? boundedMoney(boundedMoney(next.balance, 0, ADMIN_GAME_MAX_BALANCE) + amount, 0, ADMIN_GAME_MAX_BALANCE)
           : amount
         detail = `${operation === 'pc_add' ? '+' : '='}${amount} PC`
       } else if (operation === 'xp_add' || operation === 'xp_set') {
@@ -2071,7 +2099,7 @@ export class PotuzhnoState {
         ? stored.rewardedAccounts.filter(value => isGameAccountId(cleanText(value, 64))).slice(-240)
         : []
       if (rewarded.includes(referredAccountId)) {
-        return { credited: false, duplicate: true, balance: boundedInteger(payload.balance, 0, ADMIN_GAME_MAX_BALANCE) }
+        return { credited: false, duplicate: true, balance: boundedMoney(payload.balance, 0, ADMIN_GAME_MAX_BALANCE) }
       }
       const rewardDate = cleanText(stored.rewardDate, 10) === today ? today : today
       const rewardCount = cleanText(stored.rewardDate, 10) === today
@@ -2088,7 +2116,7 @@ export class PotuzhnoState {
         totalRewarded: boundedInteger(stored.totalRewarded, 0, 1_000_000) + 1,
         lastRewardAt: now,
       }
-      payload.balance = Math.min(ADMIN_GAME_MAX_BALANCE, boundedInteger(payload.balance, 0, ADMIN_GAME_MAX_BALANCE) + REFERRAL_OWNER_REWARD)
+      payload.balance = boundedMoney(boundedMoney(payload.balance, 0, ADMIN_GAME_MAX_BALANCE) + REFERRAL_OWNER_REWARD, 0, ADMIN_GAME_MAX_BALANCE)
       if (!isPayload(payload)) return { error: 'Профіль завеликий після нагороди.', status: 413 }
       const next = {
         ...current,
@@ -2158,13 +2186,13 @@ export class PotuzhnoState {
       const stored = gameState.referrals && typeof gameState.referrals === 'object' && !Array.isArray(gameState.referrals) ? gameState.referrals : {}
       const joinedFrom = stored.joinedFrom && typeof stored.joinedFrom === 'object' ? stored.joinedFrom : null
       if (isGameAccountId(cleanText(joinedFrom?.accountId, 64))) {
-        return { activated: false, duplicate: true, balance: boundedInteger(payload.balance, 0, ADMIN_GAME_MAX_BALANCE), revision: current.revision }
+        return { activated: false, duplicate: true, balance: boundedMoney(payload.balance, 0, ADMIN_GAME_MAX_BALANCE), revision: current.revision }
       }
       gameState.referrals = {
         ...stored,
         joinedFrom: { accountId: referrer, at: now },
       }
-      payload.balance = Math.min(ADMIN_GAME_MAX_BALANCE, boundedInteger(payload.balance, 0, ADMIN_GAME_MAX_BALANCE) + REFERRAL_NEW_PLAYER_REWARD)
+      payload.balance = boundedMoney(boundedMoney(payload.balance, 0, ADMIN_GAME_MAX_BALANCE) + REFERRAL_NEW_PLAYER_REWARD, 0, ADMIN_GAME_MAX_BALANCE)
       if (!isPayload(payload)) return { error: 'Профіль завеликий після нагороди.', status: 413 }
       const next = {
         ...current,
@@ -3216,44 +3244,158 @@ export class PotuzhnoState {
     }, 200, { 'Cache-Control': 'private, no-store' })
   }
 
-  async skinCatalog(request) {
-    if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
-    const cacheKey = 'catalog:skins:v1'
+  async readSkinCatalog() {
+    const cacheKey = 'catalog:skins:v2'
     const cached = await this.storage.get(cacheKey)
     const cachedItems = Array.isArray(cached?.items) ? cached.items : []
     const cacheAge = Date.now() - Number(cached?.updatedAt || 0)
     if (cachedItems.length >= 50 && cacheAge >= 0 && cacheAge < CATALOG_TTL) {
-      return json(cachedItems, 200, { 'Cache-Control': 'public, max-age=3600, s-maxage=21600' })
+      return { items: cachedItems, stale: false }
     }
+
     for (const source of CATALOG_SOURCES) {
       try {
         const response = await timedFetch(source, { headers: { Accept: 'application/json' } })
         if (!response.ok) continue
         const catalog = await response.json()
         if (!Array.isArray(catalog) || catalog.length === 0) continue
-        const safeCatalog = catalog.slice(0, 5_000).map((skin, index) => ({
-          id: cleanText(skin?.id || `cs2-${index}`, 128),
-          name: cleanText(skin?.name, 160),
-          weapon: { name: cleanText(skin?.weapon?.name, 64) },
-          category: { name: cleanText(skin?.category?.name, 64) },
-          rarity: { name: cleanText(skin?.rarity?.name || 'Consumer Grade', 48), color: cleanColor(skin?.rarity?.color) },
-          image: cleanImage(skin?.image),
-        })).filter(skin => skin.name && skin.weapon.name && skin.category.name && skin.image)
+        const safeCatalog = catalog.slice(0, 5_000).map((skin, index) => {
+          const wears = Array.isArray(skin?.wears)
+            ? [...new Set(skin.wears.map(wear => cleanText(wear?.name || wear, 32)).filter(Boolean))].slice(0, 5)
+            : []
+          return {
+            id: cleanText(skin?.id || `cs2-${index}`, 128),
+            name: cleanText(skin?.name, 160),
+            weapon: { name: cleanText(skin?.weapon?.name, 64) },
+            category: { name: cleanText(skin?.category?.name, 64) },
+            rarity: { name: cleanText(skin?.rarity?.name || 'Consumer Grade', 48), color: cleanColor(skin?.rarity?.color) },
+            image: cleanImage(skin?.image),
+            wears,
+          }
+        }).filter(skin => skin.name && skin.weapon.name && skin.category.name && skin.image)
         if (safeCatalog.length >= 50) {
-          await this.storage.put(cacheKey, { items: safeCatalog, updatedAt: Date.now() })
-          return json(safeCatalog, 200, { 'Cache-Control': 'public, max-age=3600, s-maxage=21600' })
+          const result = { items: safeCatalog, updatedAt: Date.now() }
+          await this.storage.put(cacheKey, result)
+          return { items: result.items, stale: false }
         }
       } catch {
-        // Try the next public mirror.
+        // Try the next public mirror. The last known catalog is still useful
+        // when an upstream mirror is temporarily unavailable.
       }
     }
     if (cachedItems.length >= 50 && cacheAge >= 0 && cacheAge < CATALOG_STALE_TTL) {
-      return json(cachedItems, 200, {
-        'Cache-Control': 'public, max-age=300, s-maxage=300',
-        'Warning': '110 - "Каталог показано з локального кешу"',
-      })
+      return { items: cachedItems, stale: true }
     }
-    return json({ error: 'Каталог скінів тимчасово недоступний.' }, 502)
+    return null
+  }
+
+  async skinCatalog(request) {
+    if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
+    const catalog = await this.readSkinCatalog()
+    if (!catalog) return json({ error: 'Каталог скінів тимчасово недоступний.' }, 502)
+    return json(catalog.items, 200, catalog.stale
+      ? { 'Cache-Control': 'public, max-age=300, s-maxage=300', 'Warning': '110 - "Каталог показано з локального кешу"' }
+      : { 'Cache-Control': 'public, max-age=3600, s-maxage=21600' })
+  }
+
+  marketHashName(skin, wearCode) {
+    const requestedWear = STEAM_WEAR_NAMES[cleanText(wearCode, 2).toUpperCase()] || STEAM_WEAR_NAMES.FT
+    const availableWears = Array.isArray(skin?.wears) ? skin.wears : []
+    // A non-wear item uses its exact market name. For weapon finishes we only
+    // request a wear the catalog confirms, avoiding guesses such as FT gloves.
+    const wear = availableWears.includes(requestedWear)
+      ? requestedWear
+      : availableWears.includes(STEAM_WEAR_NAMES.FT)
+        ? STEAM_WEAR_NAMES.FT
+        : availableWears[0] || ''
+    return `${skin.name}${wear ? ` (${wear})` : ''}`
+  }
+
+  parseSteamUsd(value) {
+    const match = String(value || '').replace(/,/g, '').match(/(?:US\$|\$)\s*([0-9]+(?:\.[0-9]{1,2})?)/)
+    return match ? boundedMoney(match[1], 0.01, MAX_PRICE, 0) : 0
+  }
+
+  async steamMarketQuote(skin, wearCode) {
+    const marketHashName = this.marketHashName(skin, wearCode)
+    const key = `market:usd:v1:${await sha256(marketHashName)}`
+    const now = Date.now()
+    const cached = await this.storage.get(key)
+    const cacheAge = now - Number(cached?.updatedAt || 0)
+    if (cached?.available === true && cacheAge >= 0 && cacheAge < STEAM_MARKET_TTL) {
+      return { ...cached, stale: false }
+    }
+
+    try {
+      const endpoint = new URL('https://steamcommunity.com/market/priceoverview/')
+      endpoint.searchParams.set('appid', STEAM_MARKET_APP_ID)
+      endpoint.searchParams.set('currency', STEAM_MARKET_CURRENCY)
+      endpoint.searchParams.set('country', 'US')
+      endpoint.searchParams.set('market_hash_name', marketHashName)
+      const response = await timedFetch(endpoint.href, { headers: { Accept: 'application/json' } })
+      if (!response.ok) throw new Error(`Steam Market ${response.status}`)
+      const data = await response.json()
+      const price = this.parseSteamUsd(data?.lowest_price) || this.parseSteamUsd(data?.median_price)
+      if (!data?.success || !price) throw new Error('Steam Market price unavailable')
+      const quote = {
+        available: true,
+        id: skin.id,
+        wear: cleanText(wearCode, 2).toUpperCase() || 'FT',
+        marketHashName,
+        price,
+        medianPrice: this.parseSteamUsd(data?.median_price),
+        volume: cleanText(data?.volume, 24),
+        updatedAt: now,
+      }
+      await this.storage.put(key, quote)
+      return { ...quote, stale: false }
+    } catch {
+      if (cached?.available === true && cacheAge >= 0 && cacheAge < STEAM_MARKET_STALE_TTL) {
+        return { ...cached, stale: true }
+      }
+      return {
+        available: false,
+        id: skin.id,
+        wear: cleanText(wearCode, 2).toUpperCase() || 'FT',
+        marketHashName,
+        updatedAt: 0,
+      }
+    }
+  }
+
+  async marketPrices(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request, 4_096)
+    } catch {
+      return json({ error: 'Некоректний запит цін.' }, 400)
+    }
+    const requested = Array.isArray(body?.items) ? body.items.slice(0, STEAM_MARKET_BATCH_LIMIT) : []
+    if (!requested.length) return json({ error: 'Вкажи до 8 скінів із каталогу.' }, 400)
+    const catalog = await this.readSkinCatalog()
+    if (!catalog) return json({ error: 'Каталог скінів тимчасово недоступний.' }, 502)
+    const skinsById = new Map(catalog.items.map(skin => [skin.id, skin]))
+    const unique = []
+    const seen = new Set()
+    for (const value of requested) {
+      const id = cleanText(value?.id, 128)
+      const wear = cleanText(value?.wear, 2).toUpperCase() || 'FT'
+      const key = `${id}:${wear}`
+      if (id && skinsById.has(id) && !seen.has(key)) {
+        seen.add(key)
+        unique.push({ skin: skinsById.get(id), wear })
+      }
+    }
+    if (!unique.length) return json({ error: 'Не знайдено дозволених скінів у каталозі.' }, 400)
+    const quotes = await Promise.all(unique.map(({ skin, wear }) => this.steamMarketQuote(skin, wear)))
+    return json({
+      source: 'Steam Community Market',
+      currency: 'USD',
+      pcUsdRate: 1,
+      catalogStale: catalog.stale === true,
+      quotes,
+    }, 200, { 'Cache-Control': 'private, no-store' })
   }
 }
 
@@ -3740,7 +3882,7 @@ async function stateForRequest(request, env, path) {
     }
   } else if (path === '/api/mobile/session') {
     name = 'global'
-  } else if (path === '/api/catalog/skins') {
+  } else if (path === '/api/catalog/skins' || path === '/api/catalog/market-prices') {
     name = 'catalog'
   } else if (path === '/api/presence') {
     name = 'presence'
