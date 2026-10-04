@@ -9845,7 +9845,7 @@ function updateRoyaleUI() {
   if (wheelSub) wheelSub.textContent = royalePhase === 'countdown' ? `${remaining} секунд` : royalePhase === 'spinning' ? 'серверний ритм' : royalePlayerSkins.length ? 'місце у банку' : 'додай скін';
   if (hint) hint.textContent = isLive
     ? (royaleLiveRound?.participants?.length ? 'Банк синхронізовано сервером. AI у цьому режимі не бере участі.' : 'Відкрий банк із 1–10 віртуальними скінами — інші гравці можуть приєднатися.')
-    : royalePlayerSkins.length ? `Кожен бот ставить по ${royalePlayerSkins.length} ${royalePlayerSkins.length === 1 ? 'скіну' : royalePlayerSkins.length < 5 ? 'скіни' : 'скінів'} — банк росте разом із твоїм внеском.` : 'Додай перший скін — боти сформують стартовий банк.';
+    : royalePlayerSkins.length ? `Кожен бот ставить по ${royalePlayerSkins.length} ${royalePlayerSkins.length === 1 ? 'скіну' : royalePlayerSkins.length < 5 ? 'скіни' : 'скінів'} з каталогу — ціни не змінюються.` : 'Додай перший скін — боти сформують стартовий банк зі скінів каталогу.';
   if (addButton) {
     const remainingSkins = Math.max(0, skinLimit - royalePlayerSkins.length);
     addButton.disabled = royaleInProgress || liveLocked || !remainingSkins;
@@ -9914,23 +9914,41 @@ function bindRoyaleControls() {
   });
 }
 
-function royaleCreateBotPool(targetValue, botIndex, requestedCount = 1) {
+function royalePickCatalogSkinForValue(catalog, wantedValue, usedCatalogIds) {
+  const unused = catalog.filter(skin => !usedCatalogIds.has(getSkinKey(skin)));
+  const candidates = unused.length ? unused : catalog;
+  const desired = Math.max(1, Number(wantedValue) || 1);
+  // Prefer catalogue skins close to the bot's intended share, but choose from
+  // a small best-fit group so each round still feels like a varied loadout.
+  const bestFits = candidates
+    .map(skin => ({
+      skin,
+      distance: Math.abs(Math.log((Math.max(1, Number(skin.price) || 1) + 10) / (desired + 10))),
+    }))
+    .sort((left, right) => left.distance - right.distance)
+    .slice(0, Math.min(10, candidates.length));
+  return bestFits[Math.floor(Math.random() * bestFits.length)]?.skin || candidates[0] || null;
+}
+
+function royaleCreateBotPool(targetValue, botIndex, requestedCount = 1, usedCatalogIds = new Set()) {
   const catalog = (CS2_SKINS || []).filter(isUsableSkin);
   if (!catalog.length) return [];
   const itemCount = Math.max(1, Math.min(ROYALE_MAX_SKINS, Math.floor(Number(requestedCount) || 1)));
-  const target = Math.max(itemCount, Math.round(Number(targetValue) || itemCount));
-  const rawWeights = Array.from({ length: itemCount }, () => 0.8 + Math.random() * 0.55);
-  const totalWeight = rawWeights.reduce((sum, weight) => sum + weight, 0);
-  let allocated = 0;
-  return rawWeights.map((weight, index) => {
-    const source = catalog[Math.floor(Math.random() * catalog.length)];
-    const wear = rollWear ? rollWear() : { code: 'FT', mult: 1 };
-    const price = index === itemCount - 1
-      ? Math.max(1, target - allocated)
-      : Math.max(1, Math.floor(target * (weight / totalWeight)));
-    allocated += price;
-    return { ...source, id: `royale-ai-${botIndex}-${Date.now()}-${index}`, wear, basePrice: price, price, virtual: true };
-  });
+  let remainingTarget = Math.max(itemCount, Math.round(Number(targetValue) || itemCount));
+  const pool = [];
+  for (let index = 0; index < itemCount; index++) {
+    const slotsLeft = itemCount - index;
+    const source = royalePickCatalogSkinForValue(catalog, remainingTarget / slotsLeft, usedCatalogIds);
+    if (!source) break;
+    usedCatalogIds.add(getSkinKey(source));
+    // makeDemoItem preserves source.basePrice/source.price and applies the
+    // same item rules as the rest of the game.  Never replace a real catalogue
+    // price with the balancing target: bots must stake actual visible skins.
+    const botSkin = makeDemoItem({ ...source, wear: WEAR_TIERS[2] }, `-royale-ai-${botIndex}-${index}`);
+    pool.push(botSkin);
+    remainingTarget = Math.max(0, remainingTarget - Number(botSkin.price || 0));
+  }
+  return pool;
 }
 
 function royaleGenerateBots(referenceValue = 0) {
@@ -9946,7 +9964,8 @@ function royaleGenerateBots(referenceValue = 0) {
   // makes the bank richer and still improves the player's odds.
   const playerBoost = Math.min(0.4, Math.max(0, playerSkinCount - 1) * 0.045);
   const factors = [0.58, 0.84, 1.12].map(factor => factor * (1 - playerBoost));
-  royaleBotPools = factors.slice(0, config.bots).map((factor, index) => royaleCreateBotPool(reference * factor, index, playerSkinCount));
+  const usedCatalogIds = new Set();
+  royaleBotPools = factors.slice(0, config.bots).map((factor, index) => royaleCreateBotPool(reference * factor, index, playerSkinCount, usedCatalogIds));
 }
 
 function royaleAddSkin() {
