@@ -1887,7 +1887,7 @@ export class PotuzhnoState {
     }
     if (action === 'list') {
       const query = cleanText(body?.query, 100).toLocaleLowerCase()
-      const players = await this.storage.transaction(async transaction => {
+      const players = (await this.storage.transaction(async transaction => {
         const stored = await transaction.get(key)
         // Clean records created by the old directory implementation. They are
         // only one-way anonymous visitor hashes and are not player accounts.
@@ -1900,7 +1900,7 @@ export class PotuzhnoState {
           await transaction.put(key, { version: 3, players: next })
         }
         return normalized
-      })
+      }))
         .filter(player => !query || `${player.name} ${player.accountId}`.toLocaleLowerCase().includes(query))
         .sort((left, right) => right.updatedAt - left.updatedAt)
       return json({ total: players.length, players: players.slice(0, ADMIN_PLAYER_DIRECTORY_PAGE_SIZE) })
