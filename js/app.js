@@ -10863,22 +10863,25 @@ function applySteamMarketQuotes(quotes) {
     const wear = cleanText(quote?.wear, 2).toUpperCase();
     const price = Number(quote?.price);
     if (!id || !WEAR_TIERS.some(tier => tier.code === wear) || !Number.isFinite(price) || price <= 0) return;
-    const entry = bySkin.get(id) || {};
-    entry[wear] = roundPc(price);
+    const entry = bySkin.get(id) || { prices: {}, source: '', updatedAt: 0 };
+    entry.prices[wear] = roundPc(price);
+    const source = cleanText(quote?.source, 48);
+    if (source) entry.source = source;
+    entry.updatedAt = Math.max(entry.updatedAt, Number(quote?.sourceUpdatedAt) || Number(quote?.updatedAt) || 0);
     bySkin.set(id, entry);
   });
   if (!bySkin.size) return false;
   CS2_SKINS = CS2_SKINS.map(skin => {
     const incoming = bySkin.get(String(skin.id));
     if (!incoming) return skin;
-    const marketPrices = { ...(skin.marketPrices || {}), ...incoming };
+    const marketPrices = { ...(skin.marketPrices || {}), ...incoming.prices };
     const defaultPrice = marketPrices.FT || marketPrices.MW || marketPrices.FN || skin.price;
     return applyFeaturedSkinMetadata({
       ...skin,
       marketPrices,
       marketPrice: defaultPrice,
-      marketUpdatedAt: Date.now(),
-      marketSource: 'Steam Community Market'
+      marketUpdatedAt: incoming.updatedAt || Date.now(),
+      marketSource: incoming.source || skin.marketSource || 'Steam Community Market'
     });
   });
   _casePoolCache.clear();

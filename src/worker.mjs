@@ -63,6 +63,11 @@ const STEAM_MARKET_CURRENCY = '1' // USD
 const STEAM_MARKET_BATCH_LIMIT = 8
 const STEAM_MARKET_TTL = 6 * 60 * 60_000
 const STEAM_MARKET_STALE_TTL = 72 * 60 * 60_000
+// Steam may decline requests made from a shared Cloudflare egress IP. OpenSkin's
+// keyless endpoint exposes a clearly-labelled Steam feed, so it is only used
+// as a read-only fallback; it never becomes an invented local price.
+const OPEN_SKIN_STEAM_ENDPOINT = 'https://api-v2.openskin.dev/v1/prices/steam'
+const OPEN_SKIN_MAX_SOURCE_AGE = 14 * 24 * 60 * 60_000
 const STEAM_WEAR_NAMES = Object.freeze({
   FN: 'Factory New',
   MW: 'Minimal Wear',
@@ -860,7 +865,7 @@ function safeAdminInventoryItem(value, index = 0) {
     rarity: cleanText(compact ? compact[4] : value.rarity, 48) || 'CS2',
     rarityColor: cleanColor(compact ? compact[5] : value.rarityColor),
     img: cleanImage(compact ? compact[6] : value.img),
-    price: boundedMoney(compact ? compact[7] : (value.price ?? value.basePrice), 0.01, MAX_PRICE),
+    price: boundedMoney(compact ? (compact[12] || compact[7]) : (value.marketPrice ?? value.price ?? value.basePrice), 0.01, MAX_PRICE),
     addedAt: boundedInteger(compact ? compact[11] : value.addedAt, 0, Number.MAX_SAFE_INTEGER, index),
     exclusive: compact ? compact[10] === 1 : value.exclusive === true,
   }
@@ -3318,7 +3323,7 @@ export class PotuzhnoState {
 
   async steamMarketQuote(skin, wearCode) {
     const marketHashName = this.marketHashName(skin, wearCode)
-    const key = `market:usd:v1:${await sha256(marketHashName)}`
+    const key = `market:usd:v2:${await sha256(marketHashName)}`
     const now = Date.now()
     const cached = await this.storage.get(key)
     const cacheAge = now - Number(cached?.updatedAt || 0)
@@ -3354,10 +3359,48 @@ export class PotuzhnoState {
         medianPrice: this.parseSteamUsd(data?.median_price),
         volume: cleanText(data?.volume, 24),
         updatedAt: now,
+        sourceUpdatedAt: now,
+        source: 'Steam Community Market',
       }
       await this.storage.put(key, quote)
       return { ...quote, stale: false }
     } catch {
+      try {
+        const endpoint = new URL(OPEN_SKIN_STEAM_ENDPOINT)
+        endpoint.searchParams.set('item', marketHashName)
+        const response = await timedFetch(endpoint.href, {
+          headers: {
+            Accept: 'application/json',
+            'User-Agent': 'PotuzhnoDrop/7.0 Steam-price-reference',
+          },
+        })
+        if (!response.ok) throw new Error(`OpenSkin Steam feed ${response.status}`)
+        const data = await response.json()
+        const sourceUpdatedAt = Date.parse(cleanText(data?.updated_at, 80))
+        const sourceAge = now - sourceUpdatedAt
+        const price = boundedMoney(data?.ask ?? data?.median, 0.01, MAX_PRICE, 0)
+        if (!Number.isFinite(sourceUpdatedAt) || sourceUpdatedAt <= 0 || sourceAge < -5 * 60_000 || sourceAge > OPEN_SKIN_MAX_SOURCE_AGE || !price) {
+          throw new Error('OpenSkin Steam quote unavailable or too old')
+        }
+        const quote = {
+          available: true,
+          id: skin.id,
+          wear: cleanText(wearCode, 2).toUpperCase() || 'FT',
+          marketHashName,
+          price,
+          medianPrice: boundedMoney(data?.median, 0.01, MAX_PRICE, 0),
+          volume: cleanText(data?.volume_24h, 24),
+          updatedAt: now,
+          sourceUpdatedAt,
+          source: 'OpenSkin Steam feed',
+        }
+        await this.storage.put(key, quote)
+        return { ...quote, stale: sourceAge > STEAM_MARKET_TTL }
+      } catch {
+        // Use the last successful direct or OpenSkin Steam quote only for the
+        // documented stale window. Returning unavailable is safer than making
+        // a price up when both upstreams are unavailable.
+      }
       if (cached?.available === true && cacheAge >= 0 && cacheAge < STEAM_MARKET_STALE_TTL) {
         return { ...cached, stale: true }
       }
@@ -3367,6 +3410,7 @@ export class PotuzhnoState {
         wear: cleanText(wearCode, 2).toUpperCase() || 'FT',
         marketHashName,
         updatedAt: 0,
+        source: 'Unavailable',
       }
     }
   }
@@ -3399,6 +3443,7 @@ export class PotuzhnoState {
     const quotes = await Promise.all(unique.map(({ skin, wear }) => this.steamMarketQuote(skin, wear)))
     return json({
       source: 'Steam Community Market',
+      fallbackSource: 'OpenSkin Steam feed',
       currency: 'USD',
       pcUsdRate: 1,
       catalogStale: catalog.stale === true,
