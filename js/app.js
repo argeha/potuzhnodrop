@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 7.0.0 ============ */
+/* ============ ПОТУЖНО DROP 7.0.1 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -113,7 +113,7 @@ const WEAR_TIERS = [
   { code: 'BS', name: 'Battle-Scarred', min: 0.45, max: 1, mult: 0.70 }
 ];
 
-// PC is a virtual balance with a one-to-one USD reference in 7.0.0. It is not
+// PC is a virtual balance with a one-to-one USD reference in 7.0.1. It is not
 // money, cannot be withdrawn and cannot be exchanged for Steam inventory.
 const PC_USD_RATE = 1;
 const LEGACY_ECONOMY_SCALE = 0.01;
@@ -186,8 +186,8 @@ const CS2_SKINS_APIS = [
   'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/skins.json'
 ];
 
-// These are the prominent demonstration skins. Their Potuzhno Coin values are tuned for
-// the game's case and upgrade economy instead of mirroring expensive real-world sales.
+// These are only boot-time visual fallbacks. They are never shown as Steam
+// prices and never used to calculate a market-priced shop or case outcome.
 const FEATURED_SKIN_PRICES = Object.freeze({
   '★ Butterfly Knife | Doppler': 8600,
   '★ Karambit | Fade': 9800,
@@ -381,11 +381,9 @@ function normalizeCatalogSkin(skin, index = 0) {
 }
 
 function marketPriceForWear(skin, wear) {
-  const code = normalizeWear(wear).code;
-  const quote = Number(skin?.marketPrices?.[code]);
-  return Number.isFinite(quote) && quote > 0
-    ? roundPc(quote)
-    : priceWithWear(skin?.price, normalizeWear(wear));
+  // A local rarity/float calculation is not a market quote. Never turn one
+  // into a stake, drop or sale value.
+  return verifiedMarketPriceForWear(skin, wear);
 }
 
 let currentUser = null;
@@ -605,7 +603,7 @@ const CASE_TYPES = {
     badgeClass: 'badge-hot',
     theme: 'red',
     desc: 'AWP Dragon Lore, Fire Serpent та топові скіни',
-    filter: s => isWeaponSkin(s) && s.price >= 800 && skinNameIncludes(s, 'Dragon Lore', 'Fire Serpent', 'Printstream', 'Fade', 'Howl', 'Wild Lotus', 'Gungnir', 'Medusa')
+    filter: s => isWeaponSkin(s) && skinNameIncludes(s, 'Dragon Lore', 'Fire Serpent', 'Printstream', 'Fade', 'Howl', 'Wild Lotus', 'Gungnir', 'Medusa')
   },
   covert_ops: {
     id: 'covert_ops',
@@ -616,7 +614,7 @@ const CASE_TYPES = {
     badgeClass: 'badge-exclusive',
     theme: 'purple',
     desc: 'Тільки таємна зброя найвищого рангу',
-    filter: s => isWeaponSkin(s) && ['Covert', 'Contraband'].includes(s.rarity) && s.price >= 300
+    filter: s => isWeaponSkin(s) && ['Covert', 'Contraband'].includes(s.rarity)
   },
   beast_mode: {
     id: 'beast_mode',
@@ -734,7 +732,7 @@ const CASE_TYPES = {
     badgeClass: 'badge-popular',
     theme: 'gold',
     desc: 'Баланс ціни та високих шансів на окуп',
-    filter: s => isWeaponSkin(s) && s.price >= 80 && s.price <= 2500
+    filter: s => isWeaponSkin(s) && ['Mil-Spec Grade', 'Restricted', 'Classified'].includes(s.rarity)
   },
   lucky_strike: {
     id: 'lucky_strike',
@@ -745,7 +743,7 @@ const CASE_TYPES = {
     badgeClass: 'badge-new',
     theme: 'emerald',
     desc: 'Невеликий ризик з шансом на дроп за 5000+ PC',
-    filter: s => isWeaponSkin(s) && s.price >= 30 && s.price <= 6000
+    filter: s => isWeaponSkin(s) && ['Industrial Grade', 'Mil-Spec Grade', 'Restricted', 'Classified', 'Covert'].includes(s.rarity)
   },
   farm_rush: {
     id: 'farm_rush',
@@ -756,7 +754,7 @@ const CASE_TYPES = {
     badgeClass: 'badge-exclusive',
     theme: 'gray',
     desc: 'Швидкий фарм для щоденних місій та контрактів',
-    filter: s => isWeaponSkin(s) && s.price >= 15 && s.price <= 500
+    filter: s => isWeaponSkin(s) && ['Consumer Grade', 'Industrial Grade', 'Mil-Spec Grade'].includes(s.rarity)
   },
 
   // Backwards compatibility aliases
@@ -766,7 +764,7 @@ const CASE_TYPES = {
   legendary: { id: 'legendary', aliasTo: 'dragon_lair', cost: 5000, name: 'Легендарний кейс', category: 'hot', theme: 'red' }
 };
 
-// Case values were authored in the pre-7.0.0 economy. Their virtual USD
+// Case values were authored in the pre-7.0.1 economy. Their virtual USD
 // reference is migrated once at boot, rather than multiplying player rewards.
 Object.values(CASE_TYPES).forEach(config => {
   config.cost = legacyPc(config.cost, 0.01);
@@ -1694,7 +1692,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.0.0';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.0.1';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -2939,7 +2937,7 @@ function getBattlePassProgress() {
 }
 
 function battlePassRewardCopy(reward) {
-  if (reward?.type === 'skin') return { icon: 'fa-gem', title: reward.skin.name, value: formatCredits(reward.skin.price), skin: true };
+  if (reward?.type === 'skin') return { icon: 'fa-gem', title: reward.skin.name, value: 'Steam-ціна після синхронізації', skin: true };
   if (reward?.type === 'ticket') return { icon: 'fa-ticket', title: 'Потужний квиток', value: '1 прокрут кейса', ticket: true };
   return { icon: 'fa-coins', title: `+${formatCredits(reward?.amount || 0)}`, value: 'Potuzhno Coin' };
 }
@@ -3757,7 +3755,7 @@ function expandCloudInventoryItem(record, index = 0) {
 
 function buildPortableSave() {
   return {
-    version: '7.0.0',
+    version: '7.0.1',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -3780,7 +3778,7 @@ function buildCloudSave() {
   const portable = buildPortableSave();
   const cloudSave = {
     ...portable,
-    version: '7.0.0-cloud',
+    version: '7.0.1-cloud',
     inventoryEncoding: CLOUD_INVENTORY_ENCODING,
     inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
   };
@@ -3862,7 +3860,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '7.0.0-steam',
+    version: '7.0.1-steam',
     account: {
       ...snapshot.account,
       steamId,
@@ -4597,27 +4595,33 @@ function makeDemoItem(skin, suffix = '', wearRandom = null) {
     img: cleanImageUrl(skin?.img),
     price: clampNumber(skin?.basePrice ?? skin?.price, 0.01, MAX_STORED_ITEM_VALUE, 0.01)
   };
-  const wear = skin.wear ? normalizeWear(skin.wear) : rollWear(wearRandom === null ? Math.random() : wearRandom);
-  const basePrice = clampNumber(skin.basePrice ?? safeSkin.price, 0.01, MAX_STORED_ITEM_VALUE, 0.01);
-  const quotedPrice = marketPriceForWear(safeSkin, wear);
+  // Reward definitions and Steam imports sometimes carry a display name but
+  // not the catalogue ID. Resolve that name before requesting a price so a
+  // legitimate item can receive a real quote instead of a guessed fallback.
+  const catalogSkin = CS2_SKINS.find(candidate => normalizeSkinName(candidate.name) === normalizeSkinName(safeSkin.name));
+  const quoteSkin = catalogSkin || safeSkin;
+  // Issue new virtual items only in the exact wear whose price was checked.
+  // Rolling an unquoted float used to manufacture a value with a multiplier.
+  const wear = skin.wear ? normalizeWear(skin.wear) : WEAR_TIERS[2];
+  const quotedPrice = marketPriceForWear(quoteSkin, wear);
+  const basePrice = quotedPrice || 0.01;
   const item = {
     ...safeSkin,
-    sourceSkinId: cleanText(skin.sourceSkinId || safeSkin.id, 128),
+    sourceSkinId: cleanText(catalogSkin?.id || skin.sourceSkinId || safeSkin.id, 128),
     id: `demo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${suffix}`,
     basePrice,
     wear,
-    marketPrice: Number(safeSkin.marketPrices?.[wear.code]) || 0,
-    marketHashName: cleanText(safeSkin.marketHashName, 200),
-    marketUpdatedAt: clampNumber(safeSkin.marketUpdatedAt, 0, Number.MAX_SAFE_INTEGER, 0),
+    marketPrice: quotedPrice,
+    marketHashName: cleanText(quoteSkin.marketHashName, 200),
+    marketUpdatedAt: clampNumber(quoteSkin.marketUpdatedAt, 0, Number.MAX_SAFE_INTEGER, 0),
     price: quotedPrice,
     virtual: true,
     exclusive: skin.exclusive === true,
     addedAt: Date.now()
   };
-  // The skin can be created immediately with the last known reference. The
-  // server quote then replaces the exact wear's value if Steam has it; this
-  // keeps animation responsive without pretending a browser estimate is live.
-  void refreshMarketPriceForSkin(safeSkin, wear).then(quote => {
+  // Until the server returns an actual quote the item stays unpriced and
+  // cannot be sold or used in an economic action.
+  void refreshMarketPriceForSkin(quoteSkin, wear).then(quote => {
     const price = Number(quote?.price);
     if (!Number.isFinite(price) || price <= 0) return;
     item.marketPrice = roundPc(price);
@@ -5322,8 +5326,10 @@ function doRevealCollectionReward(collId) {
       id: reward.skin.id,
       sourceSkinId: reward.skin.id,
       name: reward.skin.name,
-      price: reward.skin.price,
-      basePrice: reward.skin.price,
+      // Collection items are cosmetics, not Steam listings. They must never
+      // inject a hand-authored price into the tradable economy.
+      price: 0,
+      basePrice: 0.01,
       img: '',
       rarity: reward.skin.rarity,
       rarityColor: reward.skin.rarityColor,
@@ -5343,8 +5349,8 @@ function doRevealCollectionReward(collId) {
           <p class="text-[10px] font-extrabold uppercase tracking-widest text-amber-400"><i class="fa-solid fa-star mr-1"></i>Ексклюзивний предмет</p>
           <img src="${createSkinPreview(reward.skin.name)}" class="h-32 mx-auto my-3 object-contain" />
           <p class="font-heading text-2xl font-extrabold text-white leading-tight">${escapeHtml(reward.skin.name)}</p>
-          <p class="text-sm font-bold text-amber-300 mt-1">${formatCredits(reward.skin.price)}</p>
-          <p class="text-[10px] text-gray-500 mt-2 italic">Цей предмет неможливо отримати інакше — тільки за колекцію.</p>
+          <p class="text-sm font-bold text-violet-200 mt-1">Колекційний · без Steam-ціни</p>
+          <p class="text-[10px] text-gray-500 mt-2 italic">Цей предмет неможливо отримати інакше — тільки за колекцію та не продається за PC.</p>
         </div>
         <div class="mt-3 rounded-xl border border-green-500/40 bg-green-500/10 p-3 text-center">
           <p class="text-xs font-extrabold text-green-200 uppercase tracking-wider">Бонусні кредити</p>
@@ -5395,7 +5401,7 @@ const COMMUNITY_SYNC_MS = 35_000;
 
 function getCommunityPlayerPayload() {
   const stats = gameState?.stats || {};
-  const collectionValue = userInventory.reduce((total, item) => total + Math.max(0, Number(item?.price) || 0), 0);
+  const collectionValue = userInventory.reduce((total, item) => total + verifiedInventoryMarketPrice(item), 0);
   return {
     name: cleanText(account?.nick || currentUser?.name || 'Гравець', 24) || 'Гравець',
     profileId: account?.publicProfile?.enabled ? account.publicProfile.id : '',
@@ -5556,7 +5562,7 @@ function announceCommunityActivity(kind, skin) {
     skin: {
       name: cleanText(skin.name, 160),
       img: image,
-      price: clampNumber(skin.price ?? skin.basePrice, 0, MAX_STORED_ITEM_VALUE, 0),
+      price: clampNumber(verifiedInventoryMarketPrice(skin) || verifiedMarketPriceForWear(skin), 0, MAX_STORED_ITEM_VALUE, 0),
       rarity: cleanText(skin.rarity?.name || skin.rarity, 48) || 'CS2',
       rarityColor: cleanColor(skin.rarity?.color || skin.rarityColor)
     }
@@ -5576,7 +5582,9 @@ function startCommunitySync() {
 function getShowcaseItems() {
   const selected = new Set(Array.isArray(gameState?.showcase) ? gameState.showcase : []);
   const pinned = userInventory.filter(item => selected.has(String(item.id)));
-  const rest = userInventory.filter(item => !selected.has(String(item.id))).sort((left, right) => (right.price || 0) - (left.price || 0));
+  const rest = userInventory
+    .filter(item => !selected.has(String(item.id)))
+    .sort((left, right) => verifiedInventoryMarketPrice(right) - verifiedInventoryMarketPrice(left));
   return [...pinned, ...rest].slice(0, 4);
 }
 
@@ -5616,7 +5624,7 @@ function renderProfileSocial() {
   if (showcase) {
     const items = getShowcaseItems();
     showcase.innerHTML = items.length
-      ? items.map(item => `<button type="button" class="profile-showcase-item" data-showcase-detail="${escapeHtml(String(item.id))}" title="Деталі: ${escapeHtml(item.name)}"><img src="${escapeHtml(getSkinImageSrc(item))}" alt="${escapeHtml(item.name)}" data-skin-id="${escapeHtml(getSkinKey(item))}" data-skin-name="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><strong>${escapeHtml(item.name)}</strong><small>${formatCredits(item.price)}</small></button>`).join('')
+      ? items.map(item => `<button type="button" class="profile-showcase-item" data-showcase-detail="${escapeHtml(String(item.id))}" title="Деталі: ${escapeHtml(item.name)}"><img src="${escapeHtml(getSkinImageSrc(item))}" alt="${escapeHtml(item.name)}" data-skin-id="${escapeHtml(getSkinKey(item))}" data-skin-name="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><strong>${escapeHtml(item.name)}</strong><small>${verifiedInventoryMarketPrice(item) ? formatCredits(verifiedInventoryMarketPrice(item)) : 'Steam…'}</small></button>`).join('')
       : '<div class="profile-showcase-empty">Тут з’являться твої найкращі скіни.</div>';
     showcase.querySelectorAll('[data-showcase-detail]').forEach(button => button.addEventListener('click', () => showItemDetail(button.dataset.showcaseDetail)));
   }
@@ -6196,7 +6204,8 @@ function importSteamItems(steamId, items) {
       img,
       basePrice,
       wear,
-      price: priceWithWear(basePrice, wear),
+      marketPrice: 0,
+      price: 0,
       virtual: true,
       addedAt: Date.now()
     });
@@ -6260,6 +6269,9 @@ async function performSteamInventorySync() {
     } while (cursor && pages < STEAM_SYNC_PAGE_LIMIT);
     applySteamIdentity(steamId, inventoryProfile);
     const imported = importSteamItems(steamId, items);
+    // Imports enter with no invented value. Start a bounded server quote batch
+    // immediately; unavailable entries remain visibly unpriced.
+    if (imported.length) void refreshRecentInventoryMarketPrices(80);
     const truncated = Boolean(cursor);
     if (status) status.textContent = imported.length
       ? `Steam синхронізовано: додано ${imported.length} нових віртуальних копій${truncated ? ' з перших 3 000 предметів' : ''}.`
@@ -6571,9 +6583,21 @@ function doPrestige() {
 }
 
 function estimateInventoryPrice(it, i) {
-  const clean = normalizeSkinName(it.name);
-  const m = CS2_SKINS.find(s => normalizeSkinName(s.name) === clean);
-  return m?.price || (25 + ((i * 137) % 975));
+  // Steam imports deliberately start without a value. The value arrives from
+  // the server-side Steam quote path; inventing one here used to let an
+  // unpriced imported skin distort the virtual economy.
+  return 0;
+}
+
+function verifiedInventoryMarketPrice(item) {
+  const price = Number(item?.marketPrice);
+  return Number.isFinite(price) && price > 0 ? roundPc(price) : 0;
+}
+
+function requestInventoryMarketPrice(item) {
+  const skin = CS2_SKINS.find(candidate => normalizeSkinName(candidate.name) === normalizeSkinName(item?.name));
+  if (skin) void refreshMarketPriceForSkin(skin, getWear(item));
+  void refreshRecentInventoryMarketPrices(80);
 }
 
 function renderInventoryGrid() {
@@ -6586,6 +6610,11 @@ function renderInventoryGrid() {
   g.innerHTML = userInventory.map(s => {
     const wear = getWear(s);
     const inMulti = selectedInputMode === 'multi' && multiInputSkins.some(x => x.id === s.id);
+    const marketPrice = verifiedInventoryMarketPrice(s);
+    const sellPrice = roundPc(marketPrice * SELL_RATE);
+    const valueMarkup = marketPrice
+      ? `<p class="text-amber-400 font-extrabold text-xs mt-1">${formatCredits(marketPrice)}</p>`
+      : '<p class="text-cyan-300 font-extrabold text-[10px] mt-1">Steam-ціна оновлюється</p>';
     return `<div class="relative bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 flex flex-col items-center transition group inventory-card ${inMulti ? 'is-in-multi' : ''} ${s.exclusive ? 'border-violet-500/50' : ''}">
       <button type="button" data-inventory-id="${escapeHtml(String(s.id))}" class="w-full text-left">
         <span class="wear-badge wear-${wear.code} absolute top-2 left-2 z-10">${wear.code}</span>
@@ -6593,10 +6622,10 @@ function renderInventoryGrid() {
         <img src="${escapeHtml(getSkinImageSrc(s))}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" class="h-20 w-full object-contain group-hover:scale-105 transition image-skeleton" loading="lazy" onerror="handleSkinImageError(this)">
         <div class="text-center w-full mt-2">
           <p class="font-bold text-xs text-white truncate" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</p>
-          <p class="text-amber-400 font-extrabold text-xs mt-1">${formatCredits(s.price)}</p>
+          ${valueMarkup}
         </div>
       </button>
-      <button type="button" data-sell-id="${escapeHtml(String(s.id))}" title="Продати за ${formatCredits(roundPc((s.price || 0) * SELL_RATE))}" class="mt-2 w-full rounded-lg bg-emerald-500/15 border border-emerald-500/40 hover:bg-emerald-500 hover:text-black text-emerald-200 text-[11px] font-extrabold uppercase py-1.5 transition flex items-center justify-center gap-1">
+      <button type="button" data-sell-id="${escapeHtml(String(s.id))}" ${marketPrice ? '' : 'disabled'} title="${marketPrice ? `Продати за ${formatCredits(sellPrice)}` : 'Очікуємо підтверджену Steam-ціну'}" class="mt-2 w-full rounded-lg bg-emerald-500/15 border border-emerald-500/40 hover:bg-emerald-500 hover:text-black text-emerald-200 text-[11px] font-extrabold uppercase py-1.5 transition flex items-center justify-center gap-1 disabled:cursor-wait disabled:opacity-40">
         <i class="fa-solid fa-sack-dollar text-[10px]"></i>Продати
       </button>
     </div>`;
@@ -6619,8 +6648,8 @@ function getFilteredProfileInventory() {
   if (q) list = list.filter(it => String(it.name || '').toLowerCase().includes(q));
 
   const s = profileInvSort;
-  if (s === 'price-desc') list.sort((a, b) => (b.price || 0) - (a.price || 0));
-  else if (s === 'price-asc') list.sort((a, b) => (a.price || 0) - (b.price || 0));
+  if (s === 'price-desc') list.sort((a, b) => verifiedInventoryMarketPrice(b) - verifiedInventoryMarketPrice(a));
+  else if (s === 'price-asc') list.sort((a, b) => (verifiedInventoryMarketPrice(a) || Number.MAX_SAFE_INTEGER) - (verifiedInventoryMarketPrice(b) || Number.MAX_SAFE_INTEGER));
   else if (s === 'name-asc') list.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
   else if (s === 'wear-asc') list.sort((a, b) => (a.wear?.min ?? 0) - (b.wear?.min ?? 0));
   else if (s === 'newest') list.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
@@ -6656,8 +6685,8 @@ function renderProfileInventoryCategoryChips() {
 
 function renderProfileInventoryStats() {
   const count = userInventory.length;
-  const totalValue = userInventory.reduce((s, it) => s + (it.price || 0), 0);
-  const best = userInventory.reduce((max, it) => Math.max(max, it.price || 0), 0);
+  const totalValue = userInventory.reduce((sum, item) => sum + verifiedInventoryMarketPrice(item), 0);
+  const best = userInventory.reduce((max, item) => Math.max(max, verifiedInventoryMarketPrice(item)), 0);
   const uniqueNames = new Set(userInventory.map(it => normalizeSkinName(it.name))).size;
   const c = document.getElementById('invStatCount');
   if (c) c.textContent = String(count);
@@ -6698,7 +6727,8 @@ function renderProfileInventory() {
     const wear = getWear(s);
     const k = normalizeSkinName(s.name) + '|' + (wear.code || '');
     const dupes = nameCounts.get(k) || 0;
-    const sellPrice = roundPc((s.price || 0) * SELL_RATE);
+    const marketPrice = verifiedInventoryMarketPrice(s);
+    const sellPrice = roundPc(marketPrice * SELL_RATE);
     const isShowcased = gameState?.showcase?.includes(String(s.id));
     const [weaponPart, ...skinParts] = String(s.name || 'CS2 Skin').split('|');
     const weapon = cleanText(weaponPart, 48) || 'CS2';
@@ -6711,8 +6741,8 @@ function renderProfileInventory() {
         <img src="${escapeHtml(getSkinImageSrc(s))}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" loading="lazy" onerror="handleSkinImageError(this)">
         <div class="profile-inv-copy"><span>${escapeHtml(weapon)}</span><p class="inv-name" title="${escapeHtml(s.name)}">${escapeHtml(skinName)}</p></div>
       </button>
-      <div class="profile-inv-card-footer"><p class="inv-price"><i class="fa-solid fa-coins"></i>${formatCredits(s.price)}</p><div class="inv-actions">
-        <button class="sell-btn" data-profile-sell="${escapeHtml(String(s.id))}" title="Продати за ${formatCredits(sellPrice)}"><i class="fa-solid fa-sack-dollar"></i><span>Продати</span></button>
+      <div class="profile-inv-card-footer"><p class="inv-price"><i class="fa-solid fa-coins"></i>${marketPrice ? formatCredits(marketPrice) : 'Steam…'}</p><div class="inv-actions">
+        <button class="sell-btn" data-profile-sell="${escapeHtml(String(s.id))}" ${marketPrice ? '' : 'disabled'} title="${marketPrice ? `Продати за ${formatCredits(sellPrice)}` : 'Очікуємо Steam-ціну'}"><i class="fa-solid fa-sack-dollar"></i><span>Продати</span></button>
         <button class="info-btn ${isShowcased ? 'text-amber-300 border-amber-400/60' : ''}" data-profile-showcase="${escapeHtml(String(s.id))}" title="${isShowcased ? 'Прибрати з вітрини' : 'Додати на вітрину'}"><i class="${isShowcased ? 'fa-solid' : 'fa-regular'} fa-star"></i></button>
         <button class="info-btn" data-profile-info="${escapeHtml(String(s.id))}" title="Деталі"><i class="fa-solid fa-circle-info"></i></button>
       </div></div>
@@ -6745,10 +6775,10 @@ function renderProfileInventory() {
 function showItemDetail(itemId) {
   const it = userInventory.find(x => String(x.id) === String(itemId));
   if (!it) return;
+  if (!verifiedInventoryMarketPrice(it)) requestInventoryMarketPrice(it);
   const wear = getWear(it);
-  const sellPrice = roundPc((it.price || 0) * SELL_RATE);
-  const market = getMarketSnapshot(it);
-  const marketSign = market.change >= 0 ? '+' : '−';
+  const marketPrice = verifiedInventoryMarketPrice(it);
+  const sellPrice = roundPc(marketPrice * SELL_RATE);
   const cat = categorizeWeapon(it.name);
   const catLabel = { rifle: 'Гвинтівка', pistol: 'Пістолет', sniper: 'Снайперська', smg: 'ПП', heavy: 'Важка', knife: 'Ніж', gloves: 'Рукавиці', other: 'Зброя' }[cat] || 'Зброя';
   const html = `
@@ -6762,20 +6792,12 @@ function showItemDetail(itemId) {
       <span class="wear-badge" style="color:#fbbf24;border-color:rgba(251,191,36,.4)">x${wear.mult.toFixed(2)}</span>
     </div>
     <div class="mt-4 grid grid-cols-2 gap-3">
-      <div class="rounded-xl border border-gray-800 bg-black/20 p-3"><p class="text-[10px] font-bold uppercase tracking-wider text-gray-500">Вартість</p><p class="font-heading text-2xl font-extrabold text-amber-300">${formatCredits(it.price)}</p></div>
-      <div class="rounded-xl border border-gray-800 bg-black/20 p-3"><p class="text-[10px] font-bold uppercase tracking-wider text-gray-500">Продаж (90%)</p><p class="font-heading text-2xl font-extrabold text-emerald-300">${formatCredits(sellPrice)}</p></div>
+      <div class="rounded-xl border border-gray-800 bg-black/20 p-3"><p class="text-[10px] font-bold uppercase tracking-wider text-gray-500">Steam-вартість</p><p class="font-heading text-2xl font-extrabold text-amber-300">${marketPrice ? formatCredits(marketPrice) : '—'}</p></div>
+      <div class="rounded-xl border border-gray-800 bg-black/20 p-3"><p class="text-[10px] font-bold uppercase tracking-wider text-gray-500">Продаж (90%)</p><p class="font-heading text-2xl font-extrabold text-emerald-300">${marketPrice ? formatCredits(sellPrice) : '—'}</p></div>
     </div>
-    <section class="market-chart-card mt-3 text-left">
-      <div class="flex items-start justify-between gap-3">
-        <div><p class="text-[10px] font-extrabold uppercase tracking-[.16em] text-cyan-300"><i class="fa-solid fa-chart-line mr-1"></i>Демо-ринок</p><p class="mt-1 text-xs font-bold text-gray-300">Динаміка за 24 години</p></div>
-        <div class="text-right"><p class="font-heading text-2xl font-extrabold text-${market.color}-300">${formatCredits(market.current)}</p><p class="text-[10px] font-extrabold text-${market.color}-300">${marketSign}${Math.abs(market.change).toFixed(1)}%</p></div>
-      </div>
-      <div class="market-sparkline mt-2">${buildMarketSparkline(market.history)}</div>
-      <div class="mt-1 flex items-center justify-between text-[10px] font-semibold text-gray-500"><span>Мін. ${formatCredits(market.low)}</span><span>Макс. ${formatCredits(market.high)}</span></div>
-      <p class="mt-2 text-[10px] leading-4 text-gray-500">Це віртуальна динаміка для гри, не ціни Steam і не впливає на продаж предмета.</p>
-    </section>
+    <p class="mt-3 text-[10px] leading-4 text-gray-500">${marketPrice ? 'Ціну підтверджено серверним Steam-джерелом. Жодних локальних коливань або домальованих відсотків.' : 'Steam-ціну ще оновлюємо. Предмет не можна продати або використати в апгрейді, доки ціна не підтверджена.'}</p>
     ${it.exclusive ? `<p class="mt-3 text-[10px] text-violet-300 italic">Ексклюзивний предмет — його можна продати, але більше не отримати.</p>` : ''}
-    <button type="button" data-detail-sell-id="${escapeHtml(String(it.id))}" class="mt-4 w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-400 text-black font-extrabold uppercase text-sm tracking-wider transition"><i class="fa-solid fa-sack-dollar mr-2"></i>Продати за ${formatCredits(sellPrice)}</button>
+    <button type="button" data-detail-sell-id="${escapeHtml(String(it.id))}" ${marketPrice ? '' : 'disabled'} class="mt-4 w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-400 text-black font-extrabold uppercase text-sm tracking-wider transition disabled:cursor-wait disabled:opacity-40"><i class="fa-solid fa-sack-dollar mr-2"></i>${marketPrice ? `Продати за ${formatCredits(sellPrice)}` : 'Оновлюємо Steam-ціну'}</button>
     <button onclick="closeModal('itemDetailModal')" class="mt-3 w-full py-2.5 rounded-xl border border-gray-700 bg-black/20 hover:bg-gray-800 text-xs font-bold text-gray-300 transition">Закрити</button>
   </div>`;
   const container = document.getElementById('itemDetailContent');
@@ -6793,7 +6815,13 @@ function sellInventoryItem(itemId, fromProfile = false) {
   const idx = userInventory.findIndex(i => String(i.id) === String(itemId));
   if (idx === -1) return;
   const it = userInventory[idx];
-  const payout = roundPc((it.price || 0) * SELL_RATE);
+  const marketPrice = verifiedInventoryMarketPrice(it);
+  if (!marketPrice) {
+    requestInventoryMarketPrice(it);
+    showToast('Продаж заблоковано: Steam-ціна ще не підтверджена.', 'warn');
+    return;
+  }
+  const payout = roundPc(marketPrice * SELL_RATE);
   userInventory.splice(idx, 1);
   currentUser.balance = roundPc(currentUser.balance + payout);
   ensureDailyState();
@@ -6842,16 +6870,24 @@ function sellAllDuplicates() {
       keep.add(it.id);
     }
   }
-  const toSell = userInventory.filter(it => !keep.has(it.id));
+  const duplicates = userInventory.filter(it => !keep.has(it.id));
+  const toSell = duplicates.filter(verifiedInventoryMarketPrice);
   if (!toSell.length) {
-    showToast('Дублікатів немає', 'info');
+    if (duplicates.length) {
+      duplicates.forEach(requestInventoryMarketPrice);
+      showToast('Є дублікати, але їхні Steam-ціни ще оновлюються. Продаж не виконано.', 'info');
+    } else {
+      showToast('Дублікатів немає', 'info');
+    }
     return;
   }
-  const total = roundPc(toSell.reduce((s, it) => s + roundPc((it.price || 0) * SELL_RATE), 0));
-  if (!window.confirm(`Продати ${toSell.length} дублікатів за ${formatCredits(total)}?`)) return;
+  const unquoted = duplicates.length - toSell.length;
+  const total = roundPc(toSell.reduce((s, it) => s + roundPc(verifiedInventoryMarketPrice(it) * SELL_RATE), 0));
+  const notice = unquoted ? ` ${unquoted} без підтвердженої Steam-ціни залишаться в інвентарі.` : '';
+  if (!window.confirm(`Продати ${toSell.length} дублікатів за ${formatCredits(total)}?${notice}`)) return;
 
   const soldIds = new Set(toSell.map(i => i.id));
-  userInventory = userInventory.filter(it => keep.has(it.id));
+  userInventory = userInventory.filter(it => keep.has(it.id) || !soldIds.has(it.id));
   currentUser.balance = roundPc(currentUser.balance + total);
   ensureDailyState();
   ensureWeeklyState();
@@ -6889,6 +6925,13 @@ function openInventoryOrFocus() {
 
 function selectInventoryItem(it) {
   if (!it) return;
+  const marketPrice = verifiedInventoryMarketPrice(it);
+  if (!marketPrice) {
+    requestInventoryMarketPrice(it);
+    showToast('Steam-ціну предмета ще оновлюємо. Дочекайся ціни перед апгрейдом.', 'info');
+    return;
+  }
+  it = { ...it, basePrice: marketPrice, price: marketPrice, marketPrice };
   if (selectedInputMode === 'multi') {
     if (multiInputSkins.some(x => x.id === it.id)) {
       removeFromMulti(it.id);
@@ -6913,7 +6956,13 @@ function selectInventoryItem(it) {
 
 function selectTargetItem(it) {
   if (!it) return;
-  it = getMarketSkin(it);
+  const marketSkin = marketReadyCatalogSkin(it);
+  if (!marketSkin) {
+    warmVisibleShopMarketPrices([it]);
+    showToast('Steam-ціну цього скіна ще оновлюємо. Обери його після появи ціни.', 'info');
+    return;
+  }
+  it = marketSkin;
   const iv = getInputVal();
   if (iv > 0 && it.price <= iv) {
     showToast(`Ціль має коштувати більше за ${formatCredits(iv)}`, 'warn');
@@ -6933,6 +6982,13 @@ function selectTargetItem(it) {
 
 function addToMulti(item) {
   if (!item) return;
+  const marketPrice = verifiedInventoryMarketPrice(item);
+  if (!marketPrice) {
+    requestInventoryMarketPrice(item);
+    showToast('Steam-ціну предмета ще оновлюємо. Дочекайся ціни перед апгрейдом.', 'info');
+    return;
+  }
+  item = { ...item, basePrice: marketPrice, price: marketPrice, marketPrice };
   if (multiInputSkins.some(x => x.id === item.id)) {
     showToast('Уже додано', 'info');
     return;
@@ -7069,13 +7125,13 @@ function setRollMode(mode) {
 }
 
 function getInputVal() {
-  if (selectedInputMode === 'skin') return selectedInputSkin ? selectedInputSkin.price : 0;
-  if (selectedInputMode === 'multi') return multiInputSkins.reduce((s, i) => s + (i.price || 0), 0);
+  if (selectedInputMode === 'skin') return verifiedInventoryMarketPrice(selectedInputSkin);
+  if (selectedInputMode === 'multi') return multiInputSkins.reduce((sum, item) => sum + verifiedInventoryMarketPrice(item), 0);
   return balanceStake;
 }
 
 function getTargetVal() {
-  return selectedTargetSkin ? selectedTargetSkin.price : 0;
+  return selectedTargetSkin ? (verifiedMarketPriceForWear(selectedTargetSkin) || Number(selectedTargetSkin.marketPrice) || 0) : 0;
 }
 
 function calcChance(iv, tv) {
@@ -7139,8 +7195,10 @@ function applyMultiplierPreset(mult) {
   const target = iv * mult;
   // Find skin in catalog closest to target price (must be >= iv)
   let best = null, bestDiff = Infinity;
-  for (const s of CS2_SKINS) {
-    const p = s.price || 0;
+  for (const source of CS2_SKINS) {
+    const s = marketReadyCatalogSkin(source);
+    if (!s) continue;
+    const p = s.price;
     if (p < iv) continue;
     const diff = Math.abs(p - target);
     if (diff < bestDiff) { bestDiff = diff; best = s; }
@@ -7179,8 +7237,10 @@ function renderSmartSuggestions(inputVal) {
   el.innerHTML = presets.map(p => {
     const targetPrice = inputVal * p.mult;
     let best = null, bestDiff = Infinity;
-    for (const s of CS2_SKINS) {
-      const pr = s.price || 0;
+    for (const source of CS2_SKINS) {
+      const s = marketReadyCatalogSkin(source);
+      if (!s) continue;
+      const pr = s.price;
       if (pr < inputVal) continue;
       const diff = Math.abs(pr - targetPrice);
       if (diff < bestDiff) { bestDiff = diff; best = s; }
@@ -7212,7 +7272,13 @@ function renderSmartSuggestions(inputVal) {
 function applySuggestion(skinKey) {
   const skin = getSkinByKey(skinKey) || CS2_SKINS.find(s => s.name === skinKey);
   if (!skin) return;
-  selectedTargetSkin = skin;
+  const marketSkin = marketReadyCatalogSkin(skin);
+  if (!marketSkin) {
+    warmVisibleShopMarketPrices([skin]);
+    showToast('Steam-ціну цілі ще оновлюємо.', 'info');
+    return;
+  }
+  selectedTargetSkin = marketSkin;
   const tei = document.getElementById('targetEmptyState');
   const tsi = document.getElementById('targetSkinState');
   const timg = document.getElementById('targetSkinImg');
@@ -7220,12 +7286,12 @@ function applySuggestion(skinKey) {
   const trar = document.getElementById('targetSkinRarity');
   if (tei) tei.classList.add('hidden');
   if (tsi) tsi.classList.remove('hidden');
-  if (timg) setImageSource(timg, skin.img, skin.name, getSkinKey(skin));
-  if (tnm)  tnm.textContent  = skin.name;
-  if (trar) trar.textContent = skin.rarity || '';
+  if (timg) setImageSource(timg, marketSkin.img, marketSkin.name, getSkinKey(marketSkin));
+  if (tnm)  tnm.textContent  = marketSkin.name;
+  if (trar) trar.textContent = marketSkin.rarity || '';
   // Highlight by a data attribute, never by executable inline code.
   document.querySelectorAll('.upg-sugg-card').forEach(c => {
-    c.classList.toggle('is-active', c.dataset.suggestionKey === getSkinKey(skin));
+    c.classList.toggle('is-active', c.dataset.suggestionKey === getSkinKey(marketSkin));
   });
   recalculateUpgrade();
 }
@@ -7233,6 +7299,11 @@ function applySuggestion(skinKey) {
 function chainUpgradeWonSkin() {
   if (!lastWonUpgraderSkin) { showToast('Немає виграного скіна', 'warn'); return; }
   const won = lastWonUpgraderSkin;
+  if (!verifiedInventoryMarketPrice(won)) {
+    requestInventoryMarketPrice(won);
+    showToast('Steam-ціну виграного скіна ще оновлюємо.', 'info');
+    return;
+  }
   lastWonUpgraderSkin = null;
   const _rua = document.getElementById('resultUpgraderActions');
   if (_rua) _rua.classList.add('hidden');
@@ -7257,11 +7328,16 @@ function chainUpgradeWonSkin() {
 function quickSellUpgradedSkin() {
   if (!lastWonUpgraderSkin) { showToast('Немає виграного скіна', 'warn'); return; }
   const won = lastWonUpgraderSkin;
+  const price = verifiedInventoryMarketPrice(won);
+  if (!price) {
+    requestInventoryMarketPrice(won);
+    showToast('Steam-ціна виграного скіна ще оновлюється. Швидкий продаж заблоковано.', 'warn');
+    return;
+  }
   lastWonUpgraderSkin = null;
   const _rua = document.getElementById('resultUpgraderActions');
   if (_rua) _rua.classList.add('hidden');
   closeModal('resultModal');
-  const price = won.price || 0;
   const earned = roundPc(price * SELL_RATE);
   currentUser.balance = roundPc(currentUser.balance + earned);
   userInventory = userInventory.filter(i => i.id !== won.id);
@@ -7349,8 +7425,23 @@ function executeUpgrade() {
     showToast('Обраного скіна вже немає в інвентарі', 'warn');
     return;
   }
+  if (selectedInputMode === 'skin' && !verifiedInventoryMarketPrice(inSkin)) {
+    requestInventoryMarketPrice(inSkin);
+    showToast('Steam-ціна вхідного предмета ще не підтверджена.', 'warn');
+    return;
+  }
   if (selectedInputMode === 'multi' && !multiAtStart.every(item => userInventory.some(owned => owned.id === item.id))) {
     showToast('Деяких скінів уже немає в інвентарі', 'warn');
+    return;
+  }
+  if (selectedInputMode === 'multi' && !multiAtStart.every(verifiedInventoryMarketPrice)) {
+    multiAtStart.filter(item => !verifiedInventoryMarketPrice(item)).forEach(requestInventoryMarketPrice);
+    showToast('Steam-ціни частини внеску ще не підтверджені.', 'warn');
+    return;
+  }
+  if (!getTargetVal()) {
+    warmVisibleShopMarketPrices([tgtSkin]);
+    showToast('Steam-ціну цілі ще не підтверджено.', 'warn');
     return;
   }
 
@@ -7514,20 +7605,65 @@ let lastWonCaseItems = [];
 let lastOpenedCaseId = 'budget_covert';
 let currentDetailsCaseId = 'budget_covert';
 const _casePoolCache = new Map();
+const CASE_MARKET_SAMPLE_SIZE = 160;
+const caseMarketSyncPromises = new Map();
 
-function getCaseSkinPool(caseType) {
+function resolveCaseConfig(caseType) {
   let cfg = CASE_TYPES[caseType] || CASE_TYPES.budget_covert;
   if (cfg.aliasTo) cfg = CASE_TYPES[cfg.aliasTo] || cfg;
+  return cfg;
+}
 
-  const cacheKey = `${cfg.id}:${CS2_SKINS.length}`;
+function getCaseCatalogCandidates(caseType) {
+  const cfg = resolveCaseConfig(caseType);
+  const usable = CS2_SKINS.filter(isUsableSkin);
+  if (!usable.length) return [];
+  const themed = typeof cfg.filter === 'function' ? usable.filter(cfg.filter) : [];
+  return themed.sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function getFreeCaseCatalogCandidates() {
+  return CS2_SKINS
+    .filter(skin => isUsableSkin(skin) && isWeaponSkin(skin) && ['Consumer Grade', 'Industrial Grade', 'Mil-Spec Grade'].includes(skin.rarity))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+async function ensureCaseMarketPrices(caseType) {
+  const key = caseType === 'free' ? 'free' : resolveCaseConfig(caseType).id;
+  if (caseMarketSyncPromises.has(key)) return caseMarketSyncPromises.get(key);
+  const source = key === 'free' ? getFreeCaseCatalogCandidates() : getCaseCatalogCandidates(key);
+  const candidates = source.filter(skin => !verifiedMarketPriceForWear(skin)).slice(0, CASE_MARKET_SAMPLE_SIZE);
+  if (!candidates.length) return getCaseSkinPool(key).length >= 8;
+  const task = syncSteamMarketPrices(candidates).then(() => {
+    _casePoolCache.clear();
+    _dropChanceCache.clear();
+    _caseMetricsCache.clear();
+    renderCaseCatalog();
+    return getCaseSkinPool(key).length >= 8;
+  }).finally(() => caseMarketSyncPromises.delete(key));
+  caseMarketSyncPromises.set(key, task);
+  return task;
+}
+
+function getCaseCost(caseType) {
+  const pool = getCaseSkinPool(caseType);
+  const values = pool.map(skin => verifiedMarketPriceForWear(skin)).filter(value => value > 0).sort((left, right) => left - right);
+  if (values.length < 8) return 0;
+  // 70% of the real median price leaves cheap outcomes in every themed pool,
+  // while preventing a knife-only case from being a guaranteed profit.
+  const median = values[Math.floor((values.length - 1) * 0.5)];
+  return Math.max(0.25, roundPc(median * 0.7));
+}
+
+function getCaseSkinPool(caseType) {
+  const cfg = resolveCaseConfig(caseType);
+
+  const cacheKey = `${caseType === 'free' ? 'free' : cfg.id}:${CS2_SKINS.length}`;
   const cached = _casePoolCache.get(cacheKey);
   if (cached) return cached;
 
-  const usable = CS2_SKINS.filter(isUsableSkin);
-  if (!usable.length) return [];
-
   const sampleByPrice = (items, limit) => {
-    const sorted = [...items].sort((a, b) => (a.price || 0) - (b.price || 0));
+    const sorted = [...items].sort((a, b) => verifiedMarketPriceForWear(a) - verifiedMarketPriceForWear(b));
     if (sorted.length <= limit) return sorted;
     return Array.from({ length: limit }, (_, index) => {
       const position = Math.round(index * (sorted.length - 1) / (limit - 1));
@@ -7535,15 +7671,15 @@ function getCaseSkinPool(caseType) {
     });
   };
 
-  let themed = [];
-  if (typeof cfg.filter === 'function') {
-    themed = usable.filter(cfg.filter);
-  }
+  const candidates = caseType === 'free' ? getFreeCaseCatalogCandidates() : getCaseCatalogCandidates(cfg.id);
+  const themed = candidates.filter(skin => verifiedMarketPriceForWear(skin) > 0);
 
   // A case may only contain skins matching its declared theme. Adding the
   // global cheap pool here was why knives, gloves and weapon cases looked the
   // same. Price tiers below now provide the loss/win balance inside each pool.
-  const pool = sampleByPrice(themed, 180).sort((a, b) => (b.price || 0) - (a.price || 0));
+  const pool = sampleByPrice(themed, 180)
+    .map(skin => ({ ...skin, basePrice: verifiedMarketPriceForWear(skin), marketPrice: verifiedMarketPriceForWear(skin), price: verifiedMarketPriceForWear(skin) }))
+    .sort((a, b) => b.price - a.price);
   _casePoolCache.set(cacheKey, pool);
   return pool;
 }
@@ -7558,8 +7694,8 @@ function _buildDropChanceMap(caseType) {
   const n = pool.length;
   if (!n) return new Map();
 
-  const cfg = CASE_TYPES[caseType] || CASE_TYPES.budget_covert;
-  const caseCost = Math.max(1, cfg.aliasTo ? (CASE_TYPES[cfg.aliasTo]?.cost || cfg.cost) : cfg.cost);
+  const caseCost = getCaseCost(caseType);
+  if (!caseCost) return new Map();
   // 58% clear loss, 25% close loss, 12% around break-even, 3.5% profit,
   // 1% premium and 0.5% jackpot (before unavailable-tier rollover).
   // Each pool uses these same transparent value bands, so a themed case can
@@ -7628,15 +7764,15 @@ function formatCaseChance(value) {
 }
 
 function getCaseMetrics(caseType) {
-  let cfg = CASE_TYPES[caseType] || CASE_TYPES.budget_covert;
-  if (cfg.aliasTo) cfg = CASE_TYPES[cfg.aliasTo] || cfg;
+  const cfg = resolveCaseConfig(caseType);
 
   const cacheKey = `${cfg.id}:${CS2_SKINS.length}`;
   const cached = _caseMetricsCache.get(cacheKey);
   if (cached) return cached;
 
   const pool = getCaseSkinPool(cfg.id);
-  const cost = Math.max(1, Number(cfg.cost) || 1);
+  const cost = getCaseCost(cfg.id);
+  if (!cost) return { count: pool.length, breakEvenChance: 0, rareChance: 0, expectedValue: 0, maxValue: 0 };
   let breakEvenChance = 0;
   let rareChance = 0;
   let expectedValue = 0;
@@ -7661,17 +7797,18 @@ function getCaseMetrics(caseType) {
 }
 
 function pickCaseSkin(poolType = 'regular', caseType = 'budget_covert', fixedRoll = Math.random()) {
-  const usable = CS2_SKINS.filter(isUsableSkin);
-  if (!usable.length) return null;
   const normalizedRoll = clampNumber(fixedRoll, 0, 0.999999999, Math.random());
 
   if (poolType === 'free') {
-    const cheapOnly = usable.filter(s => (s.price || 0) <= 300);
-    const pool = cheapOnly.length ? cheapOnly : usable;
+    const pool = getCaseSkinPool('free');
+    if (!pool.length) return null;
+    const costCap = 3;
+    const cheapOnly = pool.filter(s => (s.price || 0) <= costCap);
+    const available = cheapOnly.length ? cheapOnly : pool;
     const freeTiers = [
-      pool.filter(s => (s.price || 0) <= 75),
-      pool.filter(s => (s.price || 0) > 75 && (s.price || 0) <= 160),
-      pool.filter(s => (s.price || 0) > 160)
+      available.filter(s => (s.price || 0) <= 0.5),
+      available.filter(s => (s.price || 0) > 0.5 && (s.price || 0) <= 1.5),
+      available.filter(s => (s.price || 0) > 1.5)
     ];
     const weights = [75, 22, 3];
     const total = freeTiers.reduce((sum, tier, index) => sum + (tier.length ? weights[index] : 0), 0);
@@ -7684,11 +7821,11 @@ function pickCaseSkin(poolType = 'regular', caseType = 'budget_covert', fixedRol
       }
       roll -= weights[index];
     }
-    return pool[0];
+    return available[0];
   }
 
   const pool = getCaseSkinPool(caseType);
-  if (!pool.length) return usable[0];
+  if (!pool.length) return null;
 
   const chances = pool.map(s => getItemDropChance(s, caseType));
   const total = chances.reduce((a, b) => a + b, 0);
@@ -7731,7 +7868,11 @@ function renderCaseCatalog() {
   grid.innerHTML = filtered.map(([id, c]) => {
     const previews = getCasePreviewItems(id, 4);
     const metrics = getCaseMetrics(id);
+    const caseCost = getCaseCost(id);
     const riskClass = metrics.breakEvenChance >= 15 ? 'is-balanced' : metrics.breakEvenChance >= 5 ? 'is-risky' : 'is-high-risk';
+    const costMarkup = caseCost
+      ? `<i class="fa-solid fa-coins text-amber-400 text-xs"></i><span class="font-extrabold text-sm text-amber-300">${formatCredits(caseCost)}</span>`
+      : '<i class="fa-solid fa-arrows-rotate fa-spin-pulse text-cyan-300 text-xs"></i><span class="font-extrabold text-[10px] text-cyan-200">Steam-ціни оновлюються</span>';
     return `
       <div class="case-catalog-card tier-${c.category || 'hot'} group">
         <span class="case-catalog-badge ${c.badgeClass || 'badge-hot'}">${c.badge || 'HOT'}</span>
@@ -7739,7 +7880,7 @@ function renderCaseCatalog() {
         <!-- Top Preview Strip -->
         <div class="case-catalog-preview-strip">
           ${previews.map(s => `
-            <div class="case-catalog-preview-item" title="${escapeHtml(s.name)} · ${formatCredits(s.price)}">
+            <div class="case-catalog-preview-item" title="${escapeHtml(s.name)} · ${formatCredits(s.price)} · Steam">
               <img src="${escapeHtml(getSkinImageSrc(s))}" alt="" data-skin-name="${escapeHtml(s.name)}" decoding="async" onerror="handleSkinImageError(this)">
             </div>
           `).join('')}
@@ -7753,12 +7894,11 @@ function renderCaseCatalog() {
           <h3 class="font-heading mt-3 text-2xl font-black uppercase text-white tracking-wider truncate w-full group-hover:text-amber-300 transition-colors">${c.name}</h3>
           <p class="text-[11px] text-gray-400 truncate w-full mt-0.5">${c.desc}</p>
           <div class="mt-3 px-3 py-1 rounded-lg bg-black/40 border border-amber-500/30 flex items-center gap-1.5 shadow-inner">
-            <i class="fa-solid fa-coins text-amber-400 text-xs"></i>
-            <span class="font-extrabold text-sm text-amber-300">${formatCredits(c.cost)}</span>
+            ${costMarkup}
           </div>
           <div class="case-catalog-metrics" aria-label="Показники кейсу">
             <span title="Кількість предметів у кейсі"><i class="fa-solid fa-layer-group"></i>${metrics.count} скінів</span>
-            <span class="${riskClass}" title="Шанс отримати предмет не дешевше ціни кейсу"><i class="fa-solid fa-chart-line"></i>Окуп ${formatCaseChance(metrics.breakEvenChance)}</span>
+            <span class="${riskClass}" title="Шанс отримати предмет не дешевше ціни кейсу"><i class="fa-solid fa-chart-line"></i>${caseCost ? `Окуп ${formatCaseChance(metrics.breakEvenChance)}` : 'Очікуємо Steam'}</span>
           </div>
         </div>
 
@@ -7819,19 +7959,18 @@ function updateCaseTicketOption() {
 
 function updateCaseCostDisplay() {
   const isFree = window.__caseType === 'free';
-  const cfg = CASE_TYPES[currentActiveCaseId] || CASE_TYPES.budget_covert;
   updateCaseTicketOption();
   const ticketOpen = !isFree && useCaseTicket;
-  const cost = isFree || ticketOpen ? 0 : (cfg.cost * caseMultiplier);
+  const unitCost = isFree ? 0 : getCaseCost(currentActiveCaseId);
+  const cost = isFree || ticketOpen ? 0 : (unitCost * caseMultiplier);
   const totalEl = document.getElementById('caseReelTotalCost');
-  if (totalEl) totalEl.textContent = ticketOpen ? `Потужний квиток ×${caseMultiplier}` : `${formatCredits(cost)}`;
+  if (totalEl) totalEl.textContent = ticketOpen ? `Потужний квиток ×${caseMultiplier}` : unitCost ? `${formatCredits(cost)}` : 'Steam-ціни оновлюються';
   const costSummary = document.getElementById('caseReelCostSummary');
   if (costSummary) costSummary.classList.toggle('hidden', isFree);
 }
 
-function openPowerCase(caseType = 'budget_covert') {
-  let cfg = CASE_TYPES[caseType] || CASE_TYPES.budget_covert;
-  if (cfg.aliasTo) cfg = CASE_TYPES[cfg.aliasTo] || cfg;
+async function openPowerCase(caseType = 'budget_covert') {
+  const cfg = resolveCaseConfig(caseType);
 
   const seasonalStatus = cfg.seasonal ? getSeasonalEventStatus(cfg.seasonal) : null;
   if (cfg.seasonal && !seasonalStatus?.scheduledActive) {
@@ -7844,11 +7983,20 @@ function openPowerCase(caseType = 'budget_covert') {
 
   // Never replace a knife or glove pool with unrelated filler while the rich
   // catalogue is still arriving. This keeps every case true to its theme.
-  const pool = getCaseSkinPool(cfg.id);
+  let pool = getCaseSkinPool(cfg.id);
   if (pool.length < 8 && !completeSkinCatalogReady) {
     void loadCompleteSkinCatalog();
     showToast('Готуємо повний тематичний склад кейса…', 'info');
     return;
+  }
+  if (pool.length < 8) {
+    showToast('Оновлюємо підтверджені Steam-ціни для цього кейса…', 'info');
+    const ready = await ensureCaseMarketPrices(cfg.id);
+    pool = getCaseSkinPool(cfg.id);
+    if (!ready || pool.length < 8) {
+      showToast('Steam-ціни для цього кейса зараз недоступні. Баланс не списано.', 'warn');
+      return;
+    }
   }
   if (!pool.length) {
     showToast('Для цього кейса тимчасово немає доступного каталогу.', 'warn');
@@ -7863,7 +8011,12 @@ function openPowerCase(caseType = 'budget_covert') {
   const title = document.getElementById('caseReelTitle');
   if (title) title.textContent = `${cfg.name}`;
   const sub = document.getElementById('caseReelSubtitle');
-  if (sub) sub.textContent = `Ціна: ${formatCredits(cfg.cost)} за кейс`;
+  const caseCost = getCaseCost(cfg.id);
+  if (!caseCost) {
+    showToast('Не вдалося підтвердити ціну кейса через Steam.', 'warn');
+    return;
+  }
+  if (sub) sub.textContent = `Steam-ціна кейса: ${formatCredits(caseCost)}`;
 
   // Show multi-selector for paid cases
   const multiBox = document.getElementById('caseMultiSelector')?.parentElement;
@@ -7905,15 +8058,23 @@ function updateFreeCaseBtn() {
   } else {
     btn.disabled = false;
     btn.textContent = 'Забрати';
-    status.textContent = 'Раз на 24 години · до 300 PC';
+    status.textContent = 'Раз на 24 години · лише підтверджені Steam-ціни';
   }
 }
 
-function openFreeDailyCase() {
+async function openFreeDailyCase() {
   if (!currentUser || !gameState || isFreeCaseOpening || isRolling || isCaseOpening || pendingWager) return;
   if (getFreeCaseLeft() > 0) {
     showToast('Безкоштовний кейс ще недоступний', 'warn');
     return;
+  }
+  if (getCaseSkinPool('free').length < 8) {
+    showToast('Оновлюємо Steam-ціни для безкоштовного кейса…', 'info');
+    const ready = await ensureCaseMarketPrices('free');
+    if (!ready || getCaseSkinPool('free').length < 8) {
+      showToast('Steam-ціни для безкоштовного кейса зараз недоступні.', 'warn');
+      return;
+    }
   }
 
   currentActiveCaseId = 'free';
@@ -7924,7 +8085,7 @@ function openFreeDailyCase() {
   const title = document.getElementById('caseReelTitle');
   if (title) title.textContent = 'Безкоштовний кейс';
   const sub = document.getElementById('caseReelSubtitle');
-  if (sub) sub.textContent = 'Раз на 24 години · до 300 PC';
+  if (sub) sub.textContent = 'Раз на 24 години · низькі Steam-ціни';
 
   // Hide multi selector for free daily case
   const multiBox = document.getElementById('caseMultiSelector')?.parentElement;
@@ -7968,11 +8129,11 @@ function buildSingleReelTrack(trackId, winner, config = getCaseReelConfig()) {
 
   for (let i = 0; i < cards; i++) {
     if (i === winnerIndex) {
-      items.push({ ...winner, wear: winner?.wear || rollWear() });
+      items.push({ ...winner, wear: winner?.wear || WEAR_TIERS[2] });
       continue;
     }
     const s = pickCaseReelDisplaySkin(fallback, currentActiveCaseId);
-    items.push({ ...s, wear: rollWear() });
+    items.push({ ...s, wear: WEAR_TIERS[2] });
   }
 
   track.innerHTML = items.map(it => {
@@ -8043,10 +8204,15 @@ async function startCaseReel() {
 
   const isFree = window.__caseType === 'free';
   const mult = isFree ? 1 : caseMultiplier;
-  const cfg = CASE_TYPES[currentActiveCaseId] || CASE_TYPES.budget_covert;
+  const cfg = resolveCaseConfig(currentActiveCaseId);
   const ticketOpen = !isFree && useCaseTicket;
   const ticketsSpent = ticketOpen ? mult : 0;
-  const totalCost = isFree || ticketOpen ? 0 : (cfg.cost * mult);
+  const unitCost = isFree ? 0 : getCaseCost(currentActiveCaseId);
+  if (!isFree && !ticketOpen && !unitCost) {
+    showToast('Steam-ціни ще оновлюються. Спробуй за мить.', 'info');
+    return;
+  }
+  const totalCost = isFree || ticketOpen ? 0 : (unitCost * mult);
   const previousFreeCaseAt = isFree ? getFreeCaseLastAt() : 0;
   const isFast = document.getElementById('caseFastOpenToggle')?.checked;
 
@@ -8146,7 +8312,12 @@ async function startCaseReel() {
   }
 
   // Create demo items and store
-  const wonItems = winners.map((w, index) => makeDemoItem(w, isFree ? '-freecase' : '-case', fairRolls.rolls[index]?.wearRoll));
+  const wonItems = winners.map(w => makeDemoItem(w, isFree ? '-freecase' : '-case')).filter(Boolean);
+  if (wonItems.length !== mult) {
+    restorePendingCaseOpen();
+    showToast('Не вдалося підтвердити Steam-ціну дропа. Баланс відновлено.', 'warn');
+    return;
+  }
   wonItems.forEach(it => userInventory.push(it));
   lastWonCaseItems = wonItems;
   lastOpenedCaseId = currentActiveCaseId;
@@ -8285,15 +8456,21 @@ function quickSellCaseResult() {
     return;
   }
 
-  const itemsToSell = [...lastWonCaseItems];
-  lastWonCaseItems = [];
+  const itemsToSell = lastWonCaseItems.filter(verifiedInventoryMarketPrice);
+  const unquoted = lastWonCaseItems.filter(item => !verifiedInventoryMarketPrice(item));
+  if (!itemsToSell.length) {
+    unquoted.forEach(requestInventoryMarketPrice);
+    showToast('Steam-ціна дропа ще оновлюється. Швидкий продаж заблоковано.', 'warn');
+    return;
+  }
+  lastWonCaseItems = unquoted;
   closeModal('caseModal');
 
   let totalRefund = 0;
   const idsToSell = new Set(itemsToSell.map(it => it.id));
 
   itemsToSell.forEach(it => {
-    totalRefund += Math.max(0.01, roundPc((Number(it.price) || 0) * SELL_RATE));
+    totalRefund += roundPc(verifiedInventoryMarketPrice(it) * SELL_RATE);
   });
 
   userInventory = userInventory.filter(it => !idsToSell.has(it.id));
@@ -8326,10 +8503,17 @@ function sendCaseDropToUpgrader() {
   }
 
   const items = [...lastWonCaseItems];
+
+  const bestItem = items
+    .filter(verifiedInventoryMarketPrice)
+    .sort((left, right) => verifiedInventoryMarketPrice(right) - verifiedInventoryMarketPrice(left))[0];
+  if (!bestItem) {
+    items.forEach(requestInventoryMarketPrice);
+    showToast('Steam-ціна дропа ще оновлюється. Спробуй за мить.', 'warn');
+    return;
+  }
   lastWonCaseItems = [];
   closeModal('caseModal');
-
-  const bestItem = items.sort((a, b) => (b.price || 0) - (a.price || 0))[0];
   switchInputMode('skin');
   selectedInputSkin = bestItem;
 
@@ -8363,9 +8547,17 @@ function repeatDropAction() {
   showToast('Контракт завершено. Обери 5 нових предметів для наступного.', 'info');
 }
 
-function showCaseDetails(caseType) {
-  let cfg = CASE_TYPES[caseType] || CASE_TYPES.budget_covert;
-  if (cfg.aliasTo) cfg = CASE_TYPES[cfg.aliasTo] || cfg;
+async function showCaseDetails(caseType) {
+  const cfg = resolveCaseConfig(caseType);
+
+  if (getCaseSkinPool(cfg.id).length < 8) {
+    showToast('Завантажуємо вміст і Steam-ціни кейса…', 'info');
+    const ready = await ensureCaseMarketPrices(cfg.id);
+    if (!ready) {
+      showToast('Не вдалося підтвердити Steam-ціни для цього кейса.', 'warn');
+      return;
+    }
+  }
 
   currentDetailsCaseId = cfg.id;
   const pool = getCaseSkinPool(cfg.id);
@@ -8376,7 +8568,8 @@ function showCaseDetails(caseType) {
   const grid = document.getElementById('caseDetailsGrid');
   const metrics = getCaseMetrics(cfg.id);
 
-  if (header) header.textContent = `${cfg.name} · ${formatCredits(cfg.cost)}`;
+  const caseCost = getCaseCost(cfg.id);
+  if (header) header.textContent = `${cfg.name} · ${formatCredits(caseCost)}`;
   if (title) title.textContent = `Вміст кейсу (${pool.length} скінів)`;
   if (metricsEl) {
     metricsEl.innerHTML = `
@@ -8697,10 +8890,11 @@ function clearBattleOpponent() {
 }
 
 function toPublicBattleStake(item) {
+  const marketPrice = verifiedInventoryMarketPrice(item);
   return {
     name: cleanText(item?.name, 160),
     img: cleanImageUrl(item?.img),
-    price: roundPc(clampNumber(item?.price, 0.01, MAX_STORED_ITEM_VALUE, 0.01)),
+    price: roundPc(clampNumber(marketPrice, 0.01, MAX_STORED_ITEM_VALUE, 0.01)),
     rarity: cleanText(item?.rarity || 'CS2', 48),
     rarityColor: cleanColor(item?.rarityColor),
   };
@@ -8712,6 +8906,8 @@ function setBattleOpponent(item, opponentName, isBot, match = null) {
     ...safe,
     id: `match-${match?.id || 'bot'}-${Date.now()}`,
     basePrice: safe.price,
+    marketPrice: safe.price,
+    marketPrices: { FT: safe.price },
     wear: { code: 'FT' },
     botName: cleanText(opponentName, 24) || (isBot ? 'Бот' : 'Гравець'),
     isBot,
@@ -8919,6 +9115,11 @@ async function createBattleListing() {
     showToast('Обраний скін уже недоступний.', 'warn');
     return;
   }
+  if (!verifiedInventoryMarketPrice(battlePlayerItem)) {
+    requestInventoryMarketPrice(battlePlayerItem);
+    showToast('Steam-ціну ставки ще не підтверджено.', 'warn');
+    return;
+  }
   const ticketId = makeUuid();
   const stake = toPublicBattleStake(battlePlayerItem);
   setBattleAction('waiting', true);
@@ -8982,6 +9183,11 @@ async function acceptBattleListing() {
     showToast('Обраний скін уже недоступний.', 'warn');
     return;
   }
+  if (!verifiedInventoryMarketPrice(battlePlayerItem)) {
+    requestInventoryMarketPrice(battlePlayerItem);
+    showToast('Steam-ціну ставки ще не підтверджено.', 'warn');
+    return;
+  }
   const ticketId = makeUuid();
   setBattleAction('waiting', true);
   try {
@@ -9014,6 +9220,11 @@ function useHumanBattleMatch(match, ticketId) {
 
 async function findBattleOpponent() {
   if (battleInProgress || !battlePlayerItem || pendingWager) return;
+  if (!verifiedInventoryMarketPrice(battlePlayerItem)) {
+    requestInventoryMarketPrice(battlePlayerItem);
+    showToast('Steam-ціну ставки ще не підтверджено.', 'warn');
+    return;
+  }
   const serial = ++battleSearchSerial;
   const ticketId = makeUuid();
   battleSearchTicket = ticketId;
@@ -9053,7 +9264,10 @@ function pickBattlePlayerItem() {
     return;
   }
   const reservedItemId = String(battleListing?.itemId || '');
-  const available = userInventory.filter(item => !reservedItemId || String(item.id) === reservedItemId || String(item.id) === String(battlePlayerItem?.id || ''));
+  const available = userInventory.filter(item => (
+    (!reservedItemId || String(item.id) === reservedItemId || String(item.id) === String(battlePlayerItem?.id || ''))
+    && verifiedInventoryMarketPrice(item)
+  ));
   if (!available.length) {
     showToast('Твій скін уже зарезервовано у відкритому бою. Скасуй заявку, щоб обрати інший.', 'info');
     return;
@@ -9066,7 +9280,7 @@ function pickBattlePlayerItem() {
       <span class="wear-badge wear-${wear.code} self-start">${wear.code}</span>
       <img src="${escapeHtml(getSkinImageSrc(s))}" alt="" data-skin-name="${escapeHtml(s.name)}" class="h-16 object-contain mt-1" onerror="handleSkinImageError(this)">
       <p class="mt-1 text-xs font-bold text-white truncate w-full text-center">${escapeHtml(s.name)}</p>
-      <p class="text-amber-400 text-xs font-extrabold">${formatCredits(s.price)}</p>
+      <p class="text-amber-400 text-xs font-extrabold">${formatCredits(verifiedInventoryMarketPrice(s))}</p>
     </button>`;
   }).join('');
   g.querySelectorAll('[data-battle-pick]').forEach(b => b.addEventListener('click', () => {
@@ -9084,15 +9298,21 @@ function setBattlePlayer(item) {
     showToast('Спочатку скасуй відкритий бій, щоб змінити свій скін.', 'warn');
     return;
   }
+  const marketPrice = verifiedInventoryMarketPrice(item);
+  if (!marketPrice) {
+    requestInventoryMarketPrice(item);
+    showToast('Steam-ціну предмета ще оновлюємо.', 'info');
+    return;
+  }
   cancelBattleSearch();
-  battlePlayerItem = item;
+  battlePlayerItem = { ...item, basePrice: marketPrice, marketPrice, price: marketPrice };
   document.getElementById('battlePlayerEmpty')?.classList.add('hidden');
   document.getElementById('battlePlayerFilled')?.classList.remove('hidden');
-  setImageSource(document.getElementById('battlePlayerImg'), item.img, item.name, getSkinKey(item));
+  setImageSource(document.getElementById('battlePlayerImg'), battlePlayerItem.img, battlePlayerItem.name, getSkinKey(battlePlayerItem));
   const nameEl = document.getElementById('battlePlayerName');
-  if (nameEl) nameEl.textContent = item.name;
+  if (nameEl) nameEl.textContent = battlePlayerItem.name;
   const priceEl = document.getElementById('battlePlayerPrice');
-  if (priceEl) priceEl.textContent = formatCredits(item.price);
+  if (priceEl) priceEl.textContent = formatCredits(marketPrice);
   document.getElementById('battlePlayerSlot')?.classList.add('filled');
   clearBattleOpponent();
   const outcome = document.getElementById('battleOutcome');
@@ -9110,10 +9330,15 @@ function setBattlePlayer(item) {
 
 function pickBotOpponent(basePrice) {
   const lo = basePrice * 0.65, hi = basePrice * 1.45;
-  const pool = CS2_SKINS.filter(s => isUsableSkin(s) && s.price >= lo && s.price <= hi);
-  const pick = pool.length ? pool[Math.floor(Math.random() * pool.length)] : CS2_SKINS[Math.floor(Math.random() * CS2_SKINS.length)];
-  const wear = rollWear();
-  setBattleOpponent({ ...pick, wear, price: marketPriceForWear(pick, wear) }, ['Bot_Bohdan', 'Bot_Voxxa', 'Bot_Fennec', 'Bot_Raven', 'Bot_M0rsik'][Math.floor(Math.random() * 5)], true);
+  const marketPool = CS2_SKINS.map(skin => marketReadyCatalogSkin(skin)).filter(Boolean);
+  const pool = marketPool.filter(skin => skin.price >= lo && skin.price <= hi);
+  const pick = pool.length ? pool[Math.floor(Math.random() * pool.length)] : marketPool[Math.floor(Math.random() * marketPool.length)];
+  if (!pick) {
+    showToast('Немає підтвердженої Steam-ціни для ставки бота. Онови каталог.', 'warn');
+    clearBattleOpponent();
+    return;
+  }
+  setBattleOpponent(pick, ['Bot_Bohdan', 'Bot_Voxxa', 'Bot_Fennec', 'Bot_Raven', 'Bot_M0rsik'][Math.floor(Math.random() * 5)], true);
 }
 
 function rerollBattleBot() {
@@ -9200,6 +9425,11 @@ function startBattle() {
     document.getElementById('battlePlayerFilled')?.classList.add('hidden');
     const startBtn = document.getElementById('battleStartBtn');
     if (startBtn) startBtn.disabled = true;
+    return;
+  }
+  if (!verifiedInventoryMarketPrice(battlePlayerItem) || !verifiedInventoryMarketPrice(battleBotItem)) {
+    if (!verifiedInventoryMarketPrice(battlePlayerItem)) requestInventoryMarketPrice(battlePlayerItem);
+    showToast('Бій чекає на підтверджені Steam-ціни обох ставок.', 'warn');
     return;
   }
   const playerStake = battlePlayerItem;
@@ -10134,7 +10364,7 @@ function royalePickCatalogSkinForValue(catalog, wantedValue, usedCatalogIds) {
   const bestFits = candidates
     .map(skin => ({
       skin,
-      distance: Math.abs(Math.log((Math.max(1, Number(skin.price) || 1) + 10) / (desired + 10))),
+      distance: Math.abs(Math.log((Math.max(1, verifiedMarketPriceForWear(skin)) + 10) / (desired + 10))),
     }))
     .sort((left, right) => left.distance - right.distance)
     .slice(0, Math.min(10, candidates.length));
@@ -10142,7 +10372,7 @@ function royalePickCatalogSkinForValue(catalog, wantedValue, usedCatalogIds) {
 }
 
 function royaleCreateBotPool(targetValue, botIndex, requestedCount = 1, usedCatalogIds = new Set()) {
-  const catalog = (CS2_SKINS || []).filter(isUsableSkin);
+  const catalog = (CS2_SKINS || []).map(skin => marketReadyCatalogSkin(skin)).filter(Boolean);
   if (!catalog.length) return [];
   const itemCount = Math.max(1, Math.min(ROYALE_MAX_SKINS, Math.floor(Number(requestedCount) || 1)));
   let remainingTarget = Math.max(itemCount, Math.round(Number(targetValue) || itemCount));
@@ -10152,12 +10382,12 @@ function royaleCreateBotPool(targetValue, botIndex, requestedCount = 1, usedCata
     const source = royalePickCatalogSkinForValue(catalog, remainingTarget / slotsLeft, usedCatalogIds);
     if (!source) break;
     usedCatalogIds.add(getSkinKey(source));
-    // makeDemoItem preserves source.basePrice/source.price and applies the
-    // same item rules as the rest of the game.  Never replace a real catalogue
-    // price with the balancing target: bots must stake actual visible skins.
+    // Never replace a real catalogue price with the balancing target: bots
+    // stake only an exact confirmed FT market quote.
     const botSkin = makeDemoItem({ ...source, wear: WEAR_TIERS[2] }, `-royale-ai-${botIndex}-${index}`);
+    if (!botSkin || !verifiedInventoryMarketPrice(botSkin)) continue;
     pool.push(botSkin);
-    remainingTarget = Math.max(0, remainingTarget - Number(botSkin.price || 0));
+    remainingTarget = Math.max(0, remainingTarget - verifiedInventoryMarketPrice(botSkin));
   }
   return pool;
 }
@@ -10183,7 +10413,7 @@ function royaleAddSkin() {
   if (royaleInProgress || (royaleMode === 'live' && royaleLiveTicket)) return;
   const limit = royaleMode === 'live' ? ROYALE_LIVE_MAX_SKINS : ROYALE_MAX_SKINS;
   if (royalePlayerSkins.length >= limit) return showToast(`Максимум ${limit} ${limit === 1 ? 'скін' : 'скінів'} для цього режиму`, 'warn');
-  const available = userInventory.filter(skin => !royalePlayerSkins.some(selected => selected.id === skin.id));
+  const available = userInventory.filter(skin => !royalePlayerSkins.some(selected => selected.id === skin.id) && verifiedInventoryMarketPrice(skin));
   if (!available.length) return showToast('У сховищі немає доступних скінів.', 'warn');
   const grid = document.getElementById('royalePickGrid');
   const count = document.getElementById('royalePickCount');
@@ -10199,7 +10429,7 @@ function royaleAddSkin() {
     grid.innerHTML = available.map(skin => {
       const isSelected = selectedIds.has(String(skin.id));
       const wear = getWear(skin);
-      return `<button type="button" data-royale-select="${escapeHtml(String(skin.id))}" aria-pressed="${isSelected}" class="relative bg-brand-card border rounded-xl p-3 flex flex-col items-center transition ${isSelected ? 'border-amber-400 bg-amber-400/10 ring-1 ring-amber-300/50' : 'border-brand-border hover:bg-gray-800'}"><span class="wear-badge wear-${wear.code} self-start">${wear.code}</span>${isSelected ? '<span class="absolute right-2 top-2 grid h-5 w-5 place-items-center rounded-full bg-amber-400 text-[10px] text-slate-950"><i class="fa-solid fa-check"></i></span>' : ''}<img src="${escapeHtml(getSkinImageSrc(skin))}" alt="" class="h-16 object-contain mt-1" onerror="handleSkinImageError(this)"><p class="mt-1 text-xs font-bold text-white truncate w-full text-center">${escapeHtml(skin.name)}</p><p class="text-amber-400 text-xs font-extrabold">${formatCredits(skin.price)}</p></button>`;
+      return `<button type="button" data-royale-select="${escapeHtml(String(skin.id))}" aria-pressed="${isSelected}" class="relative bg-brand-card border rounded-xl p-3 flex flex-col items-center transition ${isSelected ? 'border-amber-400 bg-amber-400/10 ring-1 ring-amber-300/50' : 'border-brand-border hover:bg-gray-800'}"><span class="wear-badge wear-${wear.code} self-start">${wear.code}</span>${isSelected ? '<span class="absolute right-2 top-2 grid h-5 w-5 place-items-center rounded-full bg-amber-400 text-[10px] text-slate-950"><i class="fa-solid fa-check"></i></span>' : ''}<img src="${escapeHtml(getSkinImageSrc(skin))}" alt="" class="h-16 object-contain mt-1" onerror="handleSkinImageError(this)"><p class="mt-1 text-xs font-bold text-white truncate w-full text-center">${escapeHtml(skin.name)}</p><p class="text-amber-400 text-xs font-extrabold">${formatCredits(verifiedInventoryMarketPrice(skin))}</p></button>`;
     }).join('');
     grid.querySelectorAll('[data-royale-select]').forEach(button => button.addEventListener('click', () => {
       const id = button.dataset.royaleSelect;
@@ -10413,10 +10643,10 @@ async function joinLiveRoyale() {
   if (pendingWager || isCaseOpening || isFreeCaseOpening) return showToast('Спочатку дочекайся завершення поточного раунду.', 'warn');
   const skins = royalePlayerSkins.slice(0, ROYALE_LIVE_MAX_SKINS);
   if (!skins.length) return showToast('Додай від 1 до 10 віртуальних скінів у відкритий банк.', 'warn');
-  if (!skins.every(skin => userInventory.some(item => item.id === skin.id))) {
-    royalePlayerSkins = royalePlayerSkins.filter(skin => userInventory.some(item => item.id === skin.id));
+  if (!skins.every(skin => userInventory.some(item => item.id === skin.id) && verifiedInventoryMarketPrice(skin))) {
+    royalePlayerSkins = royalePlayerSkins.filter(skin => userInventory.some(item => item.id === skin.id) && verifiedInventoryMarketPrice(skin));
     renderRoyaleDeck();
-    return showToast('Один зі скінів уже недоступний. Обери його ще раз.', 'warn');
+    return showToast('Потрібні підтверджені Steam-ціни всіх скінів у банку.', 'warn');
   }
   const ticketId = makeUuid();
   const wagerId = beginPendingWager({ inventory: skins });
@@ -10447,9 +10677,9 @@ function startRoyale() {
   if (royaleInProgress) return;
   if (pendingWager || isCaseOpening || isFreeCaseOpening) return showToast('Спочатку дочекайся завершення поточного раунду', 'warn');
   if (!royalePlayerSkins.length) return showToast('Додай хоча б один скін у банк.', 'warn');
-  if (!royalePlayerSkins.every(skin => userInventory.some(owned => owned.id === skin.id))) {
+  if (!royalePlayerSkins.every(skin => userInventory.some(owned => owned.id === skin.id) && verifiedInventoryMarketPrice(skin))) {
     showToast('Один зі скінів уже недоступний. Оновлюємо внесок.', 'warn');
-    royalePlayerSkins = royalePlayerSkins.filter(skin => userInventory.some(owned => owned.id === skin.id));
+    royalePlayerSkins = royalePlayerSkins.filter(skin => userInventory.some(owned => owned.id === skin.id) && verifiedInventoryMarketPrice(skin));
     royaleGenerateBots();
     renderRoyaleDeck();
     return;
@@ -10540,7 +10770,7 @@ function royaleSettle(winnerIndex, wagerId, frozenParticipants = royaleParticipa
   const title = document.getElementById('royaleWinTitle');
   const sub = document.getElementById('royaleWinSub');
   if (userWon) {
-    allPotSkins.forEach(skin => userInventory.push(makeDemoItem(skin, '-royale')));
+    allPotSkins.map(skin => makeDemoItem(skin, '-royale')).filter(Boolean).forEach(skin => userInventory.push(skin));
     const topSkin = allPotSkins.reduce((best, skin) => Number(skin.price || 0) > Number(best?.price || 0) ? skin : best, null);
     if (topSkin) addActivityEvent({ player: currentUser.name || 'Ти', skin: topSkin, outcome: 'win', communityKind: 'royale' });
     gameState.stats.battleWins = (gameState.stats.battleWins || 0) + 1;
@@ -10607,7 +10837,7 @@ function pickContractSlot(idx) {
   const g = document.getElementById('contractPickGrid');
   if (!g) return;
   const used = new Set(contractItems.filter(Boolean).map(i => i.id));
-  const available = userInventory.filter(s => !used.has(s.id));
+  const available = userInventory.filter(s => !used.has(s.id) && verifiedInventoryMarketPrice(s));
   if (!available.length) {
     g.innerHTML = '<div class="col-span-full py-10 text-center text-sm text-gray-400">Усі предмети з інвентарю вже додано до контракту.</div>';
   } else {
@@ -10617,7 +10847,7 @@ function pickContractSlot(idx) {
         <span class="wear-badge wear-${wear.code} self-start">${wear.code}</span>
         <img src="${escapeHtml(getSkinImageSrc(s))}" alt="" data-skin-name="${escapeHtml(s.name)}" class="h-16 object-contain mt-1" onerror="handleSkinImageError(this)">
         <p class="mt-1 text-xs font-bold text-white truncate w-full text-center">${escapeHtml(s.name)}</p>
-        <p class="text-amber-400 text-xs font-extrabold">${formatCredits(s.price)}</p>
+        <p class="text-amber-400 text-xs font-extrabold">${formatCredits(verifiedInventoryMarketPrice(s))}</p>
       </button>`;
     }).join('');
     g.querySelectorAll('[data-contract-pick]').forEach(b => b.addEventListener('click', () => {
@@ -10644,7 +10874,7 @@ function renderContractSlots() {
       el.innerHTML = '<i class="fa-solid fa-plus text-2xl text-amber-500/60"></i>';
     }
   });
-  const total = contractItems.filter(Boolean).reduce((s, i) => s + (i.price || 0), 0);
+  const total = contractItems.filter(Boolean).reduce((sum, item) => sum + verifiedInventoryMarketPrice(item), 0);
   const tv = document.getElementById('contractTotalValue');
   if (tv) tv.textContent = formatCredits(total);
   const range = document.getElementById('contractRangeValue');
@@ -10663,7 +10893,7 @@ function clearContract() {
   renderContractSlots();
 }
 
-function executeContract() {
+async function executeContract() {
   if (pendingWager || isCaseOpening || isFreeCaseOpening || isRolling) {
     showToast('Спочатку дочекайся завершення поточного раунду', 'warn');
     return;
@@ -10680,16 +10910,29 @@ function executeContract() {
     renderContractSlots();
     return;
   }
-  const total = items.reduce((s, i) => s + (i.price || 0), 0);
+  if (!items.every(verifiedInventoryMarketPrice)) {
+    items.filter(item => !verifiedInventoryMarketPrice(item)).forEach(requestInventoryMarketPrice);
+    showToast('Контракт чекає на підтверджені Steam-ціни всіх предметів.', 'warn');
+    return;
+  }
+  const total = items.reduce((sum, item) => sum + verifiedInventoryMarketPrice(item), 0);
   const lo = total * 0.75, hi = total * 1.35;
-  let pool = CS2_SKINS.filter(s => isUsableSkin(s) && s.price >= lo && s.price <= hi);
+  const getVerifiedPool = () => CS2_SKINS
+    .map(skin => marketReadyCatalogSkin(skin))
+    .filter(Boolean)
+    .filter(skin => skin.price >= lo && skin.price <= hi);
+  let pool = getVerifiedPool();
   if (!pool.length) {
-    const targetMid = total;
-    const sortedByDiff = [...CS2_SKINS.filter(isUsableSkin)].sort((a, b) => Math.abs(a.price - targetMid) - Math.abs(b.price - targetMid));
-    pool = sortedByDiff.slice(0, 10);
+    // Legacy catalogue values may only guide which names to ask Steam about;
+    // they are never used to choose or value the result.
+    const probe = [...CS2_SKINS.filter(isUsableSkin)]
+      .sort((left, right) => Math.abs(Number(left.price || 0) - total) - Math.abs(Number(right.price || 0) - total))
+      .slice(0, MARKET_PRICE_BATCH_SIZE);
+    if (probe.length) await syncSteamMarketPrices(probe);
+    pool = getVerifiedPool();
   }
   if (!pool.length) {
-    showToast('Каталог ще завантажується', 'warn');
+    showToast('Немає підтверджених Steam-цін у діапазоні контракту. Баланс не змінено.', 'warn');
     return;
   }
   const pick = pool[Math.floor(Math.random() * pool.length)];
@@ -10849,11 +11092,48 @@ async function fetchSkinCatalog(url) {
 let completeSkinCatalogReady = false;
 let completeSkinCatalogPromise = null;
 let steamMarketPricePromise = null;
+const MARKET_PRICE_BATCH_SIZE = 80;
+const SHOP_PRICE_RETRY_MS = 60_000;
+const shopMarketQuoteRequestedAt = new Map();
 
 function marketDescriptor(skin, wear = WEAR_TIERS[2]) {
   const id = cleanText(skin?.id, 128);
   const code = normalizeWear(wear).code;
   return id ? { id, wear: code } : null;
+}
+
+function verifiedMarketPriceForWear(skin, wear = WEAR_TIERS[2]) {
+  const code = normalizeWear(wear).code;
+  const price = Number(skin?.marketPrices?.[code]);
+  return Number.isFinite(price) && price > 0 ? roundPc(price) : 0;
+}
+
+function marketReadyCatalogSkin(skin, wear = WEAR_TIERS[2]) {
+  const normalizedWear = normalizeWear(wear);
+  const price = verifiedMarketPriceForWear(skin, normalizedWear);
+  return price ? { ...skin, wear: normalizedWear, basePrice: price, marketPrice: price, price } : null;
+}
+
+function marketQuoteMeta(skin) {
+  const source = cleanText(skin?.marketSource, 48);
+  const sourceLabel = source === 'OpenSkin Steam feed' ? 'Steam через OpenSkin' : source === 'Steam Community Market' ? 'Steam Market' : 'Steam';
+  const updatedAt = Number(skin?.marketUpdatedAt) || 0;
+  if (!updatedAt || updatedAt > Date.now()) return `${sourceLabel} · FT`;
+  const hours = Math.max(0, Math.floor((Date.now() - updatedAt) / 3_600_000));
+  const age = hours < 1 ? 'щойно' : hours < 24 ? `${hours} год тому` : `${Math.floor(hours / 24)} дн тому`;
+  return `${sourceLabel} · ${age}`;
+}
+
+function warmVisibleShopMarketPrices(skins) {
+  const now = Date.now();
+  const candidates = (Array.isArray(skins) ? skins : [])
+    .filter(isUsableSkin)
+    .filter(skin => !verifiedMarketPriceForWear(skin))
+    .filter(skin => now - Number(shopMarketQuoteRequestedAt.get(getSkinKey(skin)) || 0) >= SHOP_PRICE_RETRY_MS)
+    .slice(0, MARKET_PRICE_BATCH_SIZE);
+  if (!candidates.length) return;
+  candidates.forEach(skin => shopMarketQuoteRequestedAt.set(getSkinKey(skin), now));
+  void syncSteamMarketPrices(candidates);
 }
 
 function applySteamMarketQuotes(quotes) {
@@ -10898,11 +11178,10 @@ async function syncSteamMarketPrices(skins, wear = WEAR_TIERS[2]) {
     .map(item => [`${item.id}:${item.wear}`, item])).values()];
   if (!requested.length) return [];
   const batches = [];
-  for (let index = 0; index < requested.length; index += 8) batches.push(requested.slice(index, index + 8));
-  const quotes = [];
-  for (const items of batches) {
+  for (let index = 0; index < requested.length; index += MARKET_PRICE_BATCH_SIZE) batches.push(requested.slice(index, index + MARKET_PRICE_BATCH_SIZE));
+  const responses = await Promise.all(batches.map(async items => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 14_000);
+    const timeout = setTimeout(() => controller.abort(), 24_000);
     try {
       const response = await fetch(gameApiUrl('/api/catalog/market-prices'), {
         method: 'POST',
@@ -10912,14 +11191,16 @@ async function syncSteamMarketPrices(skins, wear = WEAR_TIERS[2]) {
         signal: controller.signal
       });
       const data = await response.json().catch(() => ({}));
-      if (response.ok && Array.isArray(data?.quotes)) quotes.push(...data.quotes);
+      return response.ok && Array.isArray(data?.quotes) ? data.quotes : [];
     } catch {
-      // The existing virtual reference remains visible while Steam or a
-      // connection is unavailable. We never invent a market price locally.
+      // A failed market request leaves the card in its explicit unavailable
+      // state. We never replace it with a generated local value.
+      return [];
     } finally {
       clearTimeout(timeout);
     }
-  }
+  }));
+  const quotes = responses.flat();
   if (applySteamMarketQuotes(quotes)) {
     filterShop();
     renderCaseTopDrops();
@@ -10934,38 +11215,44 @@ function refreshMarketPriceForSkin(skin, wear = WEAR_TIERS[2]) {
   return syncSteamMarketPrices([skin], wear).then(quotes => quotes.find(quote => quote?.available && String(quote.id) === descriptor.id && quote.wear === descriptor.wear) || null);
 }
 
-async function refreshRecentInventoryMarketPrices(limit = 8) {
-  const candidates = userInventory
-    .filter(item => !item.marketPrice && cleanText(item?.name, 160))
-    .sort((left, right) => Number(right.addedAt || 0) - Number(left.addedAt || 0))
-    .slice(0, limit);
-  if (!candidates.length) return;
-  const catalogByName = new Map(CS2_SKINS.map(skin => [normalizeSkinName(skin.name), skin]));
-  const groups = new Map();
-  candidates.forEach(item => {
-    const skin = catalogByName.get(normalizeSkinName(item.name));
-    const wear = getWear(item);
-    if (!skin) return;
-    const bucket = groups.get(wear.code) || { wear, skins: [] };
-    bucket.skins.push(skin);
-    groups.set(wear.code, bucket);
-  });
-  await Promise.all([...groups.values()].map(group => syncSteamMarketPrices(group.skins, group.wear)));
-  let changed = false;
-  candidates.forEach(item => {
-    const skin = catalogByName.get(normalizeSkinName(item.name));
-    const quote = skin && Number(skin.marketPrices?.[getWear(item).code]);
-    if (!Number.isFinite(quote) || quote <= 0) return;
-    item.marketPrice = roundPc(quote);
-    item.price = item.marketPrice;
-    item.marketUpdatedAt = Date.now();
-    changed = true;
-  });
-  if (changed) {
-    saveState();
-    renderInventoryGrid();
-    renderProfileInventory();
-  }
+let inventoryMarketRefreshPromise = null;
+
+function refreshRecentInventoryMarketPrices(limit = 80) {
+  if (inventoryMarketRefreshPromise) return inventoryMarketRefreshPromise;
+  inventoryMarketRefreshPromise = (async () => {
+    const candidates = userInventory
+      .filter(item => !verifiedInventoryMarketPrice(item) && cleanText(item?.name, 160))
+      .sort((left, right) => Number(right.addedAt || 0) - Number(left.addedAt || 0))
+      .slice(0, Math.max(1, Math.min(MARKET_PRICE_BATCH_SIZE, Number(limit) || MARKET_PRICE_BATCH_SIZE)));
+    if (!candidates.length) return;
+    const catalogByName = new Map(CS2_SKINS.map(skin => [normalizeSkinName(skin.name), skin]));
+    const groups = new Map();
+    candidates.forEach(item => {
+      const skin = catalogByName.get(normalizeSkinName(item.name));
+      const wear = getWear(item);
+      if (!skin) return;
+      const bucket = groups.get(wear.code) || { wear, skins: [] };
+      bucket.skins.push(skin);
+      groups.set(wear.code, bucket);
+    });
+    await Promise.all([...groups.values()].map(group => syncSteamMarketPrices(group.skins, group.wear)));
+    let changed = false;
+    candidates.forEach(item => {
+      const skin = catalogByName.get(normalizeSkinName(item.name));
+      const quote = skin && Number(skin.marketPrices?.[getWear(item).code]);
+      if (!Number.isFinite(quote) || quote <= 0) return;
+      item.marketPrice = roundPc(quote);
+      item.price = item.marketPrice;
+      item.marketUpdatedAt = Date.now();
+      changed = true;
+    });
+    if (changed) {
+      saveState();
+      renderInventoryGrid();
+      renderProfileInventory();
+    }
+  })().finally(() => { inventoryMarketRefreshPromise = null; });
+  return inventoryMarketRefreshPromise;
 }
 
 function loadCompleteSkinCatalog() {
@@ -11001,11 +11288,9 @@ function loadCompleteSkinCatalog() {
       renderGameHub();
       renderCaseTopDrops();
       renderCaseButtons();
-      // Warm only the featured cards. Further quotes are requested when a
-      // skin is actually created, so opening the catalogue never mass-queries
-      // Steam for thousands of names.
-      void syncSteamMarketPrices(CS2_SKINS.filter(skin => Object.hasOwn(FEATURED_SKIN_PRICES, skin.name)).slice(0, 8))
-        .then(() => refreshRecentInventoryMarketPrices());
+      // Existing inventory comes first: those values drive every economic
+      // action, unlike decorative catalogue cards.
+      void refreshRecentInventoryMarketPrices(80);
       return;
     }
 
@@ -11049,8 +11334,7 @@ function loadCompleteSkinCatalog() {
     renderGameHub();
     renderCaseTopDrops();
     renderCaseButtons();
-    void syncSteamMarketPrices(CS2_SKINS.filter(skin => Object.hasOwn(FEATURED_SKIN_PRICES, skin.name)).slice(0, 8))
-      .then(() => refreshRecentInventoryMarketPrices());
+    void refreshRecentInventoryMarketPrices(80);
   } catch {
     filteredSkins = CS2_SKINS;
     renderShopGrid(filteredSkins);
@@ -11085,132 +11369,6 @@ function resetShopFilters() {
   filterShop();
 }
 
-const MARKET_TICK_MS = 5 * 60 * 1000;
-
-function hashMarketSeed(seed) {
-  let h = 2166136261;
-  for (let i = 0; i < seed.length; i++) {
-    h ^= seed.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-function getMarketTick() {
-  return Math.floor(Date.now() / MARKET_TICK_MS);
-}
-
-function getMarketMultiplier(skin, tick = getMarketTick()) {
-  const skinKey = String(skin?.sourceSkinId || skin?.id || skin?.name || 'cs2');
-  // A daily value keeps the market coherent; a smaller 5-minute value creates
-  // visible, bounded movement instead of altering the underlying game value.
-  const dailyHash = hashMarketSeed(`${getTodayKey()}|${skinKey}|daily`);
-  const tickHash = hashMarketSeed(`${getTodayKey()}|${skinKey}|${tick}`);
-  const dailyMultiplier = 0.92 + (dailyHash % 1601) / 10_000;
-  const tickMultiplier = 0.985 + (tickHash % 301) / 10_000;
-  return dailyMultiplier * tickMultiplier;
-}
-
-function getFloatedPrice(skin) {
-  const base = Number(skin.basePrice ?? skin.price) || 0;
-  return Math.max(1, Math.round(base * getMarketMultiplier(skin)));
-}
-
-function getMarketDayKey(timestamp) {
-  const date = new Date(timestamp);
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 10);
-}
-
-function getMarketMultiplierAt(skin, timestamp) {
-  const skinKey = String(skin?.sourceSkinId || skin?.id || skin?.name || 'cs2');
-  const dayKey = getMarketDayKey(timestamp);
-  const tick = Math.floor(timestamp / MARKET_TICK_MS);
-  const dailyHash = hashMarketSeed(`${dayKey}|${skinKey}|daily`);
-  const tickHash = hashMarketSeed(`${dayKey}|${skinKey}|${tick}`);
-  return (0.92 + (dailyHash % 1601) / 10_000) * (0.985 + (tickHash % 301) / 10_000);
-}
-
-function getMarketReference(item) {
-  const basePrice = Math.max(1, Number(item?.price) || Number(item?.basePrice) || 1);
-  return { ...item, basePrice };
-}
-
-function getMarketHistory(item, hours = 24) {
-  const ref = getMarketReference(item);
-  const now = Date.now();
-  const pointCount = Math.max(2, Math.min(48, Math.round(hours) + 1));
-  return Array.from({ length: pointCount }, (_, index) => {
-    const timestamp = now - (pointCount - 1 - index) * 60 * 60 * 1000;
-    return Math.max(1, Math.round(ref.basePrice * getMarketMultiplierAt(ref, timestamp)));
-  });
-}
-
-function buildMarketSparkline(values) {
-  const data = values.map(value => Math.max(1, Number(value) || 1));
-  const width = 260;
-  const height = 72;
-  const padding = 6;
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const span = Math.max(1, max - min);
-  const points = data.map((value, index) => {
-    const x = padding + index * (width - padding * 2) / Math.max(1, data.length - 1);
-    const y = height - padding - ((value - min) / span) * (height - padding * 2);
-    return `${x.toFixed(2)},${y.toFixed(2)}`;
-  });
-  const rising = data[data.length - 1] >= data[0];
-  const color = rising ? '#34d399' : '#f87171';
-  const fill = rising ? 'rgba(52,211,153,.18)' : 'rgba(248,113,113,.18)';
-  const area = `M ${padding},${height - padding} L ${points.join(' L ')} L ${width - padding},${height - padding} Z`;
-  const [lastX, lastY] = points[points.length - 1].split(',');
-  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Динаміка ціни за 24 години" preserveAspectRatio="none"><path d="${area}" fill="${fill}"></path><polyline points="${points.join(' ')}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></polyline><circle cx="${lastX}" cy="${lastY}" r="3.5" fill="${color}"></circle></svg>`;
-}
-
-function getMarketSnapshot(item) {
-  const ref = getMarketReference(item);
-  const history = getMarketHistory(ref, 24);
-  const current = getFloatedPrice(ref);
-  history[history.length - 1] = current;
-  const start = history[0] || current;
-  const change = start > 0 ? ((current / start) - 1) * 100 : 0;
-  return {
-    current,
-    history,
-    change,
-    low: Math.min(...history),
-    high: Math.max(...history),
-    color: change >= 0 ? 'emerald' : 'red'
-  };
-}
-
-function getTrend(skin) {
-  const tick = getMarketTick();
-  const current = getMarketMultiplier(skin, tick);
-  const previous = getMarketMultiplier(skin, tick - 1);
-  const change = previous > 0 ? ((current / previous) - 1) * 100 : 0;
-  const percent = Math.abs(change).toFixed(1);
-  if (change > 0.05) return { dir: 'up', arrow: '↑', cls: 'trend-up', label: `+${percent}%` };
-  if (change < -0.05) return { dir: 'down', arrow: '↓', cls: 'trend-down', label: `−${percent}%` };
-  return { dir: 'flat', arrow: '•', cls: 'trend-flat', label: '0.0%' };
-}
-
-function getMarketSkin(skin) {
-  if (!skin) return skin;
-  const basePrice = Number(skin.basePrice ?? skin.price) || 1;
-  return { ...skin, basePrice, price: getFloatedPrice(skin) };
-}
-
-function startMarketTicker() {
-  let renderedTick = getMarketTick();
-  setInterval(() => {
-    const nextTick = getMarketTick();
-    if (nextTick === renderedTick) return;
-    renderedTick = nextTick;
-    if (document.getElementById('shopModal')?.classList.contains('flex')) filterShop();
-  }, 30_000);
-}
-
 let filterShopTimeout = null;
 function debounceFilterShop() {
   clearTimeout(filterShopTimeout);
@@ -11240,15 +11398,16 @@ function filterShop() {
   let list = CS2_SKINS.filter(s => {
     if (!isUsableSkin(s)) return false;
     if (cat !== 'all' && s.category !== cat) return false;
-    const marketPrice = getFloatedPrice(s);
-    if (marketPrice < minP || marketPrice > maxP) return false;
-    if (marketPrice <= minTarget) return false;
+    const marketPrice = verifiedMarketPriceForWear(s);
+    if (minP > 0 && (!marketPrice || marketPrice < minP)) return false;
+    if (maxP !== Infinity && (!marketPrice || marketPrice > maxP)) return false;
+    if (minTarget > 0 && (!marketPrice || marketPrice <= minTarget)) return false;
     if (!q) return true;
     return `${s.name} ${s.weapon || ''}`.toLowerCase().includes(q);
   });
 
-  if (sort === 'price-asc') list.sort((a, b) => getFloatedPrice(a) - getFloatedPrice(b));
-  else if (sort === 'price-desc') list.sort((a, b) => getFloatedPrice(b) - getFloatedPrice(a));
+  if (sort === 'price-asc') list.sort((a, b) => (verifiedMarketPriceForWear(a) || Number.MAX_SAFE_INTEGER) - (verifiedMarketPriceForWear(b) || Number.MAX_SAFE_INTEGER));
+  else if (sort === 'price-desc') list.sort((a, b) => (verifiedMarketPriceForWear(b) || -1) - (verifiedMarketPriceForWear(a) || -1));
   else list.sort((a, b) => a.name.localeCompare(b.name));
 
   filteredSkins = list;
@@ -11277,16 +11436,17 @@ function renderShopGrid(skins) {
   }
 
   g.innerHTML = shown.map(s => {
-    const floated = getFloatedPrice(s);
-    const trend = getTrend(s);
+    const marketPrice = verifiedMarketPriceForWear(s);
+    const priceMarkup = marketPrice
+      ? `<p class="text-amber-400 font-extrabold text-xs mt-0.5">${formatCredits(marketPrice)}</p><p class="text-[9px] text-gray-500">${escapeHtml(marketQuoteMeta(s))}</p>`
+      : '<p class="text-cyan-300 font-extrabold text-[11px] mt-1"><i class="fa-solid fa-arrows-rotate fa-spin-pulse mr-1"></i>Оновлюємо Steam</p><p class="text-[9px] text-gray-500">ціна ще не підтверджена</p>';
     return `<article data-skin-card="${escapeHtml(getSkinKey(s))}" class="skin-card relative bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 transition group focus-within:border-amber-500">
       <button type="button" data-select-skin-id="${escapeHtml(getSkinKey(s))}" class="w-full text-left flex flex-col items-center justify-between focus:outline-none">
         <img src="${escapeHtml(getSkinImageSrc(s))}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" class="h-20 w-full object-contain group-hover:scale-105 transition image-skeleton" loading="lazy" onerror="handleSkinImageError(this)">
         <div class="text-center w-full mt-2 min-w-0">
           <p class="font-bold text-xs text-white truncate" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</p>
           <p class="text-[10px] truncate mt-1" style="color:${escapeHtml(s.rarityColor || '#f59e0b')}">${escapeHtml(s.rarity)}</p>
-          <p class="text-amber-400 font-extrabold text-xs mt-0.5">${formatCredits(floated)} <span class="${trend.cls}" title="Зміна за останні 5 хвилин" aria-label="Зміна ціни ${trend.label}">${trend.arrow} ${trend.label}</span></p>
-          <p class="text-[9px] text-gray-500">від · FT</p>
+          ${priceMarkup}
         </div>
       </button>
       <button type="button" data-favorite-toggle="${escapeHtml(getSkinKey(s))}" title="Улюблене" class="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-lg border ${isFavorite(s) ? 'border-amber-400/60 bg-amber-500 text-black' : 'border-gray-700 bg-black/60 text-gray-400 hover:border-amber-400 hover:text-amber-300'}">
@@ -11294,6 +11454,8 @@ function renderShopGrid(skins) {
       </button>
     </article>`;
   }).join('');
+
+  warmVisibleShopMarketPrices(shown);
 
   g.querySelectorAll('[data-select-skin-id]').forEach(b => b.addEventListener('click', () => {
     const s = getSkinByKey(b.dataset.selectSkinId);
@@ -11333,7 +11495,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Keep first paint small: the full skin catalog is fetched lazily when its
   // modal is opened. Cases work from the bundled curated pool immediately.
-  startMarketTicker();
   startLiveFeedSimulation();
   startPresenceTracking();
   updateTopupUI();

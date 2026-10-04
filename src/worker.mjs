@@ -60,7 +60,10 @@ const CATALOG_STALE_TTL = 7 * 24 * 60 * 60_000
 // screen cannot turn into a browser-side scrape of Steam.
 const STEAM_MARKET_APP_ID = '730'
 const STEAM_MARKET_CURRENCY = '1' // USD
-const STEAM_MARKET_BATCH_LIMIT = 8
+// A shop viewport requests at most 80 entries. It is intentionally below the
+// public provider's 500-item batch ceiling and avoids one HTTP request per
+// card.
+const STEAM_MARKET_BATCH_LIMIT = 80
 const STEAM_MARKET_TTL = 6 * 60 * 60_000
 const STEAM_MARKET_STALE_TTL = 72 * 60 * 60_000
 // Steam may decline requests made from a shared Cloudflare egress IP. OpenSkin's
@@ -1335,10 +1338,11 @@ function battleListingResult(state, deviceId, ticketId, now) {
 }
 
 async function timedFetch(url, options = {}) {
+  const { timeoutMs = 10_000, ...fetchOptions } = options
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 10_000)
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    return await fetch(url, { ...options, signal: controller.signal })
+    return await fetch(url, { ...fetchOptions, signal: controller.signal })
   } finally {
     clearTimeout(timeout)
   }
@@ -3415,11 +3419,86 @@ export class PotuzhnoState {
     }
   }
 
+  async steamMarketBatchQuotes(requests) {
+    const now = Date.now()
+    const quotesByRequest = new Map()
+    const missing = []
+
+    for (const request of requests) {
+      const marketHashName = this.marketHashName(request.skin, request.wear)
+      const key = `market:usd:v2:${await sha256(marketHashName)}`
+      const cached = await this.storage.get(key)
+      const cacheAge = now - Number(cached?.updatedAt || 0)
+      const requestKey = `${request.skin.id}:${request.wear}`
+      if (cached?.available === true && cacheAge >= 0 && cacheAge < STEAM_MARKET_TTL) {
+        const sourceAge = now - Number(cached.sourceUpdatedAt || cached.updatedAt || 0)
+        quotesByRequest.set(requestKey, { ...cached, stale: sourceAge > STEAM_MARKET_TTL })
+      } else {
+        missing.push({ ...request, marketHashName, key, requestKey })
+      }
+    }
+
+    if (missing.length) {
+      try {
+        const response = await timedFetch(`${OPEN_SKIN_STEAM_ENDPOINT.replace('/prices/steam', '/prices/batch')}`, {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ items: missing.map(entry => entry.marketHashName) }),
+          timeoutMs: 20_000,
+        })
+        if (!response.ok) throw new Error(`OpenSkin Steam batch ${response.status}`)
+        const data = await response.json()
+        const entries = data?.data && typeof data.data === 'object' ? data.data : {}
+        const writes = []
+        for (const entry of missing) {
+          const steam = entries?.[entry.marketHashName]?.steam
+          const sourceUpdatedAt = Date.parse(cleanText(steam?.updated_at, 80))
+          const sourceAge = now - sourceUpdatedAt
+          const price = boundedMoney(steam?.ask ?? steam?.median, 0.01, MAX_PRICE, 0)
+          if (!Number.isFinite(sourceUpdatedAt) || sourceUpdatedAt <= 0 || sourceAge < -5 * 60_000 || sourceAge > OPEN_SKIN_MAX_SOURCE_AGE || !price) continue
+          const quote = {
+            available: true,
+            id: entry.skin.id,
+            wear: cleanText(entry.wear, 2).toUpperCase() || 'FT',
+            marketHashName: entry.marketHashName,
+            price,
+            medianPrice: boundedMoney(steam?.median, 0.01, MAX_PRICE, 0),
+            volume: cleanText(steam?.volume_24h, 24),
+            updatedAt: now,
+            sourceUpdatedAt,
+            source: 'OpenSkin Steam feed',
+          }
+          quotesByRequest.set(entry.requestKey, { ...quote, stale: sourceAge > STEAM_MARKET_TTL })
+          writes.push(this.storage.put(entry.key, quote))
+        }
+        await Promise.all(writes)
+      } catch {
+        // The endpoint will return an explicit unavailable quote below instead
+        // of silently falling back to a generated price.
+      }
+    }
+
+    return requests.map(request => {
+      const requestKey = `${request.skin.id}:${request.wear}`
+      return quotesByRequest.get(requestKey) || {
+        available: false,
+        id: request.skin.id,
+        wear: cleanText(request.wear, 2).toUpperCase() || 'FT',
+        marketHashName: this.marketHashName(request.skin, request.wear),
+        updatedAt: 0,
+        source: 'Unavailable',
+      }
+    })
+  }
+
   async marketPrices(request) {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
     let body
     try {
-      body = await this.readBody(request, 4_096)
+      body = await this.readBody(request, 16_384)
     } catch {
       return json({ error: 'Некоректний запит цін.' }, 400)
     }
@@ -3440,7 +3519,12 @@ export class PotuzhnoState {
       }
     }
     if (!unique.length) return json({ error: 'Не знайдено дозволених скінів у каталозі.' }, 400)
-    const quotes = await Promise.all(unique.map(({ skin, wear }) => this.steamMarketQuote(skin, wear)))
+    // Direct Steam stays first for an exact individual skin. For a visible
+    // shop page we use one Steam-feed batch instead of issuing dozens of edge
+    // requests that Steam can throttle or block.
+    const quotes = unique.length === 1
+      ? [await this.steamMarketQuote(unique[0].skin, unique[0].wear)]
+      : await this.steamMarketBatchQuotes(unique)
     return json({
       source: 'Steam Community Market',
       fallbackSource: 'OpenSkin Steam feed',
