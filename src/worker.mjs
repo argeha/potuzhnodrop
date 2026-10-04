@@ -3332,7 +3332,15 @@ export class PotuzhnoState {
       endpoint.searchParams.set('currency', STEAM_MARKET_CURRENCY)
       endpoint.searchParams.set('country', 'US')
       endpoint.searchParams.set('market_hash_name', marketHashName)
-      const response = await timedFetch(endpoint.href, { headers: { Accept: 'application/json' } })
+      const response = await timedFetch(endpoint.href, {
+        headers: {
+          Accept: 'application/json, text/plain, */*',
+          'Accept-Language': 'en-US,en;q=0.9',
+          // Steam sometimes rejects anonymous edge requests. This identifies
+          // the integration without forwarding any player data or cookies.
+          'User-Agent': 'PotuzhnoDrop/7.0 Steam-Market-Reference',
+        },
+      })
       if (!response.ok) throw new Error(`Steam Market ${response.status}`)
       const data = await response.json()
       const price = this.parseSteamUsd(data?.lowest_price) || this.parseSteamUsd(data?.median_price)
