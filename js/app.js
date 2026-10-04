@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 7.0.1 ============ */
+/* ============ ПОТУЖНО DROP 7.1.0 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -8,6 +8,7 @@ const STORAGE = {
   started: 'potuzhno_v2_started',
   bonusAt: 'potuzhno_v2_last_bonus',
   sound: 'potuzhno_v2_sound',
+  haptics: 'potuzhno_v7_haptics',
   game: 'potuzhno_v6_game',
   account: 'potuzhno_v6_account',
   topup: 'potuzhno_v5_topup',
@@ -22,12 +23,12 @@ const STORAGE = {
   adminGameRefresh: 'potuzhno_v6_admin_game_refresh'
 };
 
-const PAGES = ['upgrader', 'case', 'battle', 'royale', 'contract', 'tasks', 'profile', 'about'];
+const PAGES = ['hub', 'upgrader', 'case', 'battle', 'royale', 'contract', 'tasks', 'profile', 'stats', 'about'];
 
 let currentPage = null;
 function showPage(id) {
   renderHalloweenSeasonShell();
-  if (!PAGES.includes(id)) id = 'upgrader';
+  if (!PAGES.includes(id)) id = 'hub';
   if (currentPage === id && document.querySelector(`[data-page="${id}"]:not(.hidden)`)) {
     return;
   }
@@ -55,6 +56,7 @@ function showPage(id) {
   document.getElementById('mobileMenu')?.classList.add('hidden');
   window.scrollTo({ top: 0, behavior: 'smooth' });
 
+  if (id === 'hub') renderCommandHub();
   if (id === 'case') {
     updateFreeCaseBtn();
     renderCaseCatalog();
@@ -65,6 +67,7 @@ function showPage(id) {
     renderProfileInventory();
     updateAccountUI();
   }
+  if (id === 'stats') renderStatsPage();
   if (id === 'battle') {
     resetCoinVisual();
     renderBattleRoom();
@@ -80,7 +83,7 @@ function showPage(id) {
 }
 
 window.addEventListener('hashchange', () => {
-  const h = location.hash.replace('#', '') || 'upgrader';
+  const h = location.hash.replace('#', '') || 'hub';
   if (PAGES.includes(h) && h !== currentPage) showPage(h);
 });
 
@@ -113,7 +116,7 @@ const WEAR_TIERS = [
   { code: 'BS', name: 'Battle-Scarred', min: 0.45, max: 1, mult: 0.70 }
 ];
 
-// PC is a virtual balance with a one-to-one USD reference in 7.0.1. It is not
+// PC is a virtual balance with a one-to-one USD reference. It is not
 // money, cannot be withdrawn and cannot be exchanged for Steam inventory.
 const PC_USD_RATE = 1;
 const LEGACY_ECONOMY_SCALE = 0.01;
@@ -389,6 +392,7 @@ function marketPriceForWear(skin, wear) {
 let currentUser = null;
 let userInventory = [];
 let soundEnabled = true;
+let hapticsEnabled = true;
 let filteredSkins = CS2_SKINS;
 let visibleSkinCount = 80;
 let selectedInputMode = 'skin';
@@ -512,6 +516,9 @@ let contractActiveSlot = -1;
 
 let profileInvFilter = 'all';
 let profileInvSort = 'price-desc';
+let profileInvSource = 'all';
+let profileInvWear = 'all';
+let profileInvCollection = 'all';
 
 const DEMO_STARTING_BALANCE = 12;
 const ECONOMY_TASK_REWARD_MULTIPLIER = 0.004;
@@ -1632,8 +1639,8 @@ function getActiveSeason() {
 
 function getPageDisplayTitle(id) {
   const standard = {
-    upgrader: 'Апгрейд', case: 'Кейси', battle: 'Бій', royale: 'Battle Royale',
-    contract: 'Контракт', tasks: 'Завдання', profile: 'Профіль', about: 'Про гру'
+    hub: 'Ігровий центр', upgrader: 'Апгрейд', case: 'Кейси', battle: 'Бій', royale: 'Battle Royale',
+    contract: 'Контракт', tasks: 'Завдання', profile: 'Профіль', stats: 'Статистика', about: 'Про гру'
   };
   const season = getActiveSeason();
   return season ? (season.copy[id]?.title || standard[id] || 'Гра') : (standard[id] || 'Гра');
@@ -1692,7 +1699,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.0.1';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.1.0';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -3755,7 +3762,7 @@ function expandCloudInventoryItem(record, index = 0) {
 
 function buildPortableSave() {
   return {
-    version: '7.0.1',
+    version: '7.1.0',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -3778,7 +3785,7 @@ function buildCloudSave() {
   const portable = buildPortableSave();
   const cloudSave = {
     ...portable,
-    version: '7.0.1-cloud',
+    version: '7.1.0-cloud',
     inventoryEncoding: CLOUD_INVENTORY_ENCODING,
     inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
   };
@@ -3860,7 +3867,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '7.0.1-steam',
+    version: '7.1.0-steam',
     account: {
       ...snapshot.account,
       steamId,
@@ -4868,7 +4875,9 @@ function loadState() {
   const started = localStorage.getItem(STORAGE.started) === '1';
   const bal = clampNumber(localStorage.getItem(STORAGE.balance), 0, MAX_STORED_BALANCE, DEMO_STARTING_BALANCE);
   soundEnabled = localStorage.getItem(STORAGE.sound) !== 'off';
+  hapticsEnabled = localStorage.getItem(STORAGE.haptics) !== 'off';
   updateSoundUI();
+  updateHapticsUI();
 
   try {
     userInventory = JSON.parse(localStorage.getItem(STORAGE.inventory) || '[]');
@@ -5640,6 +5649,201 @@ function renderProfileSocial() {
   }
 }
 
+function getInventoryDuplicateCounts(items = userInventory) {
+  const counts = new Map();
+  (Array.isArray(items) ? items : []).forEach(item => {
+    const wear = getWear(item);
+    const key = `${normalizeSkinName(item?.name)}|${wear.code || ''}`;
+    if (!key || key === '|') return;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+  return counts;
+}
+
+function getInventoryDuplicateKey(item) {
+  const wear = getWear(item);
+  return `${normalizeSkinName(item?.name)}|${wear.code || ''}`;
+}
+
+function getInventorySource(item) {
+  if (item?.steamImported) return 'steam';
+  if (item?.exclusive) return 'exclusive';
+  return 'drop';
+}
+
+function getCollectionForInventoryItem(item) {
+  const name = normalizeSkinName(item?.name);
+  return COLLECTION_DEFINITIONS.find(collection => collection.items.some(entry => normalizeSkinName(entry) === name)) || null;
+}
+
+function renderCommandHub() {
+  if (!gameState) return;
+  ensureDailyState();
+  const level = getPlayerLevel();
+  const progress = getLevelProgress();
+  const name = cleanText(account?.nick || currentUser?.name || 'Гравець', 28) || 'Гравець';
+  const collectionValue = userInventory.reduce((sum, item) => sum + verifiedInventoryMarketPrice(item), 0);
+  const taskList = getDailyTasks();
+  const claimed = new Set(gameState.daily?.claimed || []);
+  const openTasks = taskList.map(task => {
+    const raw = Math.max(0, Number(task.value(gameState.daily)) || 0);
+    const current = Math.min(task.goal, raw);
+    return { task, current, done: current >= task.goal, claimed: claimed.has(task.id), percent: task.goal ? Math.round((current / task.goal) * 100) : 0 };
+  }).filter(entry => !entry.claimed).sort((left, right) => Number(right.done) - Number(left.done) || right.percent - left.percent).slice(0, 3);
+  const pendingClaims = openTasks.filter(entry => entry.done).length;
+  const duplicateCount = [...getInventoryDuplicateCounts().values()].reduce((sum, count) => sum + Math.max(0, count - 1), 0);
+  const completedCollections = COLLECTION_DEFINITIONS.filter(collection => getCollectionProgress(collection).complete).length;
+
+  const greeting = document.getElementById('hubGreeting');
+  if (greeting) greeting.textContent = pendingClaims
+    ? `${name}, у тебе ${pendingClaims} ${pendingClaims === 1 ? 'готова нагорода' : 'готові нагороди'} на сьогодні.`
+    : userInventory.length
+      ? `${name}, колекція синхронізована. Обери наступний режим або завершуй ціль.`
+      : `${name}, почни з кейса або підключи Steam, щоб зібрати свою вітрину.`;
+  const levelNode = document.getElementById('hubLevel');
+  if (levelNode) levelNode.textContent = `LVL ${level}`;
+  const xpNode = document.getElementById('hubXp');
+  if (xpNode) xpNode.textContent = `${progress.current.toLocaleString('uk-UA')} / ${progress.total.toLocaleString('uk-UA')} XP`;
+  const ring = document.getElementById('hubLevelRing');
+  if (ring) ring.style.setProperty('--hub-progress', `${progress.percent}%`);
+
+  const pulse = document.getElementById('hubPulseStats');
+  if (pulse) pulse.innerHTML = [
+    { icon: 'fa-coins', label: 'Баланс', value: formatCredits(currentUser?.balance || 0), accent: 'amber' },
+    { icon: 'fa-gem', label: 'Колекція', value: formatCredits(collectionValue), accent: 'cyan' },
+    { icon: 'fa-fire', label: 'Серія', value: `${Math.max(0, Number(gameState.dailyStreak?.current) || 0)} дн.`, accent: 'orange' },
+    { icon: 'fa-copy', label: 'Дублі', value: duplicateCount ? `×${duplicateCount}` : '—', accent: 'violet' }
+  ].map(stat => `<div class="command-hub-pulse-card is-${stat.accent}"><i class="fa-solid ${stat.icon}"></i><span>${stat.label}</span><strong>${stat.value}</strong></div>`).join('');
+
+  const focus = document.getElementById('hubDailyFocus');
+  if (focus) {
+    focus.innerHTML = openTasks.length
+      ? openTasks.map(entry => {
+        const goalLabel = entry.task.goal >= 1000 ? formatCredits(entry.task.goal) : String(entry.task.goal);
+        const currentLabel = entry.task.goal >= 1000 ? formatCredits(entry.current) : String(entry.current);
+        return `<div class="command-hub-focus-item ${entry.done ? 'is-ready' : ''}"><i class="fa-solid ${entry.task.icon}"></i><div><strong>${escapeHtml(entry.task.title)}</strong><span>${currentLabel} / ${goalLabel}</span><div><i style="width:${entry.percent}%"></i></div></div>${entry.done ? `<button type="button" data-hub-claim="${escapeHtml(entry.task.id)}">Забрати</button>` : '<button type="button" data-hub-open-tasks>До цілі</button>'}</div>`;
+      }).join('')
+      : '<div class="command-hub-empty"><i class="fa-solid fa-circle-check"></i><strong>На сьогодні все готово</strong><span>Повернись завтра за новими цілями.</span></div>';
+    focus.querySelectorAll('[data-hub-claim]').forEach(button => button.addEventListener('click', () => claimDailyTask(button.dataset.hubClaim)));
+    focus.querySelectorAll('[data-hub-open-tasks]').forEach(button => button.addEventListener('click', () => showPage('tasks')));
+  }
+
+  const collection = document.getElementById('hubCollectionPreview');
+  if (collection) {
+    const highlights = [...userInventory].sort((left, right) => verifiedInventoryMarketPrice(right) - verifiedInventoryMarketPrice(left)).slice(0, 3);
+    const collectionRows = COLLECTION_DEFINITIONS.map(definition => {
+      const state = getCollectionProgress(definition);
+      const percent = state.total ? Math.round((state.count / state.total) * 100) : 0;
+      return `<div class="command-hub-collection-progress"><span>${escapeHtml(definition.title)}</span><strong>${state.count}/${state.total}</strong><i><b style="width:${percent}%"></b></i></div>`;
+    }).join('');
+    collection.innerHTML = `<div class="command-hub-showcase">${highlights.length ? highlights.map(item => `<button type="button" data-hub-skin="${escapeHtml(String(item.id))}" title="Деталі: ${escapeHtml(item.name)}"><img src="${escapeHtml(getSkinImageSrc(item))}" alt="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><span>${escapeHtml(item.name)}</span><small>${verifiedInventoryMarketPrice(item) ? formatCredits(verifiedInventoryMarketPrice(item)) : 'Steam…'}</small></button>`).join('') : '<div class="command-hub-empty"><i class="fa-solid fa-box-open"></i><strong>Колекція ще порожня</strong><span>Перший дроп з’явиться тут.</span></div>'}</div><div class="command-hub-collection-summary"><span>Завершено колекцій</span><strong>${completedCollections} / ${COLLECTION_DEFINITIONS.length}</strong></div><div class="command-hub-collection-list">${collectionRows}</div>`;
+    collection.querySelectorAll('[data-hub-skin]').forEach(button => button.addEventListener('click', () => showItemDetail(button.dataset.hubSkin)));
+  }
+}
+
+function getRecentRoundLedger(rounds = gameState?.rounds) {
+  const list = Array.isArray(rounds) ? rounds : [];
+  return list.reduce((summary, round) => {
+    const stake = Math.max(0, Number(round?.inputValue) || 0);
+    const payout = round?.win ? Math.max(0, Number(round?.targetValue) || 0) : 0;
+    summary.staked += stake;
+    summary.payout += payout;
+    summary.wins += round?.win ? 1 : 0;
+    return summary;
+  }, { staked: 0, payout: 0, wins: 0 });
+}
+
+function renderStatsPage() {
+  if (!gameState) return;
+  const stats = gameState.stats || {};
+  const allTime = gameState.allTime || createDefaultAllTime();
+  const rounds = Array.isArray(gameState.rounds) ? gameState.rounds.slice(0, 12) : [];
+  const ledger = getRecentRoundLedger(rounds);
+  const inventoryValue = userInventory.reduce((sum, item) => sum + verifiedInventoryMarketPrice(item), 0);
+  const winRate = Number(stats.rounds) ? Math.round((Number(stats.wins) / Number(stats.rounds)) * 100) : 0;
+  const duplicateCount = [...getInventoryDuplicateCounts().values()].reduce((sum, count) => sum + Math.max(0, count - 1), 0);
+  const completedCollections = COLLECTION_DEFINITIONS.filter(collection => getCollectionProgress(collection).complete).length;
+
+  const overview = document.getElementById('statsOverviewGrid');
+  if (overview) overview.innerHTML = [
+    { icon: 'fa-gem', label: 'Вартість колекції', value: formatCredits(inventoryValue), tone: 'cyan' },
+    { icon: 'fa-bullseye', label: 'Виграші апгрейду', value: `${winRate}%`, note: `${Number(stats.wins) || 0} / ${Number(stats.rounds) || 0}`, tone: 'emerald' },
+    { icon: 'fa-box-open', label: 'Відкрито кейсів', value: String(Number(allTime.cases) || Number(stats.cases) || 0), tone: 'amber' },
+    { icon: 'fa-trophy', label: 'Найкраща ціль', value: formatCredits(Number(stats.bestValue) || 0), tone: 'violet' },
+    { icon: 'fa-sack-dollar', label: 'Продано', value: formatCredits(Number(allTime.sellValue) || 0), note: `${Number(allTime.sells) || Number(stats.sells) || 0} предметів`, tone: 'green' },
+    { icon: 'fa-copy', label: 'Запас дублів', value: duplicateCount ? `×${duplicateCount}` : '—', note: `${userInventory.length} предметів`, tone: 'slate' }
+  ].map(card => `<article class="stats-overview-card is-${card.tone}"><i class="fa-solid ${card.icon}"></i><span>${card.label}</span><strong>${card.value}</strong>${card.note ? `<small>${card.note}</small>` : ''}</article>`).join('');
+
+  const modes = document.getElementById('statsModeBreakdown');
+  if (modes) modes.innerHTML = [
+    { icon: 'fa-box-open', label: 'Кейси', value: Number(allTime.cases) || Number(stats.cases) || 0, note: `${Number(allTime.freeCases) || 0} безкоштовних` },
+    { icon: 'fa-bolt', label: 'Апгрейди', value: Number(allTime.rounds) || Number(stats.rounds) || 0, note: `${Number(allTime.wins) || Number(stats.wins) || 0} перемог` },
+    { icon: 'fa-swords', label: 'Бої', value: Number(allTime.battles) || Number(stats.battles) || 0, note: `${Number(allTime.battleWins) || Number(stats.battleWins) || 0} перемог` },
+    { icon: 'fa-crown', label: 'Royale', value: Number(allTime.royaleWins) || 0, note: 'перемог у банку' },
+    { icon: 'fa-boxes-packing', label: 'Контракти', value: Number(allTime.contracts) || Number(stats.contracts) || 0, note: 'укладено' },
+    { icon: 'fa-layer-group', label: 'Колекції', value: `${completedCollections}/${COLLECTION_DEFINITIONS.length}`, note: 'завершено' }
+  ].map(row => `<div class="stats-mode-row"><i class="fa-solid ${row.icon}"></i><span>${row.label}<small>${row.note}</small></span><strong>${row.value}</strong></div>`).join('');
+
+  const recent = document.getElementById('statsRecentRounds');
+  if (recent) recent.innerHTML = rounds.length
+    ? rounds.slice(0, 7).map(round => `<div class="stats-round-row ${round.win ? 'is-win' : 'is-loss'}"><i class="fa-solid ${round.win ? 'fa-circle-check' : 'fa-circle-xmark'}"></i><div><strong>${escapeHtml(cleanText(round.targetName, 62) || 'Раунд')}</strong><small>${escapeHtml(cleanText(round.mode, 24) || 'гра')} · ${new Date(round.at || Date.now()).toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit' })}</small></div><em>${round.win ? '+' : '—'}${formatCredits(round.win ? round.targetValue : round.inputValue || 0)}</em></div>`).join('')
+    : '<div class="stats-empty"><i class="fa-solid fa-clock"></i><strong>Журнал ще порожній</strong><span>Перший раунд з’явиться тут.</span></div>';
+
+  const roundSummary = document.getElementById('statsRoundSummary');
+  const windowLabel = document.getElementById('statsRoundWindow');
+  if (windowLabel) windowLabel.textContent = rounds.length ? `останні ${rounds.length} записів` : 'ще немає записів';
+  if (roundSummary) roundSummary.innerHTML = rounds.length
+    ? `<div><span>Вкладено</span><strong>${formatCredits(ledger.staked)}</strong></div><div><span>Отримано при перемогах</span><strong>${formatCredits(ledger.payout)}</strong></div><div class="${ledger.payout - ledger.staked >= 0 ? 'is-positive' : 'is-negative'}"><span>Різниця</span><strong>${ledger.payout - ledger.staked >= 0 ? '+' : '−'}${formatCredits(Math.abs(ledger.payout - ledger.staked))}</strong></div><p>Підрахунок лише за збереженими раундами апгрейду; він не підміняє Steam-ціни та не впливає на шанси.</p>`
+    : '<div class="stats-empty"><i class="fa-solid fa-chart-line"></i><strong>Поки без підсумку</strong><span>Зіграний апгрейд з’явиться тут.</span></div>';
+
+  const collection = document.getElementById('statsCollectionProgress');
+  if (collection) collection.innerHTML = COLLECTION_DEFINITIONS.map(definition => {
+    const state = getCollectionProgress(definition);
+    const percent = state.total ? Math.round((state.count / state.total) * 100) : 0;
+    return `<div class="stats-collection-row ${state.complete ? 'is-complete' : ''}"><div><span>${escapeHtml(definition.title)}</span><strong>${state.count}/${state.total}</strong></div><i><b style="width:${percent}%"></b></i><small>${escapeHtml(definition.description)}</small></div>`;
+  }).join('');
+}
+
+async function shareLatestMoment() {
+  const player = cleanText(account?.nick || currentUser?.name || 'Гравець', 28) || 'Гравець';
+  const latest = Array.isArray(gameState?.rounds) ? gameState.rounds[0] : null;
+  const best = [...userInventory].sort((left, right) => verifiedInventoryMarketPrice(right) - verifiedInventoryMarketPrice(left))[0];
+  const title = 'ПОТУЖНО DROP';
+  const text = latest
+    ? `${player} ${latest.win ? 'виграв' : 'зіграв'} у ${cleanText(latest.mode, 20) || 'режимі'} в ПОТУЖНО DROP${latest.targetName ? ` · ${cleanText(latest.targetName, 72)}` : ''}.`
+    : best
+      ? `${player} зібрав ${cleanText(best.name, 72)} у ПОТУЖНО DROP.`
+      : `${player} починає збирати колекцію в ПОТУЖНО DROP.`;
+  const url = getPublicShareUrl();
+  url.hash = 'hub';
+  try {
+    if (navigator.share) {
+      await navigator.share({ title, text, url: url.href });
+      showToast('Момент відправлено. Нагороди за поширення не нараховуються.', 'success');
+      return;
+    }
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(`${text}\n${url.href}`);
+      showToast('Текст і посилання скопійовано.', 'success');
+      return;
+    }
+    window.prompt('Скопіюй момент:', `${text}\n${url.href}`);
+  } catch (error) {
+    if (error?.name !== 'AbortError') showToast('Не вдалося відкрити поширення.', 'warn');
+  }
+}
+
+// A Capacitor build is rendered from the app's localhost WebView.  Links a
+// player shares must still point to the public Worker, otherwise a recipient
+// would receive an unusable capacitor:// or localhost URL.
+function getPublicShareUrl() {
+  const mobile = window.PotuzhnoMobile || {};
+  const configuredOrigin = String(mobile.apiOrigin || window.POTUZHNO_MOBILE_CONFIG?.apiOrigin || '').replace(/\/$/, '');
+  const useConfiguredOrigin = Boolean(mobile.isNative) && /^https:\/\//i.test(configuredOrigin);
+  const origin = useConfiguredOrigin ? configuredOrigin : window.location.origin;
+  return new URL('/', origin);
+}
+
 function renderGameHub() {
   if (!gameState) return;
   renderHalloweenSeasonShell();
@@ -5655,6 +5859,8 @@ function renderGameHub() {
   renderCollections();
   renderLeaderboard();
   renderProfileSocial();
+  renderCommandHub();
+  renderStatsPage();
   applyTheme();
   updateAccountUI();
   updateThemeMenuState();
@@ -5927,21 +6133,40 @@ function beep(freq = 440, dur = 0.08, type = 'sine') {
 }
 
 function soundWin() {
+  haptic('success');
   beep(880, 0.15, 'triangle');
   setTimeout(() => beep(1180, 0.2, 'triangle'), 140);
 }
 function soundLose() {
+  haptic('error');
   beep(180, 0.28, 'sawtooth');
 }
 function soundCase() {
+  haptic('light');
   beep(700, 0.12, 'triangle');
   setTimeout(() => beep(1050, 0.16, 'triangle'), 120);
 }
 function soundCoin() {
+  haptic('light');
   beep(760, 0.12, 'triangle');
 }
 function soundSell() {
+  haptic('light');
   beep(700, 0.08, 'triangle');
+}
+
+function haptic(kind = 'light') {
+  if (!hapticsEnabled) return;
+  const patterns = { light: 10, success: [12, 40, 18], error: [24, 45, 24] };
+  try {
+    const haptics = window.Capacitor?.Plugins?.Haptics;
+    if (haptics?.impact) {
+      const style = kind === 'error' ? 'HEAVY' : kind === 'success' ? 'MEDIUM' : 'LIGHT';
+      void haptics.impact({ style });
+      return;
+    }
+    if (navigator.vibrate) navigator.vibrate(patterns[kind] || patterns.light);
+  } catch {}
 }
 
 function toggleSound() {
@@ -5951,9 +6176,26 @@ function toggleSound() {
   updateSoundUI();
 }
 
+function toggleHaptics() {
+  hapticsEnabled = !hapticsEnabled;
+  localStorage.setItem(STORAGE.haptics, hapticsEnabled ? 'on' : 'off');
+  updateHapticsUI();
+  if (hapticsEnabled) haptic('light');
+}
+
 function updateSoundUI() {
   const i = document.getElementById('soundIcon');
   if (i) i.className = soundEnabled ? 'fa-solid fa-volume-high text-sm' : 'fa-solid fa-volume-xmark text-sm';
+}
+
+function updateHapticsUI() {
+  const button = document.getElementById('profileHapticsButton');
+  if (!button) return;
+  button.classList.toggle('is-enabled', hapticsEnabled);
+  button.setAttribute('aria-pressed', hapticsEnabled ? 'true' : 'false');
+  button.title = hapticsEnabled ? 'Вібрація увімкнена' : 'Вібрація вимкнена';
+  const label = button.querySelector('span');
+  if (label) label.textContent = hapticsEnabled ? 'Вібрація' : 'Без вібрації';
 }
 
 function updateConsentButton() {
@@ -6452,7 +6694,7 @@ async function topupShareSite() {
   try {
     const ownerAccountId = await getShareAccountId();
     if (!isReferralAccountId(ownerAccountId)) throw new Error('Профіль для запрошення ще не готовий.');
-    const shareUrl = new URL('/', window.location.origin);
+    const shareUrl = getPublicShareUrl();
     shareUrl.searchParams.set('ref', ownerAccountId);
     const shareData = {
       title: 'ПОТУЖНО DROP',
@@ -6645,6 +6887,14 @@ function getFilteredProfileInventory() {
   const q = (document.getElementById('invSearch')?.value || '').trim().toLowerCase();
   let list = [...userInventory];
   if (profileInvFilter !== 'all') list = list.filter(it => categorizeWeapon(it.name) === profileInvFilter);
+  const duplicateCounts = getInventoryDuplicateCounts();
+  if (profileInvSource !== 'all') {
+    list = list.filter(item => profileInvSource === 'duplicates'
+      ? (duplicateCounts.get(getInventoryDuplicateKey(item)) || 0) > 1
+      : getInventorySource(item) === profileInvSource);
+  }
+  if (profileInvWear !== 'all') list = list.filter(item => getWear(item).code === profileInvWear);
+  if (profileInvCollection !== 'all') list = list.filter(item => getCollectionForInventoryItem(item)?.id === profileInvCollection);
   if (q) list = list.filter(it => String(it.name || '').toLowerCase().includes(q));
 
   const s = profileInvSort;
@@ -6653,6 +6903,7 @@ function getFilteredProfileInventory() {
   else if (s === 'name-asc') list.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
   else if (s === 'wear-asc') list.sort((a, b) => (a.wear?.min ?? 0) - (b.wear?.min ?? 0));
   else if (s === 'newest') list.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+  else if (s === 'duplicates-desc') list.sort((a, b) => (duplicateCounts.get(getInventoryDuplicateKey(b)) || 0) - (duplicateCounts.get(getInventoryDuplicateKey(a)) || 0) || verifiedInventoryMarketPrice(b) - verifiedInventoryMarketPrice(a));
   return list;
 }
 
@@ -6665,6 +6916,35 @@ function setInventoryFilter(cat) {
 function setInventorySort(val) {
   profileInvSort = val;
   renderProfileInventory();
+}
+
+function setInventorySource(val) {
+  profileInvSource = ['all', 'drop', 'steam', 'exclusive', 'duplicates'].includes(val) ? val : 'all';
+  renderProfileInventory();
+}
+
+function setInventoryWear(val) {
+  profileInvWear = ['all', 'FN', 'MW', 'FT', 'WW', 'BS'].includes(val) ? val : 'all';
+  renderProfileInventory();
+}
+
+function setInventoryCollection(val) {
+  profileInvCollection = val === 'all' || COLLECTION_DEFINITIONS.some(collection => collection.id === val) ? val : 'all';
+  renderProfileInventory();
+}
+
+function renderProfileInventorySelects() {
+  const source = document.getElementById('invSourceSelect');
+  if (source) source.value = profileInvSource;
+  const wear = document.getElementById('invWearSelect');
+  if (wear) wear.value = profileInvWear;
+  const collection = document.getElementById('invCollectionSelect');
+  if (collection) {
+    collection.innerHTML = `<option value="all">Усі колекції</option>${COLLECTION_DEFINITIONS.map(definition => `<option value="${escapeHtml(definition.id)}">${escapeHtml(definition.title)}</option>`).join('')}`;
+    collection.value = profileInvCollection;
+  }
+  const sort = document.getElementById('invSortSelect');
+  if (sort) sort.value = profileInvSort;
 }
 
 function renderProfileInventoryCategoryChips() {
@@ -6688,6 +6968,8 @@ function renderProfileInventoryStats() {
   const totalValue = userInventory.reduce((sum, item) => sum + verifiedInventoryMarketPrice(item), 0);
   const best = userInventory.reduce((max, item) => Math.max(max, verifiedInventoryMarketPrice(item)), 0);
   const uniqueNames = new Set(userInventory.map(it => normalizeSkinName(it.name))).size;
+  const duplicates = [...getInventoryDuplicateCounts().values()].reduce((sum, copies) => sum + Math.max(0, copies - 1), 0);
+  const completedCollections = COLLECTION_DEFINITIONS.filter(collection => getCollectionProgress(collection).complete).length;
   const c = document.getElementById('invStatCount');
   if (c) c.textContent = String(count);
   const v = document.getElementById('invStatValue');
@@ -6696,10 +6978,15 @@ function renderProfileInventoryStats() {
   if (b) b.textContent = Math.round(best).toLocaleString('uk-UA');
   const u = document.getElementById('invStatUnique');
   if (u) u.textContent = String(uniqueNames);
+  const d = document.getElementById('invStatDuplicates');
+  if (d) d.textContent = duplicates ? `×${duplicates}` : '—';
+  const collections = document.getElementById('invStatCollections');
+  if (collections) collections.textContent = `${completedCollections} / ${COLLECTION_DEFINITIONS.length}`;
 }
 
 function renderProfileInventory() {
   renderProfileInventoryCategoryChips();
+  renderProfileInventorySelects();
   renderProfileInventoryStats();
   const grid = document.getElementById('profileInventoryGrid');
   const empty = document.getElementById('profileInventoryEmpty');
@@ -6718,14 +7005,10 @@ function renderProfileInventory() {
     grid.innerHTML = '<div class="col-span-full rounded-xl border border-dashed border-gray-700 p-10 text-center"><i class="fa-solid fa-magnifying-glass text-2xl text-gray-600"></i><p class="mt-2 text-sm font-bold text-gray-400">Нічого не знайдено</p><p class="text-xs text-gray-500 mt-1">Спробуй інший фільтр</p></div>';
     return;
   }
-  const nameCounts = new Map();
-  for (const it of userInventory) {
-    const k = normalizeSkinName(it.name) + '|' + (it.wear?.code || '');
-    nameCounts.set(k, (nameCounts.get(k) || 0) + 1);
-  }
+  const nameCounts = getInventoryDuplicateCounts();
   grid.innerHTML = list.map(s => {
     const wear = getWear(s);
-    const k = normalizeSkinName(s.name) + '|' + (wear.code || '');
+    const k = getInventoryDuplicateKey(s);
     const dupes = nameCounts.get(k) || 0;
     const marketPrice = verifiedInventoryMarketPrice(s);
     const sellPrice = roundPc(marketPrice * SELL_RATE);
@@ -6733,7 +7016,8 @@ function renderProfileInventory() {
     const [weaponPart, ...skinParts] = String(s.name || 'CS2 Skin').split('|');
     const weapon = cleanText(weaponPart, 48) || 'CS2';
     const skinName = cleanText(skinParts.join('|'), 110) || weapon;
-    const origin = s.steamImported ? 'STEAM' : s.exclusive ? 'EXCLUSIVE' : 'DROP';
+    const source = getInventorySource(s);
+    const origin = source === 'steam' ? 'STEAM' : source === 'exclusive' ? 'EXCLUSIVE' : 'DROP';
     return `<article class="profile-inv-card ${s.exclusive ? 'is-exclusive' : ''}">
       <div class="profile-inv-card-top"><span class="wear-badge wear-${wear.code}">${wear.code}</span><span class="profile-inv-origin">${origin}</span></div>
       ${dupes > 1 ? `<span class="dupe-badge">×${dupes}</span>` : ''}
@@ -11507,8 +11791,8 @@ window.addEventListener('DOMContentLoaded', () => {
   updateTopupUI();
   updateFreeCaseBtn();
 
-  const startPage = location.hash.replace('#', '') || localStorage.getItem(STORAGE.page) || 'upgrader';
-  showPage(PAGES.includes(startPage) ? startPage : 'upgrader');
+  const startPage = location.hash.replace('#', '') || localStorage.getItem(STORAGE.page) || 'hub';
+  showPage(PAGES.includes(startPage) ? startPage : 'hub');
 
   document.querySelectorAll('.modal-backdrop').forEach(el => {
     el.addEventListener('click', e => {
@@ -11631,6 +11915,9 @@ window.sellAllDuplicates = sellAllDuplicates;
 window.openInventoryModalFromProfile = openInventoryModalFromProfile;
 window.setInventoryFilter = setInventoryFilter;
 window.setInventorySort = setInventorySort;
+window.setInventorySource = setInventorySource;
+window.setInventoryWear = setInventoryWear;
+window.setInventoryCollection = setInventoryCollection;
 window.renderProfileInventory = renderProfileInventory;
 window.debounceFilterShop = debounceFilterShop;
 window.filterShop = filterShop;
@@ -11640,6 +11927,8 @@ window.toggleFavorite = toggleFavorite;
 window.setTheme = setTheme;
 window.toggleMobileMenu = toggleMobileMenu;
 window.toggleSound = toggleSound;
+window.toggleHaptics = toggleHaptics;
+window.shareLatestMoment = shareLatestMoment;
 window.claimDailyBonus = claimDailyBonus;
 window.openModal = openModal;
 window.closeModal = closeModal;
