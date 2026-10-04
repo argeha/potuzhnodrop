@@ -347,22 +347,17 @@
     $('#playerDirectoryCount').textContent = `${compact(state.playersTotal)} ${state.playersTotal === 1 ? 'гравець' : state.playersTotal < 5 ? 'гравці' : 'гравців'}`
     const players = Array.isArray(state.players) ? state.players : []
     if (!players.length) {
-      playerDirectoryList.innerHTML = '<p class="empty-line">Поки що немає відвідувачів. Гравець з’явиться тут автоматично після першого відкриття сайту.</p>'
+      playerDirectoryList.innerHTML = '<p class="empty-line">Поки що немає серверних профілів. Гравець з’явиться тут після створення хмарного профілю або входу через Steam.</p>'
       return
     }
     playerDirectoryList.innerHTML = players.map(player => {
-      const serverProfile = Boolean(player.accountId)
       const profileLabel = player.accountType === 'steam' ? 'Steam-акаунт' : 'Cloud Profile'
-      const detail = serverProfile
-        ? `${profileLabel} · LVL ${compact(player.level)}${player.prestige ? ` · P${compact(player.prestige)}` : ''} · ${compact(player.inventoryTotal)} скінів`
-        : `Відвідувач · LVL ${compact(player.level)}${player.prestige ? ` · P${compact(player.prestige)}` : ''} · останній вхід ${formatTime(player.updatedAt)}`
-      const active = serverProfile && state.player?.accountId === player.accountId ? ' is-active' : ''
+      const detail = `${profileLabel} · LVL ${compact(player.level)}${player.prestige ? ` · P${compact(player.prestige)}` : ''} · ${compact(player.inventoryTotal)} скінів`
+      const active = state.player?.accountId === player.accountId ? ' is-active' : ''
       const blocked = player.blocked === true ? ' is-blocked' : ''
       const hidden = player.hidden === true
-      const card = `<i class="${serverProfile && player.accountType === 'steam' ? 'fa-brands fa-steam' : `fa-solid ${serverProfile ? 'fa-cloud' : 'fa-user-clock'}`}"></i><span><strong>${escapeHtml(player.name)}</strong><small>${escapeHtml(detail)}</small></span>${serverProfile ? '<i class="fa-solid fa-chevron-right directory-open"></i>' : '<i class="fa-solid fa-eye directory-open"></i>'}`
-      return serverProfile
-        ? `<button type="button" class="directory-player${active}${blocked}" data-player-id="${escapeHtml(player.accountId)}">${card}${blocked ? '<i class="fa-solid fa-ban blocked-mark" title="Заблоковано"></i>' : ''}${hidden ? '<i class="fa-solid fa-eye-slash blocked-mark" title="Приховано з сайту"></i>' : ''}</button>`
-        : `<article class="directory-player is-visitor" title="Локальний профіль: зібрано мінімальні дані входу, без віддаленого редагування.">${card}</article>`
+      const card = `<i class="${player.accountType === 'steam' ? 'fa-brands fa-steam' : 'fa-solid fa-cloud'}"></i><span><strong>${escapeHtml(player.name)}</strong><small>${escapeHtml(detail)}</small></span><i class="fa-solid fa-chevron-right directory-open"></i>`
+      return `<button type="button" class="directory-player${active}${blocked}" data-player-id="${escapeHtml(player.accountId)}">${card}${blocked ? '<i class="fa-solid fa-ban blocked-mark" title="Заблоковано"></i>' : ''}${hidden ? '<i class="fa-solid fa-eye-slash blocked-mark" title="Приховано з сайту"></i>' : ''}</button>`
     }).join('')
   }
 

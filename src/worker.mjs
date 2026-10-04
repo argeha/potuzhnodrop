@@ -893,36 +893,16 @@ function adminPlayerDirectoryEntry(accountId, entry, accountType = gameAccountTy
   }
 }
 
-function adminVisitorDirectoryEntry(visitorHash, player, firstSeenAt = 0) {
-  if (!/^[a-f0-9]{64}$/i.test(visitorHash) || !player) return null
-  return normalizeAdminPlayerDirectoryEntry({
-    accountId: player.cloudProfileId,
-    visitorId: visitorHash,
-    name: player.name,
-    level: player.level,
-    prestige: player.prestige,
-    inventoryTotal: player.inventoryTotal,
-    xp: player.xp,
-    wins: player.wins,
-    rounds: player.rounds,
-    collectionValue: player.collectionValue,
-    firstSeenAt,
-    updatedAt: player.updatedAt,
-  })
-}
-
 function normalizeAdminPlayerDirectoryEntry(value) {
   const accountId = cleanText(value?.accountId, 64)
-  const visitorId = cleanText(value?.visitorId, 64).toLowerCase()
   const accountType = gameAccountType(accountId)
-  const hasVisitor = /^[a-f0-9]{64}$/i.test(visitorId)
-  if (!accountType && !hasVisitor) return null
+  if (!accountType) return null
   const updatedAt = boundedInteger(value?.updatedAt, 0, Number.MAX_SAFE_INTEGER)
   const firstSeenAt = boundedInteger(value?.firstSeenAt, 0, updatedAt || Number.MAX_SAFE_INTEGER, updatedAt)
   return {
-    accountId: accountType ? accountId : '',
+    accountId,
     accountType,
-    visitorId: hasVisitor ? visitorId : '',
+    visitorId: '',
     name: cleanText(value?.name, 24) || 'Гравець',
     level: boundedInteger(value?.level, 1, 99_999, 1),
     prestige: boundedInteger(value?.prestige, 0, ADMIN_GAME_MAX_PRESTIGE),
@@ -1356,7 +1336,6 @@ export class PotuzhnoState {
       if (path === '/__internal/profile-visibility') return await this.internalProfileVisibility(request)
       if (path === '/__internal/admin-profile') return await this.internalAdminProfile(request)
       if (path === '/__internal/admin-player-directory') return await this.internalAdminPlayerDirectory(request)
-      if (path === '/__internal/admin-community-players') return await this.internalCommunityPlayers(request)
       if (path === '/__internal/community-visibility') return await this.internalCommunityVisibility(request)
       if (path === '/__internal/community-delete-account') return await this.internalCommunityDeleteAccount(request)
       if (path === '/api/profile/sync') return await this.profile(request)
@@ -1867,16 +1846,19 @@ export class PotuzhnoState {
     if (action === 'upsert') {
       const player = normalizeAdminPlayerDirectoryEntry(body?.player)
       if (!player) return json({ error: 'Некоректний профіль гравця.' }, 400)
+      // The administration directory is an account-management tool, not a
+      // visitor tracker. Anonymous browser heartbeats have no durable account
+      // and must never look like people an admin can manage.
+      if (!player.accountId) return json({ indexed: false, skipped: 'anonymous_visitor' })
       await this.storage.transaction(async transaction => {
         const stored = await transaction.get(key)
         const existing = stored?.players && typeof stored.players === 'object' && !Array.isArray(stored.players) ? stored.players : {}
         const players = Object.fromEntries(Object.entries(existing)
           .map(([, entry]) => normalizeAdminPlayerDirectoryEntry(entry))
-          .filter(Boolean)
-          .map(entry => [entry.accountId || `visitor:${entry.visitorId}`, entry]))
-        const recordKey = player.accountId || `visitor:${player.visitorId}`
-        const anonymousKey = player.visitorId ? `visitor:${player.visitorId}` : ''
-        const related = [players[recordKey], anonymousKey ? players[anonymousKey] : null]
+          .filter(entry => entry?.accountId)
+          .map(entry => [entry.accountId, entry]))
+        const recordKey = player.accountId
+        const related = [players[recordKey]]
           .filter(Boolean)
           .sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0))
         const previous = related[0] || null
@@ -1884,7 +1866,7 @@ export class PotuzhnoState {
         const merged = normalizeAdminPlayerDirectoryEntry({
           ...previous,
           ...player,
-          visitorId: player.visitorId || previous?.visitorId,
+          visitorId: '',
           wins: player.wins || previous?.wins,
           rounds: player.rounds || previous?.rounds,
           collectionValue: player.collectionValue || previous?.collectionValue,
@@ -1896,31 +1878,34 @@ export class PotuzhnoState {
           updatedAt: Math.max(Number(previous?.updatedAt || 0), Number(player.updatedAt || 0)),
         })
         players[recordKey] = merged
-        if (anonymousKey && anonymousKey !== recordKey) delete players[anonymousKey]
         const trimmed = Object.values(players)
           .sort((left, right) => right.updatedAt - left.updatedAt)
           .slice(0, ADMIN_PLAYER_DIRECTORY_MAX)
-        await transaction.put(key, { version: 2, players: Object.fromEntries(trimmed.map(entry => [entry.accountId || `visitor:${entry.visitorId}`, entry])) })
+        await transaction.put(key, { version: 3, players: Object.fromEntries(trimmed.map(entry => [entry.accountId, entry])) })
       })
       return json({ indexed: true })
     }
     if (action === 'list') {
       const query = cleanText(body?.query, 100).toLocaleLowerCase()
-      const stored = await this.storage.get(key)
-      const players = Object.values(stored?.players && typeof stored.players === 'object' && !Array.isArray(stored.players) ? stored.players : {})
-        .map(normalizeAdminPlayerDirectoryEntry)
-        .filter(Boolean)
-        .filter(player => !query || `${player.name} ${player.accountId} ${player.visitorId}`.toLocaleLowerCase().includes(query))
+      const players = await this.storage.transaction(async transaction => {
+        const stored = await transaction.get(key)
+        // Clean records created by the old directory implementation. They are
+        // only one-way anonymous visitor hashes and are not player accounts.
+        const normalized = Object.values(stored?.players && typeof stored.players === 'object' && !Array.isArray(stored.players) ? stored.players : {})
+          .map(normalizeAdminPlayerDirectoryEntry)
+          .filter(player => player?.accountId)
+        const next = Object.fromEntries(normalized.map(player => [player.accountId, player]))
+        const previousCount = Object.keys(stored?.players && typeof stored.players === 'object' && !Array.isArray(stored.players) ? stored.players : {}).length
+        if (previousCount !== normalized.length || Number(stored?.version || 0) < 3) {
+          await transaction.put(key, { version: 3, players: next })
+        }
+        return normalized
+      })
+        .filter(player => !query || `${player.name} ${player.accountId}`.toLocaleLowerCase().includes(query))
         .sort((left, right) => right.updatedAt - left.updatedAt)
       return json({ total: players.length, players: players.slice(0, ADMIN_PLAYER_DIRECTORY_PAGE_SIZE) })
     }
     return json({ error: 'Невідома дія каталогу гравців.' }, 400)
-  }
-
-  async internalCommunityPlayers(request) {
-    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
-    const state = normalizeCommunityState(await this.storage.get('community:season'), Date.now())
-    return json({ players: Object.values(state.players).slice(0, COMMUNITY_MAX_PLAYERS) })
   }
 
   async internalCommunityVisibility(request) {
@@ -2016,21 +2001,6 @@ export class PotuzhnoState {
 
   async indexCloudProfile(accountId, entry) {
     return this.indexGameProfile(accountId, entry, 'cloud')
-  }
-
-  async indexVisitedPlayer(visitorHash, player) {
-    const visitor = adminVisitorDirectoryEntry(visitorHash, player, Date.now())
-    if (!visitor) return
-    try {
-      const global = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName('global'))
-      await global.fetch(new Request('https://internal/__internal/admin-player-directory', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'upsert', player: visitor }),
-      }))
-    } catch {
-      // Visitor tracking is auxiliary. A network hiccup must never block the game.
-    }
   }
 
   async migrateLegacyProfile(accountId, recoveryHash) {
@@ -2790,7 +2760,6 @@ export class PotuzhnoState {
       await transaction.put('community:season', state)
       return communityResponse(state, visitorHash)
     })
-    await this.indexVisitedPlayer(visitorHash, player)
     return json(result)
   }
 
@@ -3406,49 +3375,23 @@ export class PotuzhnoAdmin {
 
   async playerDirectory(query = '') {
     const global = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName('global'))
-    const community = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName('community'))
-    const [directoryResult, communityResult] = await Promise.allSettled([
-      global.fetch(new Request('https://internal/__internal/admin-player-directory', {
+    let response
+    try {
+      response = await global.fetch(new Request('https://internal/__internal/admin-player-directory', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'list', query }),
-      })),
-      community.fetch(new Request('https://internal/__internal/admin-community-players', { method: 'POST' })),
-    ])
-    if (directoryResult.status !== 'fulfilled') {
+      }))
+    } catch {
       return { ok: false, status: 503, data: { error: 'Каталог гравців тимчасово недоступний.' } }
     }
-    const response = directoryResult.value
-    const communityResponse = communityResult.status === 'fulfilled' ? communityResult.value : null
     let data = null
-    let communityData = null
     try { data = await response.json() } catch {}
-    try { communityData = communityResponse ? await communityResponse.json() : null } catch {}
     if (!response.ok) return { ok: false, status: response.status, data: data || {} }
-    const players = new Map((Array.isArray(data?.players) ? data.players : [])
+    const players = (Array.isArray(data?.players) ? data.players : [])
       .map(normalizeAdminPlayerDirectoryEntry)
-      .filter(Boolean)
-      .map(player => [player.accountId || `visitor:${player.visitorId}`, player]))
-    if (communityResponse?.ok) {
-      for (const communityPlayer of Array.isArray(communityData?.players) ? communityData.players : []) {
-        const visitor = adminVisitorDirectoryEntry(communityPlayer?.id, communityPlayer, communityPlayer?.updatedAt)
-        if (!visitor) continue
-        const key = visitor.accountId || `visitor:${visitor.visitorId}`
-        const previous = players.get(key)
-        players.set(key, normalizeAdminPlayerDirectoryEntry({
-          ...previous,
-          ...visitor,
-          visitorId: visitor.visitorId || previous?.visitorId,
-          firstSeenAt: previous?.firstSeenAt > 0 ? Math.min(previous.firstSeenAt, visitor.firstSeenAt || previous.firstSeenAt) : visitor.firstSeenAt,
-          updatedAt: Math.max(Number(previous?.updatedAt || 0), Number(visitor.updatedAt || 0)),
-        }))
-      }
-    }
-    const normalizedQuery = cleanText(query, 100).toLocaleLowerCase()
-    const all = [...players.values()]
-      .filter(player => !normalizedQuery || `${player.name} ${player.accountId} ${player.visitorId}`.toLocaleLowerCase().includes(normalizedQuery))
-      .sort((left, right) => right.updatedAt - left.updatedAt)
-    return { ok: true, status: 200, data: { total: all.length, players: all.slice(0, ADMIN_PLAYER_DIRECTORY_PAGE_SIZE) } }
+      .filter(player => player?.accountId)
+    return { ok: true, status: 200, data: { total: players.length, players: players.slice(0, ADMIN_PLAYER_DIRECTORY_PAGE_SIZE) } }
   }
 
   async catalogItems() {

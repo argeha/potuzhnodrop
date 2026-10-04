@@ -3014,7 +3014,9 @@ function loadAccount() {
     if (r) account = JSON.parse(r);
   } catch {}
   if (!account) {
-    account = { nick: 'Гравець_' + Math.random().toString(36).slice(2, 6).toUpperCase(), createdAt: Date.now() };
+    // A browser can play locally before sign-in. This is deliberately a
+    // generic guest label, never a generated player identity or server account.
+    account = { nick: 'Гість', isGuest: true, createdAt: Date.now() };
     localStorage.setItem(STORAGE.account, JSON.stringify(account));
   }
   setProfileVisibility(account.profileVisibility);
@@ -3056,6 +3058,7 @@ function saveAccountNick() {
     return;
   }
   account.nick = nick;
+  delete account.isGuest;
   localStorage.setItem(STORAGE.account, JSON.stringify(account));
   if (currentUser) currentUser.name = nick;
   updateAccountUI();
