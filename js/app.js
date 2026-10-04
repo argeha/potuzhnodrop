@@ -11,6 +11,7 @@ const STORAGE = {
   game: 'potuzhno_v6_game',
   account: 'potuzhno_v6_account',
   topup: 'potuzhno_v5_topup',
+  pendingReferral: 'potuzhno_v7_pending_referral',
   freeCase: 'potuzhno_v5_freecase',
   catalogCache: 'potuzhno_catalog_cache_v40',
   pendingWager: 'potuzhno_v6_pending_wager',
@@ -471,6 +472,15 @@ let profileInvFilter = 'all';
 let profileInvSort = 'price-desc';
 
 const DEMO_STARTING_BALANCE = 1200;
+const ECONOMY_TASK_REWARD_MULTIPLIER = 0.4;
+const REWARDED_COIN_AMOUNT = 100;
+const REWARDED_DAILY_LIMIT = 20;
+const REFERRAL_OWNER_REWARD = 250;
+const REFERRAL_NEW_PLAYER_REWARD = 100;
+
+function economyReward(amount, minimum = 20) {
+  return Math.max(minimum, Math.round((Math.max(0, Number(amount) || 0) * ECONOMY_TASK_REWARD_MULTIPLIER) / 10) * 10);
+}
 const SAFE_MODE_CHANCE_MULTIPLIER = 1.15;
 const BONUS_MODE_RATE = 0.05;
 const POWER_CASE_COST = 300;
@@ -846,7 +856,10 @@ function seededRandom(seed) {
 function getDailyTasks() {
   const date = getTodayKey();
   const rng = seededRandom(date + '|potuzhno');
-  const pool = [...TASK_POOL];
+  const pool = TASK_POOL.map(task => ({
+    ...task,
+    reward: economyReward(task.reward)
+  }));
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -881,7 +894,10 @@ function getWeekKey() {
 function getWeeklyTasks() {
   const key = getWeekKey();
   const rng = seededRandom(key + '|potuzhno-w');
-  const pool = [...WEEKLY_TASK_POOL];
+  const pool = WEEKLY_TASK_POOL.map(task => ({
+    ...task,
+    reward: economyReward(task.reward, 80)
+  }));
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -966,13 +982,13 @@ const BATTLE_PASS_SEASON = Object.freeze({
 // A small daily loop for 6.0. Rewards stay deliberately modest: it is a
 // reason to return, not a shortcut through player levels or the Battle Pass.
 const POWER_RUN_REWARDS = Object.freeze([
-  { credits: 100, xp: 35, icon: 'fa-bolt', label: '+100 PC' },
-  { credits: 130, xp: 40, icon: 'fa-coins', label: '+130 PC' },
-  { credits: 160, xp: 45, icon: 'fa-crosshairs', label: '+160 PC' },
-  { credits: 190, xp: 50, icon: 'fa-fire', label: '+190 PC' },
-  { credits: 230, xp: 55, icon: 'fa-shield-halved', label: '+230 PC' },
-  { credits: 270, xp: 60, icon: 'fa-gem', label: '+270 PC' },
-  { credits: 400, xp: 75, tickets: 1, icon: 'fa-ticket', label: '+400 PC · квиток' }
+  { credits: 40, xp: 35, icon: 'fa-bolt', label: '+40 PC' },
+  { credits: 50, xp: 40, icon: 'fa-coins', label: '+50 PC' },
+  { credits: 60, xp: 45, icon: 'fa-crosshairs', label: '+60 PC' },
+  { credits: 80, xp: 50, icon: 'fa-fire', label: '+80 PC' },
+  { credits: 90, xp: 55, icon: 'fa-shield-halved', label: '+90 PC' },
+  { credits: 110, xp: 60, icon: 'fa-gem', label: '+110 PC' },
+  { credits: 160, xp: 75, tickets: 1, icon: 'fa-ticket', label: '+160 PC · квиток' }
 ]);
 
 const HALLOWEEN_EVENT = Object.freeze({
@@ -4852,7 +4868,7 @@ function updateGiftButtonUI() {
   const icon = document.getElementById('giftIcon');
   if (!btn || !timer) return;
   const streakDays = Math.max(0, Number(gameState?.dailyStreak?.current) || 0);
-  btn.title = `Щоденний бонус +500 ${CURRENCY_TOKEN} · серія ${streakDays} дн.`;
+  btn.title = `Щоденний бонус +100 ${CURRENCY_TOKEN} · серія ${streakDays} дн.`;
   btn.setAttribute('aria-label', btn.title);
   const last = parseInt(localStorage.getItem(STORAGE.bonusAt) || '0', 10);
   const cd = 24 * 60 * 60 * 1000;
@@ -5067,7 +5083,7 @@ function renderAchievements() {
         <div class="min-w-0">
           <p class="text-xs font-extrabold ${active ? 'text-amber-100' : 'text-gray-300'}">${a.title}</p>
           <p class="mt-0.5 text-[10px] leading-4 text-gray-500">${a.description}</p>
-          <p class="mt-1 text-[10px] font-bold ${active ? 'text-amber-300' : 'text-gray-600'}">${active ? 'Отримано' : `+${formatCredits(a.reward)}`}</p>
+          <p class="mt-1 text-[10px] font-bold ${active ? 'text-amber-300' : 'text-gray-600'}">${active ? 'Отримано' : `+${formatCredits(economyReward(a.reward))}`}</p>
         </div>
       </div>
     </div>`;
@@ -5201,7 +5217,8 @@ function doRevealCollectionReward(collId) {
     }, '-exclusive');
 
     userInventory.push(exclusiveItem);
-    currentUser.balance += reward.dc;
+    const coinReward = economyReward(reward.dc, 500);
+    currentUser.balance += coinReward;
     addXp(XP_COLLECTION);
 
     const reveal = document.getElementById('collectionRewardRevealed');
@@ -5217,7 +5234,7 @@ function doRevealCollectionReward(collId) {
         </div>
         <div class="mt-3 rounded-xl border border-green-500/40 bg-green-500/10 p-3 text-center">
           <p class="text-xs font-extrabold text-green-200 uppercase tracking-wider">Бонусні кредити</p>
-          <p class="font-heading text-3xl font-extrabold text-green-300 mt-1">+ ${formatCredits(reward.dc)}</p>
+          <p class="font-heading text-3xl font-extrabold text-green-300 mt-1">+ ${formatCredits(coinReward)}</p>
         </div>
         <button onclick="closeModal('collectionRewardModal'); renderGameHub(); renderInventoryGrid(); renderProfileInventory(); updateAvatarBadge(); updateBalanceUI();" class="mt-4 w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold uppercase text-sm tracking-wider transition"><i class="fa-solid fa-check mr-2"></i>Забрати все</button>
       `;
@@ -5527,11 +5544,12 @@ function checkAchievements() {
   ACHIEVEMENT_DEFINITIONS.forEach(a => {
     if (!gameState.achievements[a.id] && a.met()) {
       gameState.achievements[a.id] = Date.now();
-      currentUser.balance += a.reward;
+      const reward = economyReward(a.reward);
+      currentUser.balance += reward;
       addXp(XP_ACHIEVEMENT);
       changed = true;
       soundWin();
-      showToast(`Досягнення «${a.title}»: +${formatCredits(a.reward)}`, 'success');
+      showToast(`Досягнення «${a.title}»: +${formatCredits(reward)}`, 'success');
     }
   });
   if (changed) updateBalanceUI();
@@ -6265,7 +6283,7 @@ function claimDailyBonus() {
     return;
   }
   const streak = claimDailyStreak();
-  const reward = 500 + streak.extra;
+  const reward = 100 + Math.min(60, streak.extra);
   currentUser.balance += reward;
   localStorage.setItem(STORAGE.bonusAt, String(now));
   updateBalanceUI();
@@ -6276,46 +6294,125 @@ function claimDailyBonus() {
   soundCoin();
 }
 
-function topupWatchAd() {
-  const k = STORAGE.topup;
-  let st = {};
-  try { st = JSON.parse(localStorage.getItem(k) || '{}'); } catch {}
-  const last = st.adAt || 0;
-  const cd = 60 * 1000;
-  if (Date.now() - last < cd) {
-    const s = Math.ceil((cd - (Date.now() - last)) / 1000);
-    showToast(`Зачекай ${s} с`, 'warn');
-    return;
-  }
-  st.adAt = Date.now();
-  localStorage.setItem(k, JSON.stringify(st));
-  currentUser.balance += 150;
-  updateBalanceUI();
-  saveState();
-  checkAchievements();
-  showToast(`+150 ${CURRENCY_TOKEN}`, 'success');
+function isReferralAccountId(value) {
+  const id = String(value || '');
+  return UUID_PATTERN.test(id) || /^\d{17}$/.test(id);
 }
 
-function topupShareSite() {
-  const k = STORAGE.topup;
-  let st = {};
-  try { st = JSON.parse(localStorage.getItem(k) || '{}'); } catch {}
-  const today = getTodayKey();
-  if (st.sharedDate === today) {
-    showToast('Вже ділився сьогодні', 'warn');
-    return;
-  }
-  st.sharedDate = today;
-  localStorage.setItem(k, JSON.stringify(st));
-  currentUser.balance += 250;
-  updateBalanceUI();
-  saveState();
-  checkAchievements();
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(location.origin).catch(() => {});
-  }
-  showToast(`+250 ${CURRENCY_TOKEN}`, 'success');
+function captureReferralFromUrl() {
+  const url = new URL(window.location.href);
+  const referrerAccountId = url.searchParams.get('ref') || '';
+  if (!isReferralAccountId(referrerAccountId)) return;
+  localStorage.setItem(STORAGE.pendingReferral, referrerAccountId);
+  url.searchParams.delete('ref');
+  history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
 }
+
+function pendingReferralAccountId() {
+  const value = localStorage.getItem(STORAGE.pendingReferral) || '';
+  return isReferralAccountId(value) ? value : '';
+}
+
+async function getShareAccountId() {
+  if (hasReadySteamAccount()) return String(currentUser?.steamId || account?.steamId || '');
+  if (!isCloudProfile(account?.cloud)) {
+    const created = await createCloudProfile({ silent: true });
+    if (!created) throw new Error('Не вдалося створити профіль для запрошення. Перевір інтернет і повтори.');
+  }
+  return String(account?.cloud?.id || '');
+}
+
+async function topupShareSite() {
+  try {
+    const ownerAccountId = await getShareAccountId();
+    if (!isReferralAccountId(ownerAccountId)) throw new Error('Профіль для запрошення ще не готовий.');
+    const shareUrl = new URL('/', window.location.origin);
+    shareUrl.searchParams.set('ref', ownerAccountId);
+    const shareData = {
+      title: 'ПОТУЖНО DROP',
+      text: 'Заходь у ПОТУЖНО DROP — відкривай віртуальні кейси, грай у Royale та збирай колекцію.',
+      url: shareUrl.href,
+    };
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+        showToast(`Посилання відправлено. +${REFERRAL_OWNER_REWARD} PC прийдуть, коли новий гравець почне гру.`, 'success');
+      } catch (error) {
+        if (error?.name !== 'AbortError') throw error;
+      }
+      return;
+    }
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(shareUrl.href);
+    else window.prompt('Скопіюй персональне посилання:', shareUrl.href);
+    showToast(`Посилання скопійовано. Відправ його другові — +${REFERRAL_OWNER_REWARD} PC після його старту.`, 'success');
+  } catch (error) {
+    showToast(error?.message || 'Не вдалося підготувати посилання.', 'error');
+  }
+}
+
+let referralActivationPromise = null;
+async function activatePendingReferral() {
+  const referrerAccountId = pendingReferralAccountId();
+  if (!referrerAccountId || referralActivationPromise) return false;
+  const ownSteamId = String(currentUser?.steamId || account?.steamId || '');
+  const ownCloudId = String(account?.cloud?.id || '');
+  if (referrerAccountId === ownSteamId || referrerAccountId === ownCloudId) {
+    localStorage.removeItem(STORAGE.pendingReferral);
+    return false;
+  }
+  referralActivationPromise = (async () => {
+    try {
+      let data;
+      if (hasReadySteamAccount()) {
+        await saveSteamAccount({ silent: true });
+        data = await requestJson('/api/rewards', {
+          method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'activate-referral', referrerAccountId })
+        }, 12_000);
+        setSteamAccountMeta(ownSteamId, data);
+      } else {
+        if (!isCloudProfile(account?.cloud) && !await createCloudProfile({ silent: true })) return false;
+        data = await requestJson('/api/rewards', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'activate-referral',
+            referrerAccountId,
+            accountId: account.cloud.id,
+            recoveryCode: account.cloud.recoveryCode,
+          })
+        }, 12_000);
+        account.cloud.revision = Number(data.revision) || account.cloud.revision;
+        account.cloud.updatedAt = Date.now();
+      }
+      localStorage.removeItem(STORAGE.pendingReferral);
+      if (data.activated && currentUser) {
+        currentUser.balance = clampNumber(data.balance, 0, MAX_STORED_BALANCE, currentUser.balance);
+        updateBalanceUI();
+        saveState({ skipCloudAutoSync: true, skipSteamAutoSync: true });
+        renderGameHub();
+        showToast(`Запрошення активовано: +${data.welcomeReward || REFERRAL_NEW_PLAYER_REWARD} ${CURRENCY_TOKEN}`, 'success');
+      }
+      return Boolean(data.activated || data.duplicate);
+    } catch (error) {
+      // Permanent rejections must not follow the player forever; a temporary
+      // network issue keeps the referral and will retry on the next launch.
+      if ([400, 403, 404, 409].includes(Number(error?.status))) localStorage.removeItem(STORAGE.pendingReferral);
+      return false;
+    } finally {
+      referralActivationPromise = null;
+    }
+  })();
+  return referralActivationPromise;
+}
+
+async function openRewardedAd() {
+  // Coins are never minted in the browser after a click. This becomes active
+  // only when an ad provider returns a server-verifiable completion receipt.
+  // Until then the UI stays honest instead of pretending that an ad was shown.
+  showToast(`Відеонагорода +${REWARDED_COIN_AMOUNT} PC буде увімкнена після підключення та перевірки рекламного слоту.`, 'info');
+}
+
+const topupWatchAd = openRewardedAd;
 
 function topupLevelReward() {
   const k = STORAGE.topup;
@@ -6326,7 +6423,7 @@ function topupLevelReward() {
     showToast('Уже отримано', 'warn');
     return;
   }
-  const reward = 100 * lvl;
+  const reward = 30 * lvl;
   st.levelClaimed = lvl;
   localStorage.setItem(k, JSON.stringify(st));
   currentUser.balance += reward;
@@ -6338,7 +6435,7 @@ function topupLevelReward() {
 
 function updateTopupUI() {
   const el = document.getElementById('topupLevelRewardLabel');
-  if (el) el.textContent = `+${100 * getPlayerLevel()} ${CURRENCY_TOKEN}`;
+  if (el) el.textContent = `+${30 * getPlayerLevel()} ${CURRENCY_TOKEN}`;
 }
 
 function doPrestige() {
@@ -10968,6 +11065,7 @@ function renderShopGrid(skins) {
 window.addEventListener('DOMContentLoaded', () => {
   initCanvas();
   loadState();
+  captureReferralFromUrl();
   void enableHalloweenAdminPreview();
 
   if (localStorage.getItem(STORAGE.consent) !== 'accepted') {
@@ -10986,6 +11084,7 @@ window.addEventListener('DOMContentLoaded', () => {
   void (async () => {
     const returnedFromSteam = await processSteamCallback();
     if (!returnedFromSteam) await restoreSteamSession();
+    void activatePendingReferral();
     const requestedProfile = new URLSearchParams(location.search).get('profile');
     if (UUID_PATTERN.test(String(requestedProfile || ''))) void openPublicProfile(requestedProfile);
   })();
@@ -11171,6 +11270,7 @@ window.connectCloudProfile = connectCloudProfile;
 window.verifyLastFairRound = verifyLastFairRound;
 window.doPrestige = doPrestige;
 window.topupWatchAd = topupWatchAd;
+window.openRewardedAd = openRewardedAd;
 window.topupShareSite = topupShareSite;
 window.topupLevelReward = topupLevelReward;
 window.updateConsentButton = updateConsentButton;

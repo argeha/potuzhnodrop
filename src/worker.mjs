@@ -101,6 +101,13 @@ const ADMIN_GAME_MAX_LEVEL = Math.floor(ADMIN_GAME_MAX_XP / ADMIN_GAME_PLAYER_LE
 const ADMIN_GAME_BLOCK_REASON_MAX = 240
 const ADMIN_PLAYER_DIRECTORY_MAX = 5_000
 const ADMIN_PLAYER_DIRECTORY_PAGE_SIZE = 600
+// Referral bonuses are intentionally modest, virtual, and account-bound. A
+// successful share alone never credits coins: a distinct new profile has to
+// start playing through the shared link first.
+const REFERRAL_OWNER_REWARD = 250
+const REFERRAL_NEW_PLAYER_REWARD = 100
+const REFERRAL_DAILY_OWNER_LIMIT = 20
+const REFERRAL_NEW_ACCOUNT_WINDOW = 7 * 24 * 60 * 60_000
 const ADMIN_ROLES = Object.freeze({
   owner: {
     label: 'Власник',
@@ -146,6 +153,7 @@ const RATE_LIMITS = {
   catalog: { limit: 20, windowMs: 60_000 },
   presence: { limit: 12, windowMs: 60_000 },
   community: { limit: 24, windowMs: 60_000 },
+  rewards: { limit: 12, windowMs: 60_000 },
   adminLogin: { limit: 8, windowMs: 10 * 60_000 },
   admin: { limit: 60, windowMs: 60_000 },
   api: { limit: 120, windowMs: 60_000 },
@@ -451,6 +459,7 @@ function rateLimitGroup(path) {
   if (path === '/api/admin/login' || path === '/api/admin/activate-invite') return 'adminLogin'
   if (path.startsWith('/api/admin/')) return 'admin'
   if (path === '/api/profile/sync') return 'profile'
+  if (path === '/api/rewards') return 'rewards'
   if (path === '/api/public-profile' || path === '/api/public-avatar') return 'publicProfile'
   if (path.startsWith('/api/fair/')) return 'fair'
   if (path === '/api/matchmaking' || path === '/api/royale') return 'matchmaking'
@@ -1340,6 +1349,7 @@ export class PotuzhnoState {
       if (path === '/__internal/session-subject') return await this.internalSessionSubject(request)
       if (path === '/__internal/steam-session-valid') return await this.internalSteamSessionValidity(request)
       if (path === '/__internal/steam-account') return await this.internalSteamAccount(request)
+      if (path === '/__internal/referral-credit') return await this.internalReferralCredit(request)
       if (path === '/__internal/migrate-profile') return await this.internalProfileMigration(request)
       if (path === '/__internal/migrate-public-profile') return await this.internalPublicProfileMigration(request)
       if (path === '/__internal/delete-public-profile') return await this.internalDeletePublicProfile(request)
@@ -1350,6 +1360,7 @@ export class PotuzhnoState {
       if (path === '/__internal/community-visibility') return await this.internalCommunityVisibility(request)
       if (path === '/__internal/community-delete-account') return await this.internalCommunityDeleteAccount(request)
       if (path === '/api/profile/sync') return await this.profile(request)
+      if (path === '/api/rewards') return await this.rewards(request)
       if (path === '/api/public-profile') return await this.publicProfile(request)
       if (path === '/api/public-avatar') return await this.publicAvatar(request)
       if (path === '/api/fair/roll') return await this.fairRoll(request)
@@ -1513,6 +1524,15 @@ export class PotuzhnoState {
       if (!created) return json({ error: 'Steam-акаунт уже має збереження.' }, 409)
       await this.indexGameProfile(steamId, created, 'steam')
       return json({ created: true, updatedAt: created.updatedAt, revision: created.revision })
+    }
+
+    if (action === 'activate-referral') {
+      const result = await this.activateReferralForAccount({
+        accountId: steamId,
+        accountType: 'steam',
+        referrerAccountId: cleanText(body?.referrerAccountId, 64),
+      })
+      return json(result, result.status || 200)
     }
 
     if (action === 'set-visibility') {
@@ -2049,6 +2069,190 @@ export class PotuzhnoState {
     return null
   }
 
+  async internalReferralCredit(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request, 4_096)
+    } catch {
+      return json({ error: 'Некоректне запрошення.' }, 400)
+    }
+    const accountId = cleanText(body?.accountId, 64)
+    const referredAccountId = cleanText(body?.referredAccountId, 64)
+    const accountType = gameAccountType(accountId)
+    if (!accountType || !isGameAccountId(referredAccountId) || accountId === referredAccountId) {
+      return json({ error: 'Некоректне запрошення.' }, 400)
+    }
+    const key = accountType === 'steam' ? 'steam-account' : `profile:${accountId}`
+    const now = Date.now()
+    const today = dayKey()
+    const result = await this.storage.transaction(async transaction => {
+      const current = await transaction.get(key)
+      if (!current || !isPayload(current.payload) || (accountType === 'steam' && current.steamId !== accountId)) {
+        return { error: 'Профіль автора запрошення не знайдено.', status: 404 }
+      }
+      const moderation = adminProfileModeration(current.payload?.moderation, Number(current.updatedAt) || now)
+      if (moderation.blocked) return { error: 'Профіль автора запрошення тимчасово недоступний.', status: 423 }
+      const payload = structuredClone(current.payload)
+      const gameState = payload.gameState && typeof payload.gameState === 'object' && !Array.isArray(payload.gameState) ? payload.gameState : {}
+      payload.gameState = gameState
+      const stored = gameState.referrals && typeof gameState.referrals === 'object' && !Array.isArray(gameState.referrals) ? gameState.referrals : {}
+      const rewarded = Array.isArray(stored.rewardedAccounts)
+        ? stored.rewardedAccounts.filter(value => isGameAccountId(cleanText(value, 64))).slice(-240)
+        : []
+      if (rewarded.includes(referredAccountId)) {
+        return { credited: false, duplicate: true, balance: boundedInteger(payload.balance, 0, ADMIN_GAME_MAX_BALANCE) }
+      }
+      const rewardDate = cleanText(stored.rewardDate, 10) === today ? today : today
+      const rewardCount = cleanText(stored.rewardDate, 10) === today
+        ? boundedInteger(stored.rewardCount, 0, REFERRAL_DAILY_OWNER_LIMIT)
+        : 0
+      if (rewardCount >= REFERRAL_DAILY_OWNER_LIMIT) {
+        return { error: 'Денний ліміт запрошень уже використано.', status: 429 }
+      }
+      gameState.referrals = {
+        ...stored,
+        rewardDate,
+        rewardCount: rewardCount + 1,
+        rewardedAccounts: [...rewarded, referredAccountId].slice(-240),
+        totalRewarded: boundedInteger(stored.totalRewarded, 0, 1_000_000) + 1,
+        lastRewardAt: now,
+      }
+      payload.balance = Math.min(ADMIN_GAME_MAX_BALANCE, boundedInteger(payload.balance, 0, ADMIN_GAME_MAX_BALANCE) + REFERRAL_OWNER_REWARD)
+      if (!isPayload(payload)) return { error: 'Профіль завеликий після нагороди.', status: 413 }
+      const next = {
+        ...current,
+        version: Math.max(1, Number(current.version) || 1),
+        revision: Math.max(1, Math.floor(Number(current.revision) || 1)) + 1,
+        payload,
+        updatedAt: now,
+      }
+      await transaction.put(key, next)
+      return { credited: true, balance: payload.balance, revision: next.revision, entry: next }
+    })
+    if (result.error) return json({ error: result.error }, result.status)
+    if (result.entry) await this.indexGameProfile(accountId, result.entry, accountType)
+    return json({ credited: result.credited, duplicate: result.duplicate === true, balance: result.balance, revision: result.revision })
+  }
+
+  async creditReferralOwner(accountId, referredAccountId) {
+    const accountType = gameAccountType(accountId)
+    if (!accountType) return { error: 'Профіль автора запрошення не знайдено.', status: 404 }
+    const name = accountType === 'steam' ? `steam-account:${accountId}` : `profile:${accountId}`
+    const profile = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(name))
+    const response = await profile.fetch(new Request('https://internal/__internal/referral-credit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountId, referredAccountId }),
+    }))
+    const data = await response.json().catch(() => ({ error: 'Не вдалося підтвердити запрошення.' }))
+    return { ...data, status: response.status }
+  }
+
+  async activateReferralForAccount({ accountId, accountType, referrerAccountId, recoveryHash = '' }) {
+    const key = accountType === 'steam' ? 'steam-account' : `profile:${accountId}`
+    const now = Date.now()
+    const referrer = cleanText(referrerAccountId, 64)
+    if (!isGameAccountId(referrer) || referrer === accountId) return { error: 'Некоректне посилання-запрошення.', status: 400 }
+    const existing = await this.storage.get(key)
+    if (!existing || !isPayload(existing.payload) || (accountType === 'steam' && existing.steamId !== accountId)) {
+      return { error: 'Профіль гравця не знайдено.', status: 404 }
+    }
+    if (accountType === 'cloud' && !equalHash(existing.recoveryHash, recoveryHash)) {
+      return { error: 'Не вдалося підтвердити профіль.', status: 403 }
+    }
+    const previousReferral = existing.payload?.gameState?.referrals?.joinedFrom
+    if (isGameAccountId(cleanText(previousReferral?.accountId, 64))) {
+      return { error: 'Запрошення для цього профілю вже активовано.', status: 409 }
+    }
+    const createdAt = boundedInteger(existing.createdAt, 0, Number.MAX_SAFE_INTEGER, boundedInteger(existing.updatedAt, 0, Number.MAX_SAFE_INTEGER, now))
+    if (now - createdAt > REFERRAL_NEW_ACCOUNT_WINDOW) {
+      return { error: 'Бонус доступний лише новим профілям протягом перших 7 днів.', status: 409 }
+    }
+
+    // The owner object keeps a permanent, idempotent receipt for the new
+    // profile. Retrying a request after a network interruption never mints a
+    // second bonus.
+    const ownerCredit = await this.creditReferralOwner(referrer, accountId)
+    if (!ownerCredit.credited && !ownerCredit.duplicate) return ownerCredit
+
+    const activated = await this.storage.transaction(async transaction => {
+      const current = await transaction.get(key)
+      if (!current || !isPayload(current.payload) || (accountType === 'steam' && current.steamId !== accountId)) {
+        return { error: 'Профіль гравця не знайдено.', status: 404 }
+      }
+      if (accountType === 'cloud' && !equalHash(current.recoveryHash, recoveryHash)) return { error: 'Не вдалося підтвердити профіль.', status: 403 }
+      const payload = structuredClone(current.payload)
+      const gameState = payload.gameState && typeof payload.gameState === 'object' && !Array.isArray(payload.gameState) ? payload.gameState : {}
+      payload.gameState = gameState
+      const stored = gameState.referrals && typeof gameState.referrals === 'object' && !Array.isArray(gameState.referrals) ? gameState.referrals : {}
+      const joinedFrom = stored.joinedFrom && typeof stored.joinedFrom === 'object' ? stored.joinedFrom : null
+      if (isGameAccountId(cleanText(joinedFrom?.accountId, 64))) {
+        return { activated: false, duplicate: true, balance: boundedInteger(payload.balance, 0, ADMIN_GAME_MAX_BALANCE), revision: current.revision }
+      }
+      gameState.referrals = {
+        ...stored,
+        joinedFrom: { accountId: referrer, at: now },
+      }
+      payload.balance = Math.min(ADMIN_GAME_MAX_BALANCE, boundedInteger(payload.balance, 0, ADMIN_GAME_MAX_BALANCE) + REFERRAL_NEW_PLAYER_REWARD)
+      if (!isPayload(payload)) return { error: 'Профіль завеликий після нагороди.', status: 413 }
+      const next = {
+        ...current,
+        version: Math.max(1, Number(current.version) || 1),
+        revision: Math.max(1, Math.floor(Number(current.revision) || 1)) + 1,
+        payload,
+        updatedAt: now,
+      }
+      await transaction.put(key, next)
+      return { activated: true, balance: payload.balance, revision: next.revision, entry: next }
+    })
+    if (activated.error) return activated
+    if (activated.entry) await this.indexGameProfile(accountId, activated.entry, accountType)
+    return {
+      activated: activated.activated,
+      duplicate: activated.duplicate === true,
+      balance: activated.balance,
+      revision: activated.revision,
+      ownerCredited: ownerCredit.credited === true,
+      ownerReward: REFERRAL_OWNER_REWARD,
+      welcomeReward: REFERRAL_NEW_PLAYER_REWARD,
+      status: 200,
+    }
+  }
+
+  async rewards(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request, 4_096)
+    } catch {
+      return json({ error: 'Некоректний запит нагород.' }, 400)
+    }
+    if (String(body?.action || '') !== 'activate-referral') return json({ error: 'Невідома дія нагороди.' }, 400)
+    const referrerAccountId = cleanText(body?.referrerAccountId, 64)
+    const cloudAccountId = cleanText(body?.accountId, 64)
+    if (ID.test(cloudAccountId)) {
+      const recoveryCode = String(body?.recoveryCode || '')
+      if (!RECOVERY_CODE.test(recoveryCode)) return json({ error: 'Не вдалося підтвердити профіль.', status: 403 }, 403)
+      const result = await this.activateReferralForAccount({
+        accountId: cloudAccountId,
+        accountType: 'cloud',
+        referrerAccountId,
+        recoveryHash: await sha256(recoveryCode),
+      })
+      return json(result, result.status || 200)
+    }
+    const session = await this.getSteamSession(request)
+    if (!session) return json({ error: 'Спочатку увійди через Steam.', status: 401 }, 401)
+    const profile = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(`steam-account:${session.steamId}`))
+    const response = await profile.fetch(new Request('https://internal/__internal/steam-account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'activate-referral', steamId: session.steamId, referrerAccountId }),
+    }))
+    return new Response(response.body, { status: response.status, headers: JSON_HEADERS })
+  }
+
   async profile(request) {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
     let body
@@ -2077,7 +2281,8 @@ export class PotuzhnoState {
       if (!isPayload(body.payload)) return json({ error: 'Некоректне збереження.' }, 400)
       const result = await this.storage.transaction(async transaction => {
         if (await transaction.get(key)) return null
-        const data = { version: 2, revision: 1, recoveryHash, payload: body.payload, updatedAt: Date.now() }
+        const now = Date.now()
+        const data = { version: 2, revision: 1, recoveryHash, payload: body.payload, createdAt: now, updatedAt: now }
         await transaction.put(key, data)
         return data
       })
@@ -2088,6 +2293,15 @@ export class PotuzhnoState {
 
     if (!entry || !equalHash(entry.recoveryHash, recoveryHash)) return json({ error: 'Профіль не знайдено або код відновлення неправильний.' }, 403)
     const revision = Math.max(1, Math.floor(Number(entry.revision) || 1))
+    if (action === 'activate-referral') {
+      const result = await this.activateReferralForAccount({
+        accountId,
+        accountType: 'cloud',
+        referrerAccountId: cleanText(body?.referrerAccountId, 64),
+        recoveryHash,
+      })
+      return json(result, result.status || 200)
+    }
     if (action === 'load') {
       await this.indexCloudProfile(accountId, entry)
       return json({ payload: entry.payload, updatedAt: entry.updatedAt, revision })
@@ -2934,7 +3148,7 @@ export class PotuzhnoState {
       }
     }
     const action = String(body?.action || '')
-    if (!['load', 'create', 'save', 'set-visibility', 'delete'].includes(action)) return json({ error: 'Невідома дія Steam-акаунта.' }, 400)
+    if (!['load', 'create', 'save', 'set-visibility', 'activate-referral', 'delete'].includes(action)) return json({ error: 'Невідома дія Steam-акаунта.' }, 400)
 
     const accountState = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(`steam-account:${session.steamId}`))
     const response = await accountState.fetch(new Request('https://internal/__internal/steam-account', {
@@ -3554,6 +3768,20 @@ async function stateForRequest(request, env, path) {
   if (path === '/api/profile/sync' && request.method === 'POST') {
     const body = await requestBodyForRouting(request)
     if (ID.test(String(body?.accountId || ''))) name = `profile:${body.accountId}`
+  } else if (path === '/api/rewards') {
+    // Cloud profiles authenticate with their recovery code and can be routed
+    // straight to their account object. Steam and Android sessions must stay
+    // on their short-lived, authenticated session object.
+    const body = await requestBodyForRouting(request)
+    if (ID.test(String(body?.accountId || ''))) name = `profile:${body.accountId}`
+    else {
+      const mobileToken = mobileSessionToken(request)
+      if (mobileToken) name = `mobile:${mobileToken}`
+      else {
+        const session = steamSessionToken(readCookie(request, STEAM_SESSION_COOKIE))
+        if (session?.sharded) name = `steam:${session.token}`
+      }
+    }
   } else if ((path === '/api/public-profile' && request.method === 'GET') || path === '/api/public-avatar') {
     const id = url.searchParams.get('id') || ''
     if (ID.test(id)) name = `public:${id}`
