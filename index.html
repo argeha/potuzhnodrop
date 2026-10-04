@@ -29,13 +29,13 @@
 <link rel="preconnect" href="https://community.akamai.steamstatic.com">
 <link rel="preconnect" href="https://avatars.steamstatic.com">
 <!-- Tailwind зібраний локально: інтерфейс не залежить від зовнішнього CDN. -->
-<link rel="stylesheet" href="/css/tailwind.css?v=7.1.0">
+<link rel="stylesheet" href="/css/tailwind.css?v=7.2.0">
 <!-- Font Awesome -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-<link rel="stylesheet" href="/css/style.css?v=7.1.0">
+<link rel="stylesheet" href="/css/style.css?v=7.2.0">
 </head>
 <body class="min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -62,7 +62,7 @@
 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-3">
 <a href="#hub" onclick="showPage('hub');return false" class="flex items-center gap-3 shrink-0">
 <div class="w-11 h-11 rounded-xl bg-brand-card border border-amber-400/30 flex items-center justify-center shadow-lg shadow-amber-500/10"><img src="/assets/brand/potuzhno-mark.svg?v=1" alt="" width="30" height="30" class="w-8 h-8" decoding="async"></div>
-<span class="font-heading text-2xl sm:text-3xl font-extrabold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-amber-200 to-yellow-500 uppercase leading-none"><span id="brandName">ПОТУЖНО DROP</span> <small id="brandRelease" class="hidden sm:inline ml-1 align-middle text-[11px] tracking-widest text-amber-300">7.1.0</small></span>
+<span class="font-heading text-2xl sm:text-3xl font-extrabold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-amber-200 to-yellow-500 uppercase leading-none"><span id="brandName">ПОТУЖНО DROP</span> <small id="brandRelease" class="hidden sm:inline ml-1 align-middle text-[11px] tracking-widest text-amber-300">7.2.0</small></span>
 </a>
 <nav class="desktop-nav hidden lg:flex items-center gap-0.5 flex-1 justify-center">
 <a href="#hub" data-nav="hub" class="nav-link" onclick="showPage('hub');return false"><i class="fa-solid fa-house text-xs"></i> Центр</a>
@@ -152,7 +152,7 @@
 
 <section class="command-hub-section-head"><div><p>ОБЕРИ РЕЖИМ</p><h2>Наступний хід</h2></div><button type="button" onclick="showPage('stats')"><i class="fa-solid fa-chart-simple"></i> Вся статистика</button></section>
 <section class="command-hub-mode-grid" aria-label="Ігрові режими">
-  <button type="button" class="command-hub-mode is-case" onclick="showPage('case')"><i class="fa-solid fa-box-open"></i><span><b>Кейси</b><small>Відкрий дроп за Steam-цінами</small></span><em><i class="fa-solid fa-arrow-right"></i></em></button>
+  <button type="button" class="command-hub-mode is-case" onclick="showPage('case')"><i class="fa-solid fa-box-open"></i><span><b>Кейси</b><small>Відкрий дроп за фіксованими цінами</small></span><em><i class="fa-solid fa-arrow-right"></i></em></button>
   <button type="button" class="command-hub-mode is-upgrade" onclick="showPage('upgrader')"><i class="fa-solid fa-bolt"></i><span><b>Апгрейд</b><small>Ризикни за прозорим шансом</small></span><em><i class="fa-solid fa-arrow-right"></i></em></button>
   <button type="button" class="command-hub-mode is-battle" onclick="showPage('battle')"><i class="fa-solid fa-swords"></i><span><b>Відкритий бій</b><small>1v1 з другом або спільнотою</small></span><em><i class="fa-solid fa-arrow-right"></i></em></button>
   <button type="button" class="command-hub-mode is-royale" onclick="showPage('royale')"><i class="fa-solid fa-crown"></i><span><b>Battle Royale</b><small>Спільний банк та один переможець</small></span><em><i class="fa-solid fa-arrow-right"></i></em></button>
@@ -603,7 +603,7 @@
 </main>
 
 <footer class="border-t border-brand-border py-5 px-4 text-center">
-<p id="brandFooterText" class="text-xs text-gray-500">ПОТУЖНО DROP 7.1.0 — віртуальна CS2-гра без реальних грошей, скінів або призів. 1 PC відображається як $1 USD за довідковою ціною Steam Market; коли Steam тимчасово не відповідає серверу, використовується явно позначений Steam feed OpenSkin. Непідтверджені ціни не використовуються в економіці. PC не можна вивести чи обміняти. <a href="#about" onclick="showPage('about');return false" class="text-amber-400 hover:text-amber-300">Правила й безпека</a> · <a href="privacy.html" class="text-amber-400 hover:text-amber-300">Політика приватності</a> · <a href="account-delete.html" class="text-amber-400 hover:text-amber-300">Видалення акаунта</a></p>
+<p id="brandFooterText" class="text-xs text-gray-500">ПОТУЖНО DROP 7.2.0 — віртуальна CS2-гра без реальних грошей, скінів або призів. PC — внутрішні кредити: їхня ціна визначається стабільним каталогом ПОТУЖНО, однакова в усіх режимах і не прив’язана до Steam чи реальних грошей. PC не можна вивести або обміняти. <a href="#about" onclick="showPage('about');return false" class="text-amber-400 hover:text-amber-300">Правила й безпека</a> · <a href="privacy.html" class="text-amber-400 hover:text-amber-300">Політика приватності</a> · <a href="account-delete.html" class="text-amber-400 hover:text-amber-300">Видалення акаунта</a></p>
 </footer>
 
 <!-- MODALS -->
@@ -761,6 +761,6 @@
 
 <script src="/js/mobile-config.js" defer></script>
 <script src="/js/mobile.js?v=1" defer></script>
-<script src="/js/app.js?v=7.1.0" defer></script>
+<script src="/js/app.js?v=7.2.0" defer></script>
 </body>
 </html>

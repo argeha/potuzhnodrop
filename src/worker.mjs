@@ -55,29 +55,9 @@ const STEAM_PROFILE_TTL = 6 * 60 * 60_000
 const STEAM_SESSION_TTL = 30 * 24 * 60 * 60_000
 const CATALOG_TTL = 6 * 60 * 60_000
 const CATALOG_STALE_TTL = 7 * 24 * 60 * 60_000
-// Steam Community Market is an external reference, not a payment rail. Keep
-// requests small and cache quotes in the catalog Durable Object so one busy
-// screen cannot turn into a browser-side scrape of Steam.
-const STEAM_MARKET_APP_ID = '730'
-const STEAM_MARKET_CURRENCY = '1' // USD
-// A shop viewport requests at most 80 entries. It is intentionally below the
-// public provider's 500-item batch ceiling and avoids one HTTP request per
-// card.
-const STEAM_MARKET_BATCH_LIMIT = 80
-const STEAM_MARKET_TTL = 6 * 60 * 60_000
-const STEAM_MARKET_STALE_TTL = 72 * 60 * 60_000
-// Steam may decline requests made from a shared Cloudflare egress IP. OpenSkin's
-// keyless endpoint exposes a clearly-labelled Steam feed, so it is only used
-// as a read-only fallback; it never becomes an invented local price.
-const OPEN_SKIN_STEAM_ENDPOINT = 'https://api-v2.openskin.dev/v1/prices/steam'
-const OPEN_SKIN_MAX_SOURCE_AGE = 14 * 24 * 60 * 60_000
-const STEAM_WEAR_NAMES = Object.freeze({
-  FN: 'Factory New',
-  MW: 'Minimal Wear',
-  FT: 'Field-Tested',
-  WW: 'Well-Worn',
-  BS: 'Battle-Scarred',
-})
+// The catalogue endpoint accepts a bounded batch to support older clients.
+// It returns only the fixed in-game index defined below.
+const CATALOG_PRICE_BATCH_LIMIT = 80
 const STEAM_SESSION_COOKIE = 'potuzhno_steam_session'
 const STEAM_AUTH_TTL = 10 * 60_000
 const STEAM_AUTH_COOKIE = 'potuzhno_steam_auth'
@@ -544,14 +524,136 @@ function boundedInteger(value, min = 0, max = Number.MAX_SAFE_INTEGER, fallback 
   return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback
 }
 
-// PC is referenced one-to-one to USD in the virtual game. Monetary values are
-// therefore stored with at most two fraction digits; counters and XP remain
-// integers and continue using boundedInteger.
+// PC is a virtual in-game balance. Prices use at most two fraction digits;
+// counters and XP remain integers and continue using boundedInteger.
 function boundedMoney(value, min = 0, max = Number.MAX_SAFE_INTEGER, fallback = min) {
   const number = Number(value)
   if (!Number.isFinite(number)) return fallback
   const rounded = Math.round((number + Number.EPSILON) * 100) / 100
   return Math.max(min, Math.min(max, rounded))
+}
+
+// The economy deliberately does not use a live marketplace. A fixed catalogue
+// index makes a skin worth the same in a case, upgrade, contract, battle and
+// Royale regardless of Steam outages, cached quotes or regional prices.
+const STABLE_ECONOMY_VERSION = 'stable-catalog-v1'
+const STABLE_ECONOMY_SOURCE = 'Стабільний індекс ПОТУЖНО'
+const STABLE_WEAR_MULTIPLIERS = Object.freeze({ FN: 1.18, MW: 1.09, FT: 1, WW: 0.87, BS: 0.76 })
+const STABLE_RARITY_VALUES = Object.freeze({
+  'Consumer Grade': 4,
+  'Industrial Grade': 8,
+  'Mil-Spec Grade': 16,
+  Restricted: 35,
+  Classified: 80,
+  Covert: 180,
+  Contraband: 2_500,
+  Extraordinary: 700,
+})
+const STABLE_ANCHOR_VALUES = Object.freeze({
+  'AK-47 | Wild Lotus': 6_500,
+  'AWP | Gungnir': 7_000,
+  'AWP | Dragon Lore': 6_000,
+  'M4A4 | Howl': 4_000,
+  'AWP | Medusa': 2_800,
+  'AK-47 | Gold Arabesque': 1_200,
+  'AWP | Desert Hydra': 1_000,
+  'AK-47 | Fire Serpent': 950,
+  'AK-47 | X-Ray': 900,
+  'M4A1-S | Knight': 850,
+  'AK-47 | Hydroponic': 650,
+  'Glock-18 | Fade': 650,
+  'M4A1-S | Blue Phosphor': 550,
+  'Desert Eagle | Fennec Fox': 500,
+  'M4A1-S | Printstream': 220,
+  'AK-47 | Vulcan': 150,
+  'USP-S | Kill Confirmed': 160,
+  'Desert Eagle | Printstream': 120,
+  'AWP | Asiimov': 75,
+  'AK-47 | Neon Rider': 40,
+  'AK-47 | Redline': 35,
+  'Glock-18 | Water Elemental': 22,
+  'AWP | Atheris': 12,
+})
+
+function stableCatalogField(skin, field, limit = 160) {
+  const value = skin?.[field]
+  return cleanText(typeof value === 'string' ? value : value?.name, limit)
+}
+
+function stableHash(value) {
+  let hash = 2166136261
+  for (const char of String(value || 'potuzhno')) {
+    hash ^= char.charCodeAt(0)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+function stableWearCode(value) {
+  const code = cleanText(typeof value === 'string' ? value : value?.code, 2).toUpperCase()
+  return Object.hasOwn(STABLE_WEAR_MULTIPLIERS, code) ? code : 'FT'
+}
+
+function stableCatalogPrice(skin, wear = 'FT') {
+  const name = stableCatalogField(skin, 'name') || 'CS2 Skin'
+  const category = stableCatalogField(skin, 'category', 64)
+  const weapon = stableCatalogField(skin, 'weapon', 64)
+  const rarity = stableCatalogField(skin, 'rarity', 48) || 'Consumer Grade'
+  const lowerName = name.toLowerCase()
+  const inferredKnife = /^★/.test(name) || /knife|karambit|bayonet|talon|falchion|navaja|daggers/i.test(name)
+  const inferredGloves = /gloves|wraps|hand wraps|hydra gloves|sport gloves|specialist gloves/i.test(name)
+  const type = category || (inferredGloves ? 'Gloves' : inferredKnife ? 'Knives' : '')
+  const hashFactor = 0.94 + (stableHash(`${name}:v1`) % 13) / 100
+  const finishMultiplier = /doppler|sapphire|ruby|emerald|black pearl/i.test(lowerName)
+    ? 3.2
+    : /fade|marble fade|gamma doppler/i.test(lowerName)
+      ? 2.25
+      : /lore|slaughter|crimson web|tiger tooth/i.test(lowerName)
+        ? 1.65
+        : /printstream|vulcan|asiimov|neo-noir|kill confirmed|fuel injector|the empress|case hardened/i.test(lowerName)
+          ? 1.45
+          : 1
+  let base = Number(STABLE_ANCHOR_VALUES[name]) || 0
+  if (!base && type === 'Knives') {
+    const knifeType = /butterfly/i.test(name) ? 1.7
+      : /karambit/i.test(name) ? 1.55
+        : /m9/i.test(name) ? 1.45
+          : /talon/i.test(name) ? 1.3
+            : /bayonet/i.test(name) ? 1.15
+              : /falchion/i.test(name) ? 0.8
+                : /gut/i.test(name) ? 0.72
+                  : 1
+    base = 260 * knifeType * finishMultiplier * hashFactor
+  } else if (!base && type === 'Gloves') {
+    const glovePremium = /pandora|vice|spearmint|hedge maze|superconductor/i.test(lowerName) ? 2.8 : finishMultiplier
+    base = 180 * glovePremium * hashFactor
+  } else if (!base) {
+    const weaponFactor = /^(awp|ak-47|m4a1-s|m4a4|desert eagle)/i.test(weapon) ? 1.15
+      : /^(usp-s|glock-18|five-seven|p250)/i.test(weapon) ? 1
+        : 0.85
+    base = (STABLE_RARITY_VALUES[rarity] || 16) * weaponFactor * finishMultiplier * hashFactor
+  }
+  const value = Math.round((base * (STABLE_WEAR_MULTIPLIERS[stableWearCode(wear)] || 1)) * 2) / 2
+  return boundedMoney(value, 1, MAX_PRICE, 1)
+}
+
+function stableCatalogQuote(skin, wear) {
+  const code = stableWearCode(wear)
+  const now = Date.now()
+  return {
+    available: true,
+    id: cleanText(skin?.id, 128),
+    wear: code,
+    // Kept for old clients that still expect this field; it is only a
+    // catalogue label, not an external market reference.
+    marketHashName: cleanText(skin?.name, 200),
+    price: stableCatalogPrice(skin, code),
+    medianPrice: stableCatalogPrice(skin, code),
+    updatedAt: now,
+    sourceUpdatedAt: now,
+    source: STABLE_ECONOMY_SOURCE,
+    pricingVersion: STABLE_ECONOMY_VERSION,
+  }
 }
 
 function communitySeasonKey() {
@@ -965,21 +1067,6 @@ function adminCatalogSkin(value) {
   const rarityColor = cleanColor(value.rarityColor || value.rarity?.color)
   const img = cleanImage(value.img || value.image)
   if (!id || !name || !weapon || !category || !img) return null
-  const idText = `${id}:${name}`
-  let hash = 2166136261
-  for (const char of idText) {
-    hash ^= char.charCodeAt(0)
-    hash = Math.imul(hash, 16777619)
-  }
-  const roll = (hash >>> 0) / 4_294_967_295
-  const premium = /Doppler|Fade|Marble|Gamma|Lore|Slaughter|Crimson|Tiger Tooth|Emerald|Ruby|Sapphire|Pandora|Vice/i.test(name)
-  let price
-  if (category === 'Knives') price = 650 + Math.round(Math.pow(roll, 1.75) * 12_500) + (premium ? 11_000 : 0)
-  else if (category === 'Gloves') price = 450 + Math.round(Math.pow(roll, 1.6) * 7_000) + (premium ? 6_000 : 0)
-  else {
-    const base = ({ 'Consumer Grade': 12, 'Industrial Grade': 28, 'Mil-Spec Grade': 70, Restricted: 190, Classified: 520, Covert: 1_450, Contraband: 9_000, Extraordinary: 5_000 })[rarity] || 60
-    price = base * (0.7 + roll * 1.35) + (premium ? base * 0.65 : 0)
-  }
   return {
     id,
     name,
@@ -988,7 +1075,7 @@ function adminCatalogSkin(value) {
     rarity,
     rarityColor,
     img,
-    price: boundedMoney(price, 0.01, MAX_PRICE),
+    price: stableCatalogPrice({ id, name, weapon, category, rarity }, 'FT'),
   }
 }
 
@@ -3307,193 +3394,6 @@ export class PotuzhnoState {
       : { 'Cache-Control': 'public, max-age=3600, s-maxage=21600' })
   }
 
-  marketHashName(skin, wearCode) {
-    const requestedWear = STEAM_WEAR_NAMES[cleanText(wearCode, 2).toUpperCase()] || STEAM_WEAR_NAMES.FT
-    const availableWears = Array.isArray(skin?.wears) ? skin.wears : []
-    // A non-wear item uses its exact market name. For weapon finishes we only
-    // request a wear the catalog confirms, avoiding guesses such as FT gloves.
-    const wear = availableWears.includes(requestedWear)
-      ? requestedWear
-      : availableWears.includes(STEAM_WEAR_NAMES.FT)
-        ? STEAM_WEAR_NAMES.FT
-        : availableWears[0] || ''
-    return `${skin.name}${wear ? ` (${wear})` : ''}`
-  }
-
-  parseSteamUsd(value) {
-    const match = String(value || '').replace(/,/g, '').match(/(?:US\$|\$)\s*([0-9]+(?:\.[0-9]{1,2})?)/)
-    return match ? boundedMoney(match[1], 0.01, MAX_PRICE, 0) : 0
-  }
-
-  async steamMarketQuote(skin, wearCode) {
-    const marketHashName = this.marketHashName(skin, wearCode)
-    const key = `market:usd:v2:${await sha256(marketHashName)}`
-    const now = Date.now()
-    const cached = await this.storage.get(key)
-    const cacheAge = now - Number(cached?.updatedAt || 0)
-    if (cached?.available === true && cacheAge >= 0 && cacheAge < STEAM_MARKET_TTL) {
-      return { ...cached, stale: false }
-    }
-
-    try {
-      const endpoint = new URL('https://steamcommunity.com/market/priceoverview/')
-      endpoint.searchParams.set('appid', STEAM_MARKET_APP_ID)
-      endpoint.searchParams.set('currency', STEAM_MARKET_CURRENCY)
-      endpoint.searchParams.set('country', 'US')
-      endpoint.searchParams.set('market_hash_name', marketHashName)
-      const response = await timedFetch(endpoint.href, {
-        headers: {
-          Accept: 'application/json, text/plain, */*',
-          'Accept-Language': 'en-US,en;q=0.9',
-          // Steam sometimes rejects anonymous edge requests. This identifies
-          // the integration without forwarding any player data or cookies.
-          'User-Agent': 'PotuzhnoDrop/7.0 Steam-Market-Reference',
-        },
-      })
-      if (!response.ok) throw new Error(`Steam Market ${response.status}`)
-      const data = await response.json()
-      const price = this.parseSteamUsd(data?.lowest_price) || this.parseSteamUsd(data?.median_price)
-      if (!data?.success || !price) throw new Error('Steam Market price unavailable')
-      const quote = {
-        available: true,
-        id: skin.id,
-        wear: cleanText(wearCode, 2).toUpperCase() || 'FT',
-        marketHashName,
-        price,
-        medianPrice: this.parseSteamUsd(data?.median_price),
-        volume: cleanText(data?.volume, 24),
-        updatedAt: now,
-        sourceUpdatedAt: now,
-        source: 'Steam Community Market',
-      }
-      await this.storage.put(key, quote)
-      return { ...quote, stale: false }
-    } catch {
-      try {
-        const endpoint = new URL(OPEN_SKIN_STEAM_ENDPOINT)
-        endpoint.searchParams.set('item', marketHashName)
-        const response = await timedFetch(endpoint.href, {
-          headers: {
-            Accept: 'application/json',
-            'User-Agent': 'PotuzhnoDrop/7.0 Steam-price-reference',
-          },
-        })
-        if (!response.ok) throw new Error(`OpenSkin Steam feed ${response.status}`)
-        const data = await response.json()
-        const sourceUpdatedAt = Date.parse(cleanText(data?.updated_at, 80))
-        const sourceAge = now - sourceUpdatedAt
-        const price = boundedMoney(data?.ask ?? data?.median, 0.01, MAX_PRICE, 0)
-        if (!Number.isFinite(sourceUpdatedAt) || sourceUpdatedAt <= 0 || sourceAge < -5 * 60_000 || sourceAge > OPEN_SKIN_MAX_SOURCE_AGE || !price) {
-          throw new Error('OpenSkin Steam quote unavailable or too old')
-        }
-        const quote = {
-          available: true,
-          id: skin.id,
-          wear: cleanText(wearCode, 2).toUpperCase() || 'FT',
-          marketHashName,
-          price,
-          medianPrice: boundedMoney(data?.median, 0.01, MAX_PRICE, 0),
-          volume: cleanText(data?.volume_24h, 24),
-          updatedAt: now,
-          sourceUpdatedAt,
-          source: 'OpenSkin Steam feed',
-        }
-        await this.storage.put(key, quote)
-        return { ...quote, stale: sourceAge > STEAM_MARKET_TTL }
-      } catch {
-        // Use the last successful direct or OpenSkin Steam quote only for the
-        // documented stale window. Returning unavailable is safer than making
-        // a price up when both upstreams are unavailable.
-      }
-      if (cached?.available === true && cacheAge >= 0 && cacheAge < STEAM_MARKET_STALE_TTL) {
-        return { ...cached, stale: true }
-      }
-      return {
-        available: false,
-        id: skin.id,
-        wear: cleanText(wearCode, 2).toUpperCase() || 'FT',
-        marketHashName,
-        updatedAt: 0,
-        source: 'Unavailable',
-      }
-    }
-  }
-
-  async steamMarketBatchQuotes(requests) {
-    const now = Date.now()
-    const quotesByRequest = new Map()
-    const missing = []
-
-    for (const request of requests) {
-      const marketHashName = this.marketHashName(request.skin, request.wear)
-      const key = `market:usd:v2:${await sha256(marketHashName)}`
-      const cached = await this.storage.get(key)
-      const cacheAge = now - Number(cached?.updatedAt || 0)
-      const requestKey = `${request.skin.id}:${request.wear}`
-      if (cached?.available === true && cacheAge >= 0 && cacheAge < STEAM_MARKET_TTL) {
-        const sourceAge = now - Number(cached.sourceUpdatedAt || cached.updatedAt || 0)
-        quotesByRequest.set(requestKey, { ...cached, stale: sourceAge > STEAM_MARKET_TTL })
-      } else {
-        missing.push({ ...request, marketHashName, key, requestKey })
-      }
-    }
-
-    if (missing.length) {
-      try {
-        const response = await timedFetch(`${OPEN_SKIN_STEAM_ENDPOINT.replace('/prices/steam', '/prices/batch')}`, {
-          method: 'POST',
-          headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ items: missing.map(entry => entry.marketHashName) }),
-          timeoutMs: 20_000,
-        })
-        if (!response.ok) throw new Error(`OpenSkin Steam batch ${response.status}`)
-        const data = await response.json()
-        const entries = data?.data && typeof data.data === 'object' ? data.data : {}
-        const writes = []
-        for (const entry of missing) {
-          const steam = entries?.[entry.marketHashName]?.steam
-          const sourceUpdatedAt = Date.parse(cleanText(steam?.updated_at, 80))
-          const sourceAge = now - sourceUpdatedAt
-          const price = boundedMoney(steam?.ask ?? steam?.median, 0.01, MAX_PRICE, 0)
-          if (!Number.isFinite(sourceUpdatedAt) || sourceUpdatedAt <= 0 || sourceAge < -5 * 60_000 || sourceAge > OPEN_SKIN_MAX_SOURCE_AGE || !price) continue
-          const quote = {
-            available: true,
-            id: entry.skin.id,
-            wear: cleanText(entry.wear, 2).toUpperCase() || 'FT',
-            marketHashName: entry.marketHashName,
-            price,
-            medianPrice: boundedMoney(steam?.median, 0.01, MAX_PRICE, 0),
-            volume: cleanText(steam?.volume_24h, 24),
-            updatedAt: now,
-            sourceUpdatedAt,
-            source: 'OpenSkin Steam feed',
-          }
-          quotesByRequest.set(entry.requestKey, { ...quote, stale: sourceAge > STEAM_MARKET_TTL })
-          writes.push(this.storage.put(entry.key, quote))
-        }
-        await Promise.all(writes)
-      } catch {
-        // The endpoint will return an explicit unavailable quote below instead
-        // of silently falling back to a generated price.
-      }
-    }
-
-    return requests.map(request => {
-      const requestKey = `${request.skin.id}:${request.wear}`
-      return quotesByRequest.get(requestKey) || {
-        available: false,
-        id: request.skin.id,
-        wear: cleanText(request.wear, 2).toUpperCase() || 'FT',
-        marketHashName: this.marketHashName(request.skin, request.wear),
-        updatedAt: 0,
-        source: 'Unavailable',
-      }
-    })
-  }
-
   async marketPrices(request) {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
     let body
@@ -3502,7 +3402,7 @@ export class PotuzhnoState {
     } catch {
       return json({ error: 'Некоректний запит цін.' }, 400)
     }
-    const requested = Array.isArray(body?.items) ? body.items.slice(0, STEAM_MARKET_BATCH_LIMIT) : []
+    const requested = Array.isArray(body?.items) ? body.items.slice(0, CATALOG_PRICE_BATCH_LIMIT) : []
     if (!requested.length) return json({ error: 'Вкажи до 8 скінів із каталогу.' }, 400)
     const catalog = await this.readSkinCatalog()
     if (!catalog) return json({ error: 'Каталог скінів тимчасово недоступний.' }, 502)
@@ -3519,17 +3419,15 @@ export class PotuzhnoState {
       }
     }
     if (!unique.length) return json({ error: 'Не знайдено дозволених скінів у каталозі.' }, 400)
-    // Direct Steam stays first for an exact individual skin. For a visible
-    // shop page we use one Steam-feed batch instead of issuing dozens of edge
-    // requests that Steam can throttle or block.
-    const quotes = unique.length === 1
-      ? [await this.steamMarketQuote(unique[0].skin, unique[0].wear)]
-      : await this.steamMarketBatchQuotes(unique)
+    // This endpoint deliberately returns the internal catalogue index. It is
+    // retained for older web and Android bundles, but it never calls Steam or
+    // a price feed: availability of an outside marketplace must not alter a
+    // virtual round, inventory value or a player's payout.
+    const quotes = unique.map(entry => stableCatalogQuote(entry.skin, entry.wear))
     return json({
-      source: 'Steam Community Market',
-      fallbackSource: 'OpenSkin Steam feed',
-      currency: 'USD',
-      pcUsdRate: 1,
+      source: STABLE_ECONOMY_SOURCE,
+      pricingVersion: STABLE_ECONOMY_VERSION,
+      currency: 'PC',
       catalogStale: catalog.stale === true,
       quotes,
     }, 200, { 'Cache-Control': 'private, no-store' })
