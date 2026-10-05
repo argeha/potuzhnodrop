@@ -3246,9 +3246,18 @@ export class PotuzhnoState {
 
   async steamAvatar(request) {
     if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
+    const requestedSteamId = new URL(request.url).searchParams.get('steamId') || ''
     const session = await this.getSteamSession(request)
-    if (!session) return json({ error: 'Сесія Steam завершилась. Увійди через Steam ще раз.' }, 401)
-    const profile = await this.resolveSteamProfile(session.steamId)
+    // Steam avatar URLs are public.  An image request from an Android WebView
+    // cannot include the bearer token that protects the rest of the API, so a
+    // validated SteamID is also allowed here as a narrowly scoped fallback.
+    // The resolver still fetches only fixed Steam Community endpoints and
+    // `cleanAvatar` allow-lists the final CDN host.
+    const steamId = /^\d{17}$/.test(String(session?.steamId || ''))
+      ? String(session.steamId)
+      : /^\d{17}$/.test(requestedSteamId) ? requestedSteamId : ''
+    if (!steamId) return json({ error: 'Потрібен підтверджений Steam-профіль.' }, 401)
+    const profile = await this.resolveSteamProfile(steamId)
     const avatar = cleanAvatar(profile?.avatar)
     if (!avatar) return json({ error: 'Steam не повернув аватар для цього профілю.' }, 404)
     try {

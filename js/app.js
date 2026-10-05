@@ -1443,12 +1443,27 @@ function createSteamAvatarFallback(name = 'Steam') {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 
+function getSteamAvatarRelayUrl(steamId) {
+  const safeSteamId = /^\d{17}$/.test(String(steamId || '')) ? String(steamId) : '';
+  return safeSteamId ? `${gameApiUrl('/api/steam/avatar')}?steamId=${encodeURIComponent(safeSteamId)}` : '';
+}
+
 function handleSteamAvatarError(image) {
   if (!image) return;
   const directAvatar = cleanImageUrl(image.dataset.steamAvatar || '');
-  if (directAvatar && image.dataset.steamAvatarAttempt !== 'direct') {
+  const relayAvatar = String(image.dataset.steamAvatarRelay || '');
+  const attempted = image.dataset.steamAvatarAttempt || '';
+  // Prefer the server-supplied Steam CDN URL. If a browser, WebView, or CDN
+  // blocks it temporarily, retry once through our narrow Steam-only relay.
+  // This avoids turning a working public photo into the generic Steam icon.
+  if (attempted !== 'direct' && directAvatar) {
     image.dataset.steamAvatarAttempt = 'direct';
     image.src = directAvatar;
+    return;
+  }
+  if (attempted !== 'relay' && relayAvatar) {
+    image.dataset.steamAvatarAttempt = 'relay';
+    image.src = relayAvatar;
     return;
   }
   image.src = createSteamAvatarFallback(image.dataset.steamName || image.alt || 'Steam');
@@ -1461,19 +1476,15 @@ function setSteamAvatarSource(image, steamId, avatar, name = 'Steam') {
   const directAvatar = cleanImageUrl(avatar);
   if (directAvatar) image.dataset.steamAvatar = directAvatar;
   else delete image.dataset.steamAvatar;
-  delete image.dataset.steamAvatarAttempt;
+  const relayAvatar = getSteamAvatarRelayUrl(steamId);
+  if (relayAvatar) image.dataset.steamAvatarRelay = relayAvatar;
+  else delete image.dataset.steamAvatarRelay;
   image.classList.remove('fallback-skin');
-  // The same-origin endpoint avoids client-side Steam CDN/CSP/hotlink failures.
-  // It validates the active HttpOnly Steam session before resolving and proxying
-  // an avatar. Do not wait for a locally cached URL: right after OpenID the
-  // server may resolve the photo a moment later than the browser state.
-  // A native image tag cannot attach the mobile bearer token to the protected
-  // avatar relay. Steam's already validated public avatar URL is safe to
-  // render directly there; the web version retains the protected relay.
-  const mobileAvatar = window.PotuzhnoMobile?.isNative ? directAvatar : '';
-  image.src = mobileAvatar || /^\d{17}$/.test(String(steamId || ''))
-    ? mobileAvatar || gameApiUrl('/api/steam/avatar')
-    : directAvatar || createSteamAvatarFallback(image.dataset.steamName);
+  // The session payload is resolved by the Worker, so this URL is safe to
+  // place in an image element and works without CORS. The relay is only the
+  // fallback for a stale/missing URL or an occasional Steam CDN image failure.
+  image.dataset.steamAvatarAttempt = directAvatar ? 'direct' : relayAvatar ? 'relay' : 'fallback';
+  image.src = directAvatar || relayAvatar || createSteamAvatarFallback(image.dataset.steamName);
 }
 
 function normalizeSteamProfile(profile, steamId = '') {
