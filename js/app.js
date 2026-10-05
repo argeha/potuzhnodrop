@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 7.5.2 ============ */
+/* ============ ПОТУЖНО DROP 7.5.3 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -604,6 +604,7 @@ function setProfileVisibility(value) {
 // the result visible and centred instead of dropping frames while dozens of
 // remote skin previews are decoded at once.
 function prefersLightweightMotion() {
+  if (gameState?.performanceMode === 'lite') return true;
   const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
   const saveData = navigator.connection?.saveData === true;
   const lowMemory = Number(navigator.deviceMemory) > 0 && Number(navigator.deviceMemory) <= 2;
@@ -611,16 +612,40 @@ function prefersLightweightMotion() {
   return Boolean(reduceMotion || saveData || lowMemory || fewCores);
 }
 
+function getPerformanceMode() {
+  return gameState?.performanceMode === 'lite' ? 'lite' : 'auto';
+}
+
+function applyPerformanceMode() {
+  const isLite = getPerformanceMode() === 'lite';
+  document.body.classList.toggle('performance-lite', isLite);
+  document.documentElement.dataset.performance = isLite ? 'lite' : 'auto';
+}
+
+function setPerformanceMode(mode) {
+  if (!gameState) return;
+  gameState.performanceMode = mode === 'lite' ? 'lite' : 'auto';
+  applyPerformanceMode();
+  saveState();
+  renderPerformancePanel();
+  if (currentPage === 'case') renderCaseCatalog();
+  if (document.getElementById('shopModal')?.classList.contains('flex')) filterShop();
+  showToast(gameState.performanceMode === 'lite'
+    ? 'Легкий режим увімкнено: менше анімацій і карток у рулетці.'
+    : 'Автоматичний режим продуктивності увімкнено.', 'success');
+}
+
 function getCaseReelConfig(soundDurationMs = 0) {
+  const manualLite = getPerformanceMode() === 'lite';
   const base = prefersLightweightMotion()
-    ? { cards: 24, winnerIndex: 18, duration: 2_350 }
+    ? { cards: manualLite ? 18 : 24, winnerIndex: manualLite ? 13 : 18, duration: manualLite ? 1_450 : 2_350 }
     : { cards: 34, winnerIndex: 27, duration: 3_850 };
   const soundtrackDuration = Math.round(Number(soundDurationMs) || 0);
   return {
     ...base,
     // A valid soundtrack duration always wins: the reel reaches its result
     // exactly when its music ends. The fallback keeps offline playback fluid.
-    duration: soundtrackDuration >= 1_000 ? soundtrackDuration : base.duration
+    duration: !manualLite && soundtrackDuration >= 1_000 ? soundtrackDuration : base.duration
   };
 }
 
@@ -1597,6 +1622,7 @@ function createDefaultGameState() {
     allTime: createDefaultAllTime(),
     achievements: {},
     favorites: [],
+    performanceMode: 'auto',
     showcase: [],
     caseCollectionTrophies: {},
     dailyStreak: { current: 0, best: 0, lastDay: '' },
@@ -1648,6 +1674,7 @@ function loadGameState() {
       allTime: { ...createDefaultAllTime(), ...(s.allTime || {}) },
       achievements: s.achievements || {},
       favorites: Array.isArray(s.favorites) ? s.favorites.map(String) : [],
+      performanceMode: s.performanceMode === 'lite' ? 'lite' : 'auto',
       showcase: Array.isArray(s.showcase) ? s.showcase.map(String).slice(0, 3) : [],
       dailyStreak: { ...d.dailyStreak, ...(s.dailyStreak || {}) },
       battlePass: { ...createDefaultBattlePass(), ...(s.battlePass || {}) },
@@ -1890,7 +1917,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.5.2';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.5.3';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -3378,8 +3405,26 @@ function renderSteamAccountPanel() {
   }
 }
 
+function renderPerformancePanel() {
+  const modal = document.getElementById('accountModal');
+  if (!modal) return;
+  let panel = document.getElementById('performanceModePanel');
+  if (!panel) {
+    panel = document.createElement('section');
+    panel.id = 'performanceModePanel';
+    panel.className = 'mb-4 rounded-xl border border-violet-400/25 bg-violet-500/5 p-3';
+    const privacy = document.getElementById('accountPrivacyPanel');
+    if (privacy) privacy.after(panel);
+    else modal.querySelector('#accountNickInput')?.closest('label')?.after(panel);
+  }
+  const mode = getPerformanceMode();
+  const automaticSavings = mode === 'auto' && prefersLightweightMotion();
+  panel.innerHTML = `<div class="flex items-start justify-between gap-3"><div><p class="text-[11px] font-extrabold text-violet-100"><i class="fa-solid fa-gauge-high mr-1.5 text-violet-300"></i>Швидкодія</p><p class="mt-1 text-[10px] leading-4 text-gray-400">Легкий режим прибирає декоративні прев’ю поза екраном і скорочує рулетку. Шанси, ціни та результати не змінюються.</p></div><span class="shrink-0 rounded-md border ${mode === 'lite' ? 'border-emerald-400/35 bg-emerald-500/10 text-emerald-200' : 'border-gray-600/50 bg-black/20 text-gray-300'} px-2 py-1 text-[8px] font-extrabold">${mode === 'lite' ? 'ЛЕГКИЙ' : automaticSavings ? 'АВТО · ЕКОНОМНО' : 'АВТО'}</span></div><div class="mt-3 grid grid-cols-2 gap-2"><button type="button" onclick="setPerformanceMode('auto')" class="rounded-lg border px-2 py-2 text-[10px] font-extrabold transition ${mode === 'auto' ? 'border-cyan-400/45 bg-cyan-400/10 text-cyan-100' : 'border-gray-700 bg-black/20 text-gray-400 hover:border-gray-500'}">Автоматично</button><button type="button" onclick="setPerformanceMode('lite')" class="rounded-lg border px-2 py-2 text-[10px] font-extrabold transition ${mode === 'lite' ? 'border-emerald-400/45 bg-emerald-500/10 text-emerald-100' : 'border-gray-700 bg-black/20 text-gray-400 hover:border-gray-500'}">Легкий режим</button></div>`;
+}
+
 function updateAccountUI() {
   renderSteamAccountPanel();
+  renderPerformancePanel();
   const n = document.getElementById('profileName');
   if (n) n.textContent = account?.nick || 'Гість';
   const headerName = document.getElementById('headerSteamName');
@@ -3968,7 +4013,7 @@ function expandCloudInventoryItem(record, index = 0) {
 
 function buildPortableSave() {
   return {
-    version: '7.5.2',
+    version: '7.5.3',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -3991,7 +4036,7 @@ function buildCloudSave() {
   const portable = buildPortableSave();
   const cloudSave = {
     ...portable,
-    version: '7.5.2-cloud',
+    version: '7.5.3-cloud',
     inventoryEncoding: CLOUD_INVENTORY_ENCODING,
     inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
   };
@@ -4073,7 +4118,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '7.5.2-steam',
+    version: '7.5.3-steam',
     account: {
       ...snapshot.account,
       steamId,
@@ -4256,6 +4301,7 @@ function applyPortableSave(data, { skipCloudAutoSync = false, skipSteamAutoSync 
     pulseCircuit: { ...createDefaultPulseCircuit(), ...(portable.gameState.pulseCircuit || {}) },
     targetArena: { ...createDefaultTargetArena(), ...(portable.gameState.targetArena || {}) },
     allTime: { ...createDefaultAllTime(), ...(portable.gameState.allTime || {}) },
+    performanceMode: portable.gameState.performanceMode === 'lite' ? 'lite' : 'auto',
     collectionRewards: portable.gameState.collectionRewards || {},
     caseCollectionTrophies: portable.gameState.caseCollectionTrophies && typeof portable.gameState.caseCollectionTrophies === 'object' ? portable.gameState.caseCollectionTrophies : {}
   };
@@ -4298,6 +4344,7 @@ function applyPortableSave(data, { skipCloudAutoSync = false, skipSteamAutoSync 
   migrateToStableEconomy();
   ensureDailyState();
   ensureWeeklyState();
+  applyPerformanceMode();
   saveState({ skipCloudAutoSync, skipSteamAutoSync });
   updateBalanceUI();
   renderInventoryGrid();
@@ -5098,6 +5145,7 @@ function migrateToBalancedEconomy() {
 
 function loadState() {
   loadGameState();
+  applyPerformanceMode();
   loadAccount();
   loadFairState();
   const sid = account?.steamId || localStorage.getItem(STORAGE.steamId);
@@ -5626,8 +5674,58 @@ function isFavorite(s) {
   return Boolean(gameState?.favorites?.includes(getSkinKey(s)));
 }
 
+function getWishlistSkins() {
+  const keys = Array.isArray(gameState?.favorites) ? gameState.favorites.map(String) : [];
+  const seen = new Set();
+  return keys.map(getSkinByKey).filter(skin => {
+    const key = getSkinKey(skin);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function renderProfileWishlist() {
+  const root = document.getElementById('profileWishlistPreview');
+  if (!root) return;
+  const favorites = getWishlistSkins();
+  if (!favorites.length) {
+    root.innerHTML = '<button type="button" class="profile-wishlist-empty" onclick="openWishlistCatalog()"><i class="fa-regular fa-heart"></i><span>Ще немає цілей. Відкрий каталог і познач скіни, які хочеш знайти.</span><b>Відкрити каталог <i class="fa-solid fa-arrow-right"></i></b></button>';
+    return;
+  }
+  root.innerHTML = `${favorites.slice(0, 6).map(skin => `<button type="button" class="profile-wishlist-item" data-wishlist-item="${escapeHtml(getSkinKey(skin))}" title="${escapeHtml(skin.name)}"><img src="${escapeHtml(getSkinImageSrc(skin))}" alt="" data-skin-name="${escapeHtml(skin.name)}" loading="lazy" onerror="handleSkinImageError(this)"><span>${escapeHtml(skin.name)}</span></button>`).join('')}<button type="button" class="profile-wishlist-more" onclick="openWishlistModal()"><i class="fa-solid fa-heart"></i><strong>${favorites.length}/12</strong><span>Відкрити список</span></button>`;
+  root.querySelectorAll('[data-wishlist-item]').forEach(button => button.addEventListener('click', () => openWishlistModal()));
+}
+
+function renderWishlistManager() {
+  const grid = document.getElementById('wishlistManagerGrid');
+  const status = document.getElementById('wishlistManagerStatus');
+  if (!grid || !status) return;
+  const keys = Array.isArray(gameState?.favorites) ? gameState.favorites.map(String) : [];
+  const favorites = getWishlistSkins();
+  status.innerHTML = `<i class="fa-solid fa-heart mr-1 text-rose-300"></i> ${keys.length} / 12 скінів у списку`;
+  if (!favorites.length) {
+    grid.innerHTML = '<div class="wishlist-manager-empty"><i class="fa-regular fa-heart"></i><strong>Список бажаного порожній</strong><span>У каталозі натисни сердечко на потрібному скіні — ми покажемо кейси, де він є.</span></div>';
+    return;
+  }
+  grid.innerHTML = favorites.map(skin => `<button type="button" class="wishlist-manager-item" data-wishlist-remove="${escapeHtml(getSkinKey(skin))}" title="Прибрати зі списку"><img src="${escapeHtml(getSkinImageSrc(skin))}" alt="" data-skin-name="${escapeHtml(skin.name)}" loading="lazy" onerror="handleSkinImageError(this)"><span><b>${escapeHtml(skin.name)}</b><small>${formatCredits(verifiedMarketPriceForWear(skin))}</small></span><i class="fa-solid fa-heart-crack"></i></button>`).join('');
+  grid.querySelectorAll('[data-wishlist-remove]').forEach(button => button.addEventListener('click', () => toggleFavorite(button.dataset.wishlistRemove)));
+}
+
+function openWishlistModal() {
+  if (!gameState) return;
+  renderWishlistManager();
+  openModal('wishlistModal');
+}
+
+function openWishlistCatalog() {
+  closeModal('wishlistModal');
+  openModal('shopModal');
+}
+
 function toggleFavorite(k) {
   if (!gameState) return;
+  if (!Array.isArray(gameState.favorites)) gameState.favorites = [];
   const key = String(k);
   const pos = gameState.favorites.indexOf(key);
   if (pos === -1) {
@@ -5640,6 +5738,12 @@ function toggleFavorite(k) {
     gameState.favorites.splice(pos, 1);
   }
   saveState();
+  renderProfileWishlist();
+  renderWishlistManager();
+  if (currentPage === 'case') renderCaseCatalog();
+  if (document.getElementById('caseDetailsModal')?.classList.contains('flex')) {
+    renderCaseWishlistSignal(currentDetailsCaseId);
+  }
   if (document.getElementById('shopModal')?.classList.contains('flex')) filterShop();
 }
 
@@ -5919,6 +6023,7 @@ function renderProfileSocial() {
     showcase.querySelectorAll('[data-showcase-detail]').forEach(button => button.addEventListener('click', () => showItemDetail(button.dataset.showcaseDetail)));
     showcase.querySelectorAll('[data-showcase-manage]').forEach(button => button.addEventListener('click', openShowcaseManager));
   }
+  renderProfileWishlist();
 
   const history = document.getElementById('profileRoundHistory');
   const summary = document.getElementById('profileHistorySummary');
@@ -8341,6 +8446,27 @@ function getCaseSkinPool(caseType) {
   return pool;
 }
 
+function getCaseWishlistMatches(caseType) {
+  const favoriteKeys = new Set(Array.isArray(gameState?.favorites) ? gameState.favorites.map(String) : []);
+  if (!favoriteKeys.size) return [];
+  return getCaseSkinPool(caseType).filter(skin => favoriteKeys.has(getSkinKey(skin)));
+}
+
+function renderCaseWishlistSignal(caseType) {
+  const root = document.getElementById('caseDetailsWishlist');
+  if (!root) return;
+  const matches = getCaseWishlistMatches(caseType);
+  if (!matches.length) {
+    root.innerHTML = '';
+    root.classList.add('hidden');
+    return;
+  }
+  root.classList.remove('hidden');
+  const shown = matches.slice(0, 4);
+  const suffix = matches.length > shown.length ? `<span class="case-wishlist-more">+${matches.length - shown.length}</span>` : '';
+  root.innerHTML = `<div><p><i class="fa-solid fa-heart"></i> ЦІЛІ В ЦЬОМУ КЕЙСІ</p><strong>Зі списку бажаного: ${matches.length}</strong></div><div class="case-wishlist-items">${shown.map(skin => `<span title="${escapeHtml(skin.name)}"><img src="${escapeHtml(getSkinImageSrc(skin))}" alt="" data-skin-name="${escapeHtml(skin.name)}" loading="lazy" onerror="handleSkinImageError(this)">${escapeHtml(skin.name)}</span>`).join('')}${suffix}</div>`;
+}
+
 const CASE_COLLECTION_SIZE = 5;
 const CASE_COLLECTION_SAMPLE_RATIOS = Object.freeze([0.9, 0.74, 0.58, 0.42, 0.22]);
 const CASE_COLLECTION_XP_REWARD = 120;
@@ -8671,12 +8797,16 @@ function renderCaseCatalog() {
     </div>` : '';
 
   grid.innerHTML = `${collectionIntro}${filtered.map(([id, c]) => {
-    const previews = getCasePreviewItems(id, 4);
+    const previews = getPerformanceMode() === 'lite' ? [] : getCasePreviewItems(id, 4);
     const metrics = getCaseMetrics(id);
     const caseCost = getCaseCost(id);
     const collection = getCaseCollectionProgress(id);
+    const wishlistMatches = getCaseWishlistMatches(id);
     const collectionMarkup = collection.total
       ? `<span class="${collection.claimed ? 'is-complete' : ''}" title="Збери 5 обраних скінів цього кейса"><i class="fa-solid ${collection.claimed ? 'fa-trophy' : 'fa-book-atlas'}"></i>${collection.claimed ? 'Трофей' : `${collection.count}/${collection.total} колекція`}</span>`
+      : '';
+    const wishlistMarkup = wishlistMatches.length
+      ? `<span class="is-wishlist" title="У цьому кейсі є ${wishlistMatches.length} скіни з твого списку бажаного"><i class="fa-solid fa-heart"></i>${wishlistMatches.length} з бажаного</span>`
       : '';
     const costMarkup = caseCost
       ? `<i class="fa-solid fa-coins text-amber-400 text-xs"></i><span class="font-extrabold text-sm text-amber-300">${formatCredits(caseCost)}</span>`
@@ -8686,13 +8816,13 @@ function renderCaseCatalog() {
         <span class="case-catalog-badge ${c.badgeClass || 'badge-hot'}">${c.badge || 'HOT'}</span>
         
         <!-- Top Preview Strip -->
-        <div class="case-catalog-preview-strip">
+        ${previews.length ? `<div class="case-catalog-preview-strip">
           ${previews.map(s => `
             <div class="case-catalog-preview-item" title="${escapeHtml(s.name)} · ${formatCredits(s.price)} · стабільний каталог">
               <img src="${escapeHtml(getSkinImageSrc(s))}" alt="" data-skin-name="${escapeHtml(s.name)}" decoding="async" onerror="handleSkinImageError(this)">
             </div>
           `).join('')}
-        </div>
+        </div>` : ''}
 
         <!-- 3D Case Preview -->
         <div class="p-5 flex flex-col items-center justify-center text-center cursor-pointer" onclick="openPowerCase('${id}')">
@@ -8709,6 +8839,7 @@ function renderCaseCatalog() {
             <span title="Очікувана вартість дропу до продажу"><i class="fa-solid fa-scale-balanced"></i>${caseCost ? `RTP ${(metrics.returnRate * 100).toFixed(0)}%` : 'Каталог недоступний'}</span>
             <span title="Шанс отримати предмет дешевше ціни кейсу; у кожному платному кейсі він існує"><i class="fa-solid fa-shield-halved"></i>${caseCost ? `Ризик ${formatCaseChance(metrics.lossChance)}` : '—'}</span>
             ${collectionMarkup}
+            ${wishlistMarkup}
           </div>
         </div>
 
@@ -9390,6 +9521,7 @@ async function showCaseDetails(caseType) {
       <div class="case-metric"><span>Найвища оцінка</span><strong>${formatCredits(metrics.maxValue)}</strong><small>серед доступних предметів</small></div>
     `;
   }
+  renderCaseWishlistSignal(cfg.id);
   renderCaseCollectionPassport(cfg.id);
   if (!grid) return;
 
@@ -12133,6 +12265,10 @@ function resetShopFilters() {
 }
 
 let filterShopTimeout = null;
+function getCatalogRenderPageSize() {
+  return getPerformanceMode() === 'lite' ? 36 : 80;
+}
+
 function debounceFilterShop() {
   clearTimeout(filterShopTimeout);
   filterShopTimeout = setTimeout(filterShop, 120);
@@ -12174,13 +12310,13 @@ function filterShop() {
   else list.sort((a, b) => a.name.localeCompare(b.name));
 
   filteredSkins = list;
-  visibleSkinCount = 80;
+  visibleSkinCount = getCatalogRenderPageSize();
   renderShopGrid(filteredSkins);
 }
 
 function showMoreSkins() {
   if (visibleSkinCount < filteredSkins.length) {
-    visibleSkinCount += 80;
+    visibleSkinCount += getCatalogRenderPageSize();
     renderShopGrid(filteredSkins);
     return;
   }
@@ -12418,7 +12554,10 @@ window.filterShop = filterShop;
 window.resetShopFilters = resetShopFilters;
 window.showMoreSkins = showMoreSkins;
 window.toggleFavorite = toggleFavorite;
+window.openWishlistModal = openWishlistModal;
+window.openWishlistCatalog = openWishlistCatalog;
 window.setTheme = setTheme;
+window.setPerformanceMode = setPerformanceMode;
 window.toggleMobileMenu = toggleMobileMenu;
 window.toggleSound = toggleSound;
 window.toggleHaptics = toggleHaptics;
