@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 7.3.0 ============ */
+/* ============ ПОТУЖНО DROP 7.4.0 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -1812,7 +1812,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.3.0';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.4.0';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -3875,7 +3875,7 @@ function expandCloudInventoryItem(record, index = 0) {
 
 function buildPortableSave() {
   return {
-    version: '7.3.0',
+    version: '7.4.0',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -3898,7 +3898,7 @@ function buildCloudSave() {
   const portable = buildPortableSave();
   const cloudSave = {
     ...portable,
-    version: '7.3.0-cloud',
+    version: '7.4.0-cloud',
     inventoryEncoding: CLOUD_INVENTORY_ENCODING,
     inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
   };
@@ -3980,7 +3980,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '7.3.0-steam',
+    version: '7.4.0-steam',
     account: {
       ...snapshot.account,
       steamId,
@@ -5744,6 +5744,21 @@ function renderProfileSocial() {
   const passBadge = document.getElementById('profilePassBadge');
   if (passBadge) passBadge.classList.toggle('hidden', !getBattlePassState().premium);
 
+  const referral = gameState?.referrals && typeof gameState.referrals === 'object' ? gameState.referrals : {};
+  const referralCount = Math.max(0, Number(referral.totalRewarded) || 0);
+  const referralCountNode = document.getElementById('profileReferralCount');
+  const referralRewardNode = document.getElementById('profileReferralReward');
+  const referralStatusNode = document.getElementById('profileReferralStatus');
+  if (referralCountNode) referralCountNode.textContent = String(referralCount);
+  if (referralRewardNode) referralRewardNode.textContent = `+${formatCredits(REFERRAL_OWNER_REWARD)}`;
+  if (referralStatusNode) {
+    referralStatusNode.textContent = pendingReferralAccountId()
+      ? 'Запрошення активується після старту'
+      : referralCount
+        ? `Команда: ${referralCount}`
+        : 'Твоя команда';
+  }
+
   const showcase = document.getElementById('profileShowcase');
   if (showcase) {
     const items = getShowcaseItems();
@@ -6920,6 +6935,8 @@ function topupLevelReward() {
 function updateTopupUI() {
   const el = document.getElementById('topupLevelRewardLabel');
   if (el) el.textContent = `+${formatCredits(roundPc(0.30 * getPlayerLevel()))}`;
+  const referral = document.getElementById('topupReferralRewardLabel');
+  if (referral) referral.textContent = `+${formatCredits(REFERRAL_OWNER_REWARD)}`;
 }
 
 function doPrestige() {
