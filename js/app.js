@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 7.5.0 ============ */
+/* ============ ПОТУЖНО DROP 7.5.1 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -442,9 +442,10 @@ function normalizeStoredItem(item, index = 0) {
     // Season and collection rewards are cosmetic achievements.  Keeping them
     // in the catalogue is useful for a consistent collection value, but they
     // must not become a hidden source of sellable PC.
-    accountBound: item.accountBound === true || item.battlePassReward === true || item.collectionReward === true || Boolean(item.halloweenEvent) || /-(?:battle-pass|halloween-\d{4}|exclusive)$/.test(id),
+    accountBound: item.accountBound === true || item.battlePassReward === true || item.collectionReward === true || item.dailyCalendarReward === true || Boolean(item.halloweenEvent) || /-(?:battle-pass|halloween-\d{4}|daily-calendar|exclusive)$/.test(id),
     battlePassReward: item.battlePassReward === true,
     collectionReward: item.collectionReward === true,
+    dailyCalendarReward: item.dailyCalendarReward === true,
     halloweenEvent: item.halloweenEvent === true,
     addedAt: clampNumber(item.addedAt, 0, Number.MAX_SAFE_INTEGER, Date.now())
   };
@@ -659,7 +660,21 @@ const CASE_MIN_LOSS_PRICE_RATIO = 0.84;
 const UPGRADE_RETURN_RATE = 0.90;
 const CONTRACT_RETURN_MIN = 0.55;
 const CONTRACT_RETURN_MAX = 0.85;
-const DAILY_STREAK_REWARDS = Object.freeze([1, 1.1, 1.25, 1.45, 1.7, 2, 3]);
+const DAILY_CALENDAR_REWARDS = Object.freeze([
+  { day: 1, credits: 1, icon: 'fa-coins', title: '+1 PC' },
+  { day: 2, credits: 1.1, icon: 'fa-coins', title: '+1.10 PC' },
+  { day: 3, credits: 1.25, icon: 'fa-bolt', title: '+1.25 PC' },
+  { day: 4, credits: 1.45, icon: 'fa-fire', title: '+1.45 PC' },
+  { day: 5, credits: 1.7, icon: 'fa-shield-halved', title: '+1.70 PC' },
+  { day: 6, credits: 2, icon: 'fa-ticket', title: '+2 PC' },
+  { day: 7, credits: 3, icon: 'fa-gem', title: '+3 PC + колекційний скін', collectible: true }
+]);
+const DAILY_CALENDAR_COLLECTIBLES = Object.freeze([
+  'Glock-18 | Water Elemental',
+  'AWP | Atheris',
+  'P250 | See Ya Later'
+]);
+const DAILY_STREAK_REWARDS = Object.freeze(DAILY_CALENDAR_REWARDS.map(reward => reward.credits));
 
 function economyReward(amount, minimum = DAILY_TASK_MIN_REWARD) {
   return Math.max(minimum, roundPc((Math.max(0, Number(amount) || 0) * ECONOMY_TASK_REWARD_MULTIPLIER)));
@@ -1576,6 +1591,7 @@ function createDefaultGameState() {
     halloweenEvent: createDefaultHalloweenEvent(),
     winterEvent: createDefaultWinterEvent(),
     seasonalCosmetics: createDefaultSeasonalCosmetics(),
+    profileStyle: 'standard',
     pulseCircuit: createDefaultPulseCircuit(),
     targetArena: createDefaultTargetArena(),
     allTime: createDefaultAllTime(),
@@ -1665,6 +1681,35 @@ function getPlayerRank(level = getPlayerLevel()) {
   return PLAYER_RANKS.reduce((current, candidate) => level >= candidate.min ? candidate : current, PLAYER_RANKS[0]);
 }
 
+const PROFILE_STYLE_DEFINITIONS = Object.freeze([
+  { id: 'standard', title: 'Стандарт', note: 'Базове оформлення профілю', icon: 'fa-user-shield' },
+  { id: 'void', title: 'Void', note: 'Досягни 5 рівня', icon: 'fa-moon', unlock: () => getPlayerLevel() >= 5 },
+  { id: 'neon', title: 'Neon', note: 'Відкрий 10 кейсів', icon: 'fa-bolt', unlock: () => (gameState?.allTime?.cases || 0) >= 10 },
+  { id: 'arcade', title: 'Arcade', note: 'Відкрий 3 досягнення', icon: 'fa-gamepad', unlock: () => Object.keys(gameState?.achievements || {}).length >= 3 },
+  { id: 'prism', title: 'Prism', note: 'Заверши одну колекцію', icon: 'fa-gem', unlock: () => Object.values(gameState?.collectionRewards || {}).some(Boolean) }
+]);
+
+function getProfileStyleDefinition(styleId = gameState?.profileStyle) {
+  return PROFILE_STYLE_DEFINITIONS.find(style => style.id === styleId) || PROFILE_STYLE_DEFINITIONS[0];
+}
+
+function isProfileStyleUnlocked(style) {
+  return style.id === 'standard' || style.unlock?.() === true;
+}
+
+function renderProfileStyleSummary() {
+  const profile = document.getElementById('profileOverview');
+  const button = document.getElementById('profileCosmeticsButton');
+  const label = document.getElementById('profileCosmeticsLabel');
+  if (!profile || !button || !label) return;
+  const style = getProfileStyleDefinition();
+  PROFILE_STYLE_DEFINITIONS.forEach(entry => profile.classList.toggle(`profile-style-${entry.id}`, entry.id === style.id));
+  const icon = button.querySelector('i');
+  if (icon) icon.className = `fa-solid ${style.icon}`;
+  button.classList.remove('hidden');
+  label.textContent = style.title;
+}
+
 function localDayKey(offset = 0) {
   const date = new Date();
   date.setDate(date.getDate() + offset);
@@ -1681,6 +1726,21 @@ function claimDailyStreak() {
   streak.lastDay = today;
   const cycleDay = (streak.current - 1) % DAILY_STREAK_REWARDS.length;
   return { current: streak.current, reward: DAILY_STREAK_REWARDS[cycleDay], cycleDay: cycleDay + 1 };
+}
+
+function getDailyCalendarProgress() {
+  const streak = gameState?.dailyStreak || {};
+  const current = Math.max(0, Number(streak.current) || 0);
+  const claimedToday = String(streak.lastDay || '') === localDayKey();
+  const cycleDay = claimedToday
+    ? ((Math.max(1, current) - 1) % DAILY_CALENDAR_REWARDS.length) + 1
+    : (current % DAILY_CALENDAR_REWARDS.length) + 1;
+  return { current, claimedToday, cycleDay, reward: DAILY_CALENDAR_REWARDS[cycleDay - 1] };
+}
+
+function getDailyCalendarCollectible(streak) {
+  const cycle = Math.max(1, Math.floor((Math.max(1, Number(streak) || 1) - 1) / DAILY_CALENDAR_REWARDS.length));
+  return DAILY_CALENDAR_COLLECTIBLES[(cycle - 1) % DAILY_CALENDAR_COLLECTIBLES.length];
 }
 
 function getLevelProgress() {
@@ -1828,7 +1888,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.5.0';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.5.1';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -2054,17 +2114,16 @@ function renderProfileCosmeticsSummary() {
   const portrait = document.querySelector('.profile-portrait');
   if (!button || !label) return;
   const cosmetics = getHalloweenCosmetics();
-  const hasCosmetics = cosmetics.titles.length || cosmetics.frames.length;
-  button.classList.toggle('hidden', !hasCosmetics);
-  if (!hasCosmetics) return;
   const winterFrame = Boolean(cosmetics.activeFrame && WINTER_COSMETICS[cosmetics.activeFrame.id]);
   button.classList.toggle('has-frame', Boolean(cosmetics.activeFrame));
   button.classList.toggle('is-winter', winterFrame);
-  label.textContent = cosmetics.activeTitle?.title || cosmetics.activeFrame?.title || 'Сезонна колекція';
+  button.classList.remove('hidden');
+  label.textContent = cosmetics.activeTitle?.title || cosmetics.activeFrame?.title || getProfileStyleDefinition().title;
   if (portrait) {
     portrait.classList.toggle('is-halloween-frame', Boolean(cosmetics.activeFrame) && !winterFrame);
     portrait.classList.toggle('is-winter-frame', winterFrame);
   }
+  renderProfileStyleSummary();
 }
 
 function renderSignalForgeProfile() {
@@ -2082,18 +2141,36 @@ function renderProfileCosmeticsModal() {
   const content = document.getElementById('profileCosmeticsContent');
   if (!content) return;
   const cosmetics = getHalloweenCosmetics();
+  const activeStyle = getProfileStyleDefinition();
   const renderGroup = (entries, activeId, kind, empty) => entries.length
     ? entries.map(entry => `<button type="button" class="halloween-cosmetic-choice ${entry.id === activeId ? 'is-active' : ''}" data-halloween-equip="${entry.id}"><i class="fa-solid ${entry.icon}"></i><span><b>${escapeHtml(entry.title)}</b><small>${escapeHtml(entry.note)}</small></span><em>${entry.id === activeId ? 'Активно' : 'Обрати'}</em></button>`).join('')
     : `<p class="halloween-cosmetic-empty"><i class="fa-solid ${kind === 'title' ? 'fa-crosshairs' : 'fa-ghost'}"></i>${empty}</p>`;
-  content.innerHTML = `<div class="halloween-cosmetics-heading"><p>ПРОФІЛЬ · СЕЗОННА КОЛЕКЦІЯ</p><h3>ТИТУЛ І РАМКА</h3><span>Обери активну косметику. Вона збережеться у Cloud Profile та буде видима в публічному профілі.</span></div><section class="halloween-cosmetic-group"><h4><i class="fa-solid fa-id-badge"></i> Титули</h4>${renderGroup(cosmetics.titles, cosmetics.activeTitle?.id, 'title', 'Отримай титули у сезонних подіях.')}</section><section class="halloween-cosmetic-group"><h4><i class="fa-solid fa-border-all"></i> Рамки</h4>${renderGroup(cosmetics.frames, cosmetics.activeFrame?.id, 'frame', 'Рамки з’являються у сезонних подіях.')}</section>`;
+  const styles = PROFILE_STYLE_DEFINITIONS.map(style => {
+    const unlocked = isProfileStyleUnlocked(style);
+    const active = style.id === activeStyle.id;
+    return `<button type="button" class="profile-style-choice profile-style-choice-${style.id} ${active ? 'is-active' : ''} ${unlocked ? '' : 'is-locked'}" ${unlocked ? `data-profile-style="${style.id}"` : 'disabled'}><i class="fa-solid ${style.icon}"></i><span><b>${escapeHtml(style.title)}</b><small>${escapeHtml(style.note)}</small></span><em>${active ? 'Активно' : unlocked ? 'Обрати' : 'Заблоковано'}</em></button>`;
+  }).join('');
+  content.innerHTML = `<div class="halloween-cosmetics-heading"><p>ПРОФІЛЬ · ОФОРМЛЕННЯ</p><h3>СТИЛЬ, ТИТУЛ І РАМКА</h3><span>Стилі відкриваються лише за прогрес. Вони не дають PC, шансів або переваги в грі.</span></div><section class="halloween-cosmetic-group"><h4><i class="fa-solid fa-palette"></i> Стиль профілю</h4><div class="profile-style-choice-grid">${styles}</div></section><section class="halloween-cosmetic-group"><h4><i class="fa-solid fa-id-badge"></i> Сезонні титули</h4>${renderGroup(cosmetics.titles, cosmetics.activeTitle?.id, 'title', 'Отримай титули у сезонних подіях.')}</section><section class="halloween-cosmetic-group"><h4><i class="fa-solid fa-border-all"></i> Сезонні рамки</h4>${renderGroup(cosmetics.frames, cosmetics.activeFrame?.id, 'frame', 'Рамки з’являються у сезонних подіях.')}</section>`;
   content.querySelectorAll('[data-halloween-equip]').forEach(button => button.addEventListener('click', () => setHalloweenCosmetic(button.dataset.halloweenEquip)));
+  content.querySelectorAll('[data-profile-style]').forEach(button => button.addEventListener('click', () => setProfileStyle(button.dataset.profileStyle)));
 }
 
 function openProfileCosmeticsModal() {
-  const cosmetics = getHalloweenCosmetics();
-  if (!cosmetics.titles.length && !cosmetics.frames.length) return;
   renderProfileCosmeticsModal();
   openModal('profileCosmeticsModal');
+}
+
+function setProfileStyle(styleId) {
+  const style = getProfileStyleDefinition(styleId);
+  if (!isProfileStyleUnlocked(style)) {
+    showToast(`Ще не відкрито: ${style.note}.`, 'info');
+    return;
+  }
+  gameState.profileStyle = style.id;
+  saveState();
+  renderProfileCosmeticsSummary();
+  renderProfileCosmeticsModal();
+  showToast(`Стиль «${style.title}» активовано.`, 'success');
 }
 
 function setHalloweenCosmetic(id) {
@@ -3889,7 +3966,7 @@ function expandCloudInventoryItem(record, index = 0) {
 
 function buildPortableSave() {
   return {
-    version: '7.5.0',
+    version: '7.5.1',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -3912,7 +3989,7 @@ function buildCloudSave() {
   const portable = buildPortableSave();
   const cloudSave = {
     ...portable,
-    version: '7.5.0-cloud',
+    version: '7.5.1-cloud',
     inventoryEncoding: CLOUD_INVENTORY_ENCODING,
     inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
   };
@@ -3994,7 +4071,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '7.5.0-steam',
+    version: '7.5.1-steam',
     account: {
       ...snapshot.account,
       steamId,
@@ -4754,6 +4831,7 @@ function makeDemoItem(skin, suffix = '', wearRandom = null) {
     accountBound: skin.accountBound === true,
     battlePassReward: skin.battlePassReward === true,
     collectionReward: skin.collectionReward === true,
+    dailyCalendarReward: skin.dailyCalendarReward === true,
     halloweenEvent: skin.halloweenEvent === true,
     addedAt: Date.now()
   };
@@ -5150,7 +5228,7 @@ function updateGiftButtonUI() {
   const icon = document.getElementById('giftIcon');
   if (!btn || !timer) return;
   const streakDays = Math.max(0, Number(gameState?.dailyStreak?.current) || 0);
-  btn.title = `Щоденний бонус 1–3 ${CURRENCY_TOKEN} · серія ${streakDays} дн.`;
+  btn.title = `Щоденний календар · серія ${streakDays} дн.`;
   btn.setAttribute('aria-label', btn.title);
   const last = parseInt(localStorage.getItem(STORAGE.bonusAt) || '0', 10);
   const cd = 24 * 60 * 60 * 1000;
@@ -6814,8 +6892,47 @@ async function processSteamCallback() {
   return true;
 }
 
+function renderDailyCalendar() {
+  const content = document.getElementById('dailyCalendarContent');
+  if (!content || !currentUser) return;
+  const progress = getDailyCalendarProgress();
+  const nextStreakValue = progress.claimedToday ? Math.max(1, progress.current) : Math.max(1, progress.current + 1);
+  const cycle = Math.max(1, Math.ceil(nextStreakValue / DAILY_CALENDAR_REWARDS.length));
+  const days = DAILY_CALENDAR_REWARDS.map(reward => {
+    const isCurrent = reward.day === progress.cycleDay;
+    const isClaimed = progress.claimedToday && reward.day <= progress.cycleDay;
+    const stateClass = isClaimed ? 'is-claimed' : isCurrent ? 'is-current' : '';
+    const stateLabel = isClaimed ? '<i class="fa-solid fa-check"></i> Забрано' : isCurrent ? 'Сьогодні' : `День ${reward.day}`;
+    const collectible = reward.collectible ? `<small><i class="fa-solid fa-lock"></i> ${escapeHtml(getDailyCalendarCollectible(Math.max(7, nextStreakValue)))}</small>` : '';
+    return `<article class="daily-calendar-day ${stateClass}"><span>ДЕНЬ ${reward.day}</span><i class="fa-solid ${reward.icon}"></i><b>${escapeHtml(reward.title)}</b>${collectible}<em>${stateLabel}</em></article>`;
+  }).join('');
+  const action = progress.claimedToday
+    ? `<button type="button" class="daily-calendar-claim is-claimed" disabled><i class="fa-solid fa-clock"></i> НАСТУПНА НАГОРОДА ЗАВТРА</button>`
+    : `<button type="button" class="daily-calendar-claim" onclick="claimDailyCalendarReward()"><i class="fa-solid fa-gift"></i> ЗАБРАТИ ДЕНЬ ${progress.cycleDay}</button>`;
+  content.innerHTML = `<div class="daily-calendar-heading"><p><i class="fa-solid fa-calendar-days"></i> ЩОДЕННИЙ КАЛЕНДАР</p><h3>7 ДНІВ ПОВЕРНЕННЯ</h3><span>Заходь щодня. Пропустив день — серія починається знову; на 7-й день чекає прив’язаний колекційний скін.</span></div><div class="daily-calendar-progress"><span>СЕРІЯ</span><strong>${progress.current} <small>дн.</small></strong><em>Коло ${cycle}</em></div><section class="daily-calendar-days">${days}</section>${action}<p class="daily-calendar-note"><i class="fa-solid fa-shield-heart"></i> Усі нагороди віртуальні. Колекційний скін не продається, не ставиться на апгрейд і не впливає на шанси.</p>`;
+}
+
+function openDailyCalendar() {
+  if (!currentUser) {
+    showToast('Спочатку дочекайся завантаження профілю.', 'info');
+    return;
+  }
+  renderDailyCalendar();
+  openModal('dailyCalendarModal');
+}
+
+function grantDailyCalendarCollectible(streak) {
+  const name = getDailyCalendarCollectible(streak);
+  const skin = CS2_SKINS.find(candidate => normalizeSkinName(candidate.name) === normalizeSkinName(name));
+  if (!skin) return null;
+  const item = makeDemoItem({ ...skin, exclusive: true, accountBound: true, dailyCalendarReward: true }, '-daily-calendar');
+  userInventory.unshift(item);
+  updateAvatarBadge();
+  return item;
+}
+
 function claimDailyBonus() {
-  if (!currentUser) return;
+  if (!currentUser) return false;
   const last = parseInt(localStorage.getItem(STORAGE.bonusAt) || '0', 10);
   const now = Date.now();
   const cd = 24 * 60 * 60 * 1000;
@@ -6825,18 +6942,28 @@ function claimDailyBonus() {
     const m = Math.floor((left % 3600000) / 60000);
     showToast(`Бонус через ${h > 0 ? h + ' год ' : ''}${m} хв`, 'warn');
     updateGiftButtonUI();
-    return;
+    renderDailyCalendar();
+    return false;
   }
   const streak = claimDailyStreak();
   const reward = streak.reward;
+  const collectible = streak.cycleDay === DAILY_CALENDAR_REWARDS.length ? grantDailyCalendarCollectible(streak.current) : null;
   currentUser.balance = roundPc(currentUser.balance + reward);
   localStorage.setItem(STORAGE.bonusAt, String(now));
   updateBalanceUI();
   saveState();
   updateGiftButtonUI();
+  renderDailyCalendar();
+  renderProfileInventory();
   checkAchievements();
-  showToast(`+${formatCredits(reward)} · серія ${streak.current} дн. · день ${streak.cycleDay}/7`, 'success');
+  showToast(`${collectible ? `${collectible.name} + ` : ''}+${formatCredits(reward)} · серія ${streak.current} дн. · день ${streak.cycleDay}/7`, 'success');
   soundCoin();
+  return true;
+}
+
+function claimDailyCalendarReward() {
+  const claimed = claimDailyBonus();
+  if (claimed) renderGameHub();
 }
 
 function isReferralAccountId(value) {
@@ -12129,6 +12256,9 @@ window.toggleSound = toggleSound;
 window.toggleHaptics = toggleHaptics;
 window.shareLatestMoment = shareLatestMoment;
 window.claimDailyBonus = claimDailyBonus;
+window.openDailyCalendar = openDailyCalendar;
+window.claimDailyCalendarReward = claimDailyCalendarReward;
+window.setProfileStyle = setProfileStyle;
 window.openModal = openModal;
 window.closeModal = closeModal;
 window.copyPublicProfileLink = copyPublicProfileLink;
