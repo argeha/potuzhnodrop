@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 7.5.1 ============ */
+/* ============ ПОТУЖНО DROP 7.5.2 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -1598,6 +1598,7 @@ function createDefaultGameState() {
     achievements: {},
     favorites: [],
     showcase: [],
+    caseCollectionTrophies: {},
     dailyStreak: { current: 0, best: 0, lastDay: '' },
     battlePass: createDefaultBattlePass(),
     caseTickets: 0,
@@ -1647,12 +1648,13 @@ function loadGameState() {
       allTime: { ...createDefaultAllTime(), ...(s.allTime || {}) },
       achievements: s.achievements || {},
       favorites: Array.isArray(s.favorites) ? s.favorites.map(String) : [],
-      showcase: Array.isArray(s.showcase) ? s.showcase.map(String).slice(0, 4) : [],
+      showcase: Array.isArray(s.showcase) ? s.showcase.map(String).slice(0, 3) : [],
       dailyStreak: { ...d.dailyStreak, ...(s.dailyStreak || {}) },
       battlePass: { ...createDefaultBattlePass(), ...(s.battlePass || {}) },
       caseTickets: clampNumber(s.caseTickets, 0, 999, 0),
       rounds: Array.isArray(s.rounds) ? s.rounds.slice(0, ROUND_HISTORY_LIMIT) : [],
-      collectionRewards: s.collectionRewards || {}
+      collectionRewards: s.collectionRewards || {},
+      caseCollectionTrophies: s.caseCollectionTrophies && typeof s.caseCollectionTrophies === 'object' ? s.caseCollectionTrophies : {}
     } : d;
   } catch {
     gameState = d;
@@ -1888,7 +1890,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.5.1';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.5.2';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -3966,7 +3968,7 @@ function expandCloudInventoryItem(record, index = 0) {
 
 function buildPortableSave() {
   return {
-    version: '7.5.1',
+    version: '7.5.2',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -3989,7 +3991,7 @@ function buildCloudSave() {
   const portable = buildPortableSave();
   const cloudSave = {
     ...portable,
-    version: '7.5.1-cloud',
+    version: '7.5.2-cloud',
     inventoryEncoding: CLOUD_INVENTORY_ENCODING,
     inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
   };
@@ -4071,7 +4073,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '7.5.1-steam',
+    version: '7.5.2-steam',
     account: {
       ...snapshot.account,
       steamId,
@@ -4254,7 +4256,8 @@ function applyPortableSave(data, { skipCloudAutoSync = false, skipSteamAutoSync 
     pulseCircuit: { ...createDefaultPulseCircuit(), ...(portable.gameState.pulseCircuit || {}) },
     targetArena: { ...createDefaultTargetArena(), ...(portable.gameState.targetArena || {}) },
     allTime: { ...createDefaultAllTime(), ...(portable.gameState.allTime || {}) },
-    collectionRewards: portable.gameState.collectionRewards || {}
+    collectionRewards: portable.gameState.collectionRewards || {},
+    caseCollectionTrophies: portable.gameState.caseCollectionTrophies && typeof portable.gameState.caseCollectionTrophies === 'object' ? portable.gameState.caseCollectionTrophies : {}
   };
   const savedCloud = isCloudProfile(account?.cloud) ? account.cloud : null;
   const savedPublicProfile = isPublicProfileIdentity(account?.publicProfile) ? account.publicProfile : null;
@@ -5828,12 +5831,11 @@ function startCommunitySync() {
 }
 
 function getShowcaseItems() {
-  const selected = new Set(Array.isArray(gameState?.showcase) ? gameState.showcase : []);
-  const pinned = userInventory.filter(item => selected.has(String(item.id)));
-  const rest = userInventory
-    .filter(item => !selected.has(String(item.id)))
-    .sort((left, right) => verifiedInventoryMarketPrice(right) - verifiedInventoryMarketPrice(left));
-  return [...pinned, ...rest].slice(0, 4);
+  const selected = Array.isArray(gameState?.showcase) ? gameState.showcase : [];
+  return selected
+    .map(id => userInventory.find(item => String(item.id) === String(id)))
+    .filter(Boolean)
+    .slice(0, 3);
 }
 
 function toggleShowcaseItem(itemId) {
@@ -5845,8 +5847,8 @@ function toggleShowcaseItem(itemId) {
     showcase.splice(index, 1);
     showToast('Предмет прибрано з вітрини.', 'info');
   } else {
-    if (showcase.length >= 4) {
-      showToast('На вітрині може бути максимум 4 предмети.', 'warn');
+    if (showcase.length >= 3) {
+      showToast('На вітрині може бути максимум 3 предмети.', 'warn');
       return;
     }
     showcase.push(key);
@@ -5856,6 +5858,31 @@ function toggleShowcaseItem(itemId) {
   saveState();
   renderProfileSocial();
   renderProfileInventory();
+  renderShowcaseManager();
+}
+
+function renderShowcaseManager() {
+  const grid = document.getElementById('showcaseManagerGrid');
+  const status = document.getElementById('showcaseManagerStatus');
+  if (!grid || !status) return;
+  const selected = new Set(Array.isArray(gameState?.showcase) ? gameState.showcase : []);
+  status.innerHTML = `<i class="fa-solid fa-star mr-1 text-amber-300"></i> Вибрано ${selected.size} / 3`;
+  if (!userInventory.length) {
+    grid.innerHTML = '<div class="showcase-manager-empty"><i class="fa-solid fa-box-open"></i><strong>Інвентар ще порожній</strong><span>Відкрий кейс або отримай предмет, щоб додати його до вітрини.</span></div>';
+    return;
+  }
+  const items = [...userInventory].sort((left, right) => verifiedInventoryMarketPrice(right) - verifiedInventoryMarketPrice(left));
+  grid.innerHTML = items.map(item => {
+    const active = selected.has(String(item.id));
+    return `<button type="button" class="showcase-manager-item ${active ? 'is-selected' : ''}" data-showcase-toggle="${escapeHtml(String(item.id))}" aria-pressed="${active}"><img src="${escapeHtml(getSkinImageSrc(item))}" alt="" data-skin-name="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><span><b>${escapeHtml(item.name)}</b><small>${formatCredits(verifiedInventoryMarketPrice(item))}</small></span><i class="fa-solid ${active ? 'fa-star' : 'fa-plus'}"></i></button>`;
+  }).join('');
+  grid.querySelectorAll('[data-showcase-toggle]').forEach(button => button.addEventListener('click', () => toggleShowcaseItem(button.dataset.showcaseToggle)));
+}
+
+function openShowcaseManager() {
+  if (!gameState) return;
+  renderShowcaseManager();
+  openModal('showcaseModal');
 }
 
 function renderProfileSocial() {
@@ -5886,10 +5913,11 @@ function renderProfileSocial() {
   const showcase = document.getElementById('profileShowcase');
   if (showcase) {
     const items = getShowcaseItems();
-    showcase.innerHTML = items.length
-      ? items.map(item => `<button type="button" class="profile-showcase-item" data-showcase-detail="${escapeHtml(String(item.id))}" title="Деталі: ${escapeHtml(item.name)}"><img src="${escapeHtml(getSkinImageSrc(item))}" alt="${escapeHtml(item.name)}" data-skin-id="${escapeHtml(getSkinKey(item))}" data-skin-name="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><strong>${escapeHtml(item.name)}</strong><small>${formatCredits(verifiedInventoryMarketPrice(item))}</small></button>`).join('')
-      : '<div class="profile-showcase-empty">Тут з’являться твої найкращі скіни.</div>';
+    const selectedSlots = items.map(item => `<button type="button" class="profile-showcase-item" data-showcase-detail="${escapeHtml(String(item.id))}" title="Деталі: ${escapeHtml(item.name)}"><img src="${escapeHtml(getSkinImageSrc(item))}" alt="${escapeHtml(item.name)}" data-skin-id="${escapeHtml(getSkinKey(item))}" data-skin-name="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><strong>${escapeHtml(item.name)}</strong><small>${formatCredits(verifiedInventoryMarketPrice(item))}</small></button>`);
+    const emptySlots = Array.from({ length: Math.max(0, 3 - selectedSlots.length) }, () => '<button type="button" class="profile-showcase-empty profile-showcase-add" data-showcase-manage><i class="fa-solid fa-plus"></i><span>Обрати скін</span></button>');
+    showcase.innerHTML = [...selectedSlots, ...emptySlots].join('');
     showcase.querySelectorAll('[data-showcase-detail]').forEach(button => button.addEventListener('click', () => showItemDetail(button.dataset.showcaseDetail)));
+    showcase.querySelectorAll('[data-showcase-manage]').forEach(button => button.addEventListener('click', openShowcaseManager));
   }
 
   const history = document.getElementById('profileRoundHistory');
@@ -8313,6 +8341,130 @@ function getCaseSkinPool(caseType) {
   return pool;
 }
 
+const CASE_COLLECTION_SIZE = 5;
+const CASE_COLLECTION_SAMPLE_RATIOS = Object.freeze([0.9, 0.74, 0.58, 0.42, 0.22]);
+const CASE_COLLECTION_XP_REWARD = 120;
+
+function getCaseCollectionEntries(caseType) {
+  const cfg = resolveCaseConfig(caseType);
+  const pool = getCaseSkinPool(cfg.id);
+  if (pool.length < CASE_COLLECTION_SIZE) return [];
+
+  // A passport is a fixed, readable selection from this exact case, not a
+  // separate reward pool. The positions are spread through the price-sorted
+  // catalogue so every collection has a clear progression from accessible to
+  // premium without changing the drop table.
+  const entries = [];
+  const seen = new Set();
+  const add = skin => {
+    if (!skin) return;
+    const key = getSkinKey(skin) || normalizeSkinName(skin.name);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    entries.push(skin);
+  };
+
+  CASE_COLLECTION_SAMPLE_RATIOS.forEach(ratio => {
+    add(pool[Math.round((pool.length - 1) * ratio)]);
+  });
+
+  // Very small themed catalogues can round two ratios onto the same skin.
+  // Fill those gaps deterministically instead of rerolling the collection.
+  for (const skin of pool) {
+    if (entries.length >= CASE_COLLECTION_SIZE) break;
+    add(skin);
+  }
+  return entries.slice(0, CASE_COLLECTION_SIZE);
+}
+
+function getCaseCollectionProgress(caseType) {
+  const cfg = resolveCaseConfig(caseType);
+  const items = getCaseCollectionEntries(cfg.id);
+  const ownedKeys = new Set(userInventory.map(item => getSkinKey(item) || normalizeSkinName(item?.name)).filter(Boolean));
+  const count = items.reduce((total, skin) => {
+    const key = getSkinKey(skin) || normalizeSkinName(skin?.name);
+    return total + (key && ownedKeys.has(key) ? 1 : 0);
+  }, 0);
+  const trophies = gameState?.caseCollectionTrophies && typeof gameState.caseCollectionTrophies === 'object'
+    ? gameState.caseCollectionTrophies
+    : {};
+  const claimed = Boolean(trophies[cfg.id]);
+  const total = items.length;
+  return { cfg, items, count: Math.min(count, total), total, complete: total === CASE_COLLECTION_SIZE && count >= total, claimed };
+}
+
+function getCaseCollectionTrophyCount() {
+  const trophies = gameState?.caseCollectionTrophies;
+  return trophies && typeof trophies === 'object' ? Object.keys(trophies).length : 0;
+}
+
+function renderCaseCollectionPassport(caseType) {
+  const root = document.getElementById('caseDetailsCollection');
+  if (!root) return;
+
+  const progress = getCaseCollectionProgress(caseType);
+  if (!progress.total) {
+    root.innerHTML = '';
+    root.classList.add('hidden');
+    return;
+  }
+
+  const ownedKeys = new Set(userInventory.map(item => getSkinKey(item) || normalizeSkinName(item?.name)).filter(Boolean));
+  root.classList.remove('hidden');
+  root.innerHTML = `
+    <div class="case-collection-passport-head">
+      <div>
+        <p><i class="fa-solid fa-book-atlas"></i> ПАСПОРТ КОЛЕКЦІЇ</p>
+        <strong>${progress.count} / ${progress.total} предметів</strong>
+      </div>
+      <span class="${progress.claimed ? 'is-claimed' : ''}">${progress.claimed ? '<i class="fa-solid fa-trophy"></i> Трофей отримано' : `Нагорода: +${CASE_COLLECTION_XP_REWARD} XP`}</span>
+    </div>
+    <div class="case-collection-progress"><i style="width:${Math.max(0, Math.min(100, progress.count / progress.total * 100))}%"></i></div>
+    <div class="case-collection-cards">
+      ${progress.items.map(skin => {
+        const key = getSkinKey(skin) || normalizeSkinName(skin.name);
+        const owned = ownedKeys.has(key);
+        return `<div class="case-collection-card ${owned ? 'is-owned' : ''}">
+          <div class="case-collection-card-state"><i class="fa-solid ${owned ? 'fa-check' : 'fa-lock'}"></i>${owned ? 'Є' : 'Не знайдено'}</div>
+          <img src="${escapeHtml(getSkinImageSrc(skin))}" alt="" data-skin-name="${escapeHtml(skin.name)}" loading="lazy" onerror="handleSkinImageError(this)">
+          <strong title="${escapeHtml(skin.name)}">${escapeHtml(skin.name)}</strong>
+          <small>${formatCredits(skin.price)}</small>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="case-collection-passport-foot">
+      ${progress.claimed
+        ? '<span><i class="fa-solid fa-shield-heart"></i> Трофей збережено у профілі. PC не нараховуються.</span>'
+        : progress.complete
+          ? `<button type="button" onclick="claimCaseCollectionTrophy('${escapeHtml(progress.cfg.id)}')"><i class="fa-solid fa-trophy"></i> Забрати трофей · +${CASE_COLLECTION_XP_REWARD} XP</button>`
+          : '<span><i class="fa-solid fa-compass"></i> Відкривай саме цей кейс, щоб зібрати набір.</span>'}
+    </div>
+  `;
+}
+
+function claimCaseCollectionTrophy(caseType) {
+  if (!gameState) return;
+  const progress = getCaseCollectionProgress(caseType);
+  if (!progress.complete) {
+    showToast('Спершу зберіть усі 5 предметів паспорта.', 'warn');
+    return;
+  }
+  if (progress.claimed) {
+    showToast('Трофей цієї колекції вже отримано.', 'info');
+    return;
+  }
+  if (!gameState.caseCollectionTrophies || typeof gameState.caseCollectionTrophies !== 'object') {
+    gameState.caseCollectionTrophies = {};
+  }
+  gameState.caseCollectionTrophies[progress.cfg.id] = Date.now();
+  addXp(CASE_COLLECTION_XP_REWARD);
+  saveState();
+  renderCaseCollectionPassport(progress.cfg.id);
+  renderCaseCatalog();
+  renderProfileProgress();
+  showToast(`Колекцію «${progress.cfg.name}» завершено: трофей і +${CASE_COLLECTION_XP_REWARD} XP.`, 'success');
+}
+
 const _dropChanceCache = new Map();
 const _caseMetricsCache = new Map();
 function buildCaseDropChanceMap(pool, caseCost) {
@@ -8505,15 +8657,27 @@ function renderCaseCatalog() {
   }
 
   const validEntries = Object.entries(CASE_TYPES).filter(([id, c]) => !c.aliasTo && (!c.seasonal || getSeasonalEventStatus(c.seasonal).active));
+  const isCollectionView = currentCaseCategory === 'collections';
   const filtered = validEntries.filter(([id, c]) => {
-    if (currentCaseCategory === 'all') return true;
+    if (currentCaseCategory === 'all' || isCollectionView) return true;
     return c.category === currentCaseCategory;
   });
 
-  grid.innerHTML = filtered.map(([id, c]) => {
+  const totalTrophies = getCaseCollectionTrophyCount();
+  const collectionIntro = isCollectionView ? `
+    <div class="case-collection-catalog-intro col-span-full">
+      <div><p><i class="fa-solid fa-book-atlas"></i> КОЛЕКЦІЇ КЕЙСІВ</p><strong>Збери по 5 фіксованих скінів з кожного кейса</strong><small>Паспорт не змінює шанси або ціни. За повний набір — один трофей і +${CASE_COLLECTION_XP_REWARD} XP, без PC.</small></div>
+      <b><i class="fa-solid fa-trophy"></i> ${totalTrophies} / ${filtered.length || 0}</b>
+    </div>` : '';
+
+  grid.innerHTML = `${collectionIntro}${filtered.map(([id, c]) => {
     const previews = getCasePreviewItems(id, 4);
     const metrics = getCaseMetrics(id);
     const caseCost = getCaseCost(id);
+    const collection = getCaseCollectionProgress(id);
+    const collectionMarkup = collection.total
+      ? `<span class="${collection.claimed ? 'is-complete' : ''}" title="Збери 5 обраних скінів цього кейса"><i class="fa-solid ${collection.claimed ? 'fa-trophy' : 'fa-book-atlas'}"></i>${collection.claimed ? 'Трофей' : `${collection.count}/${collection.total} колекція`}</span>`
+      : '';
     const costMarkup = caseCost
       ? `<i class="fa-solid fa-coins text-amber-400 text-xs"></i><span class="font-extrabold text-sm text-amber-300">${formatCredits(caseCost)}</span>`
       : '<i class="fa-solid fa-triangle-exclamation text-amber-300 text-xs"></i><span class="font-extrabold text-[10px] text-amber-200">Каталог кейса недоступний</span>';
@@ -8544,6 +8708,7 @@ function renderCaseCatalog() {
             <span title="Кількість предметів у кейсі"><i class="fa-solid fa-layer-group"></i>${metrics.count} скінів</span>
             <span title="Очікувана вартість дропу до продажу"><i class="fa-solid fa-scale-balanced"></i>${caseCost ? `RTP ${(metrics.returnRate * 100).toFixed(0)}%` : 'Каталог недоступний'}</span>
             <span title="Шанс отримати предмет дешевше ціни кейсу; у кожному платному кейсі він існує"><i class="fa-solid fa-shield-halved"></i>${caseCost ? `Ризик ${formatCaseChance(metrics.lossChance)}` : '—'}</span>
+            ${collectionMarkup}
           </div>
         </div>
 
@@ -8558,7 +8723,7 @@ function renderCaseCatalog() {
         </div>
       </div>
     `;
-  }).join('');
+  }).join('')}`;
 }
 
 function renderCaseButtons() {
@@ -9225,6 +9390,7 @@ async function showCaseDetails(caseType) {
       <div class="case-metric"><span>Найвища оцінка</span><strong>${formatCredits(metrics.maxValue)}</strong><small>серед доступних предметів</small></div>
     `;
   }
+  renderCaseCollectionPassport(cfg.id);
   if (!grid) return;
 
   grid.innerHTML = pool.map(s => {
@@ -12213,6 +12379,7 @@ window.openPowerCase = openPowerCase;
 window.openFreeDailyCase = openFreeDailyCase;
 window.startCaseReel = startCaseReel;
 window.showCaseDetails = showCaseDetails;
+window.claimCaseCollectionTrophy = claimCaseCollectionTrophy;
 window.CASE_TYPES = CASE_TYPES;
 window.setCaseCategory = setCaseCategory;
 window.setCaseMultiplier = setCaseMultiplier;
@@ -12237,6 +12404,7 @@ window.claimDailyTask = claimDailyTask;
 window.claimWeeklyTask = claimWeeklyTask;
 window.claimPowerRun = claimPowerRun;
 window.openCollectionReward = openCollectionReward;
+window.openShowcaseManager = openShowcaseManager;
 window.sellAllDuplicates = sellAllDuplicates;
 window.openInventoryModalFromProfile = openInventoryModalFromProfile;
 window.setInventoryFilter = setInventoryFilter;
