@@ -25,6 +25,10 @@ const CATALOG_SOURCES = [
 // needs. Sending thousands of images and records to a phone was enough to
 // freeze the renderer. The Worker keeps a balanced, game-ready slice instead.
 const CATALOG_GAME_ITEM_LIMIT = 960
+// Each Durable Object SQLite value is capped at 2 MB. The full catalogue is
+// therefore cached as small server-side pages; a browser never receives it all
+// at once.
+const CATALOG_STORAGE_CHUNK = 220
 const STEAM_OPENID = 'https://steamcommunity.com/openid/login'
 const ID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i
 const RECOVERY_CODE = /^[A-Za-z0-9_-]{40,160}$/
@@ -3389,12 +3393,12 @@ export class PotuzhnoState {
   }
 
   async readSkinCatalog() {
-    const cacheKey = 'catalog:skins:v3-compact'
+    const cacheKey = 'catalog:skins:v4-meta'
     const cached = await this.storage.get(cacheKey)
     const cachedItems = Array.isArray(cached?.items) ? cached.items : []
     const cacheAge = Date.now() - Number(cached?.updatedAt || 0)
     if (cachedItems.length >= 50 && cacheAge >= 0 && cacheAge < CATALOG_TTL) {
-      return { items: cachedItems, stale: false }
+      return { items: cachedItems, total: Number(cached?.total) || cachedItems.length, stale: false }
     }
 
     for (const source of CATALOG_SOURCES) {
@@ -3403,7 +3407,7 @@ export class PotuzhnoState {
         if (!response.ok) continue
         const catalog = await response.json()
         if (!Array.isArray(catalog) || catalog.length === 0) continue
-        const safeCatalog = catalog.slice(0, 5_000).map((skin, index) => {
+        const safeCatalog = catalog.map((skin, index) => {
           const wears = Array.isArray(skin?.wears)
             ? [...new Set(skin.wears.map(wear => cleanText(wear?.name || wear, 32)).filter(Boolean))].slice(0, 5)
             : []
@@ -3419,9 +3423,22 @@ export class PotuzhnoState {
         }).filter(skin => skin.name && skin.weapon.name && skin.category.name && skin.image)
         const gameCatalog = selectGameCatalog(safeCatalog)
         if (gameCatalog.length >= 50) {
-          const result = { items: gameCatalog, updatedAt: Date.now() }
+          const updatedAt = Date.now()
+          const chunks = []
+          for (let index = 0; index < safeCatalog.length; index += CATALOG_STORAGE_CHUNK) {
+            chunks.push(safeCatalog.slice(index, index + CATALOG_STORAGE_CHUNK))
+          }
+          // Store data pages first and publish their metadata last. A reader
+          // can therefore never observe a fresh page count with missing rows.
+          await Promise.all(chunks.map((items, index) => this.storage.put(`catalog:skins:v4-page:${index}`, items)))
+          const result = {
+            items: gameCatalog,
+            total: safeCatalog.length,
+            pageSize: CATALOG_STORAGE_CHUNK,
+            updatedAt,
+          }
           await this.storage.put(cacheKey, result)
-          return { items: result.items, stale: false }
+          return { items: result.items, total: result.total, stale: false }
         }
       } catch {
         // Try the next public mirror. The last known catalog is still useful
@@ -3429,13 +3446,48 @@ export class PotuzhnoState {
       }
     }
     if (cachedItems.length >= 50 && cacheAge >= 0 && cacheAge < CATALOG_STALE_TTL) {
-      return { items: cachedItems, stale: true }
+      return { items: cachedItems, total: Number(cached?.total) || cachedItems.length, stale: true }
     }
     return null
   }
 
+  async readSkinCatalogPage(offset, limit) {
+    const catalog = await this.readSkinCatalog()
+    if (!catalog) return null
+    const total = Math.max(0, Number(catalog.total) || 0)
+    const safeOffset = Math.max(0, Math.min(total, Number(offset) || 0))
+    const safeLimit = Math.max(24, Math.min(100, Number(limit) || 72))
+    if (safeOffset >= total) return { items: [], total, offset: safeOffset, nextOffset: null, stale: catalog.stale }
+
+    const pageSize = CATALOG_STORAGE_CHUNK
+    const firstPage = Math.floor(safeOffset / pageSize)
+    const lastPage = Math.floor(Math.min(total - 1, safeOffset + safeLimit - 1) / pageSize)
+    const pages = await Promise.all(Array.from({ length: lastPage - firstPage + 1 }, (_, index) => (
+      this.storage.get(`catalog:skins:v4-page:${firstPage + index}`)
+    )))
+    if (pages.some(page => !Array.isArray(page))) return null
+    const flattened = pages.flat()
+    const localOffset = safeOffset - firstPage * pageSize
+    const items = flattened.slice(localOffset, localOffset + safeLimit)
+    const nextOffset = safeOffset + items.length < total ? safeOffset + items.length : null
+    return { items, total, offset: safeOffset, nextOffset, stale: catalog.stale }
+  }
+
   async skinCatalog(request) {
     if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
+    const url = new URL(request.url)
+    if (url.searchParams.get('scope') === 'all') {
+      const offset = Number.parseInt(url.searchParams.get('offset') || '0', 10)
+      const limit = Number.parseInt(url.searchParams.get('limit') || '72', 10)
+      if (!Number.isFinite(offset) || offset < 0 || !Number.isFinite(limit) || limit < 1) {
+        return json({ error: 'Некоректна сторінка каталогу.' }, 400)
+      }
+      const page = await this.readSkinCatalogPage(offset, limit)
+      if (!page) return json({ error: 'Повний каталог скінів тимчасово недоступний.' }, 502)
+      return json(page, 200, page.stale
+        ? { 'Cache-Control': 'public, max-age=300, s-maxage=300', 'Warning': '110 - "Каталог показано з локального кешу"' }
+        : { 'Cache-Control': 'public, max-age=300, s-maxage=3600' })
+    }
     const catalog = await this.readSkinCatalog()
     if (!catalog) return json({ error: 'Каталог скінів тимчасово недоступний.' }, 502)
     return json(catalog.items, 200, catalog.stale

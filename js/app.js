@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 7.2.1 ============ */
+/* ============ ПОТУЖНО DROP 7.3.0 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -500,6 +500,14 @@ let soundEnabled = true;
 let hapticsEnabled = true;
 let filteredSkins = CS2_SKINS;
 let visibleSkinCount = 80;
+// Cases only need a fast compact catalogue. The full collection is kept
+// separate and grows page by page only inside the skin shop.
+const SHOP_CATALOG_PAGE_SIZE = 72;
+let shopCatalogSkins = [];
+let shopCatalogTotal = 0;
+let shopCatalogNextOffset = 0;
+let shopCatalogHasMore = true;
+let shopCatalogPagePromise = null;
 let selectedInputMode = 'skin';
 let selectedInputSkin = null;
 let balanceStake = 50;
@@ -1804,7 +1812,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.2.1';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.3.0';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -3867,7 +3875,7 @@ function expandCloudInventoryItem(record, index = 0) {
 
 function buildPortableSave() {
   return {
-    version: '7.2.1',
+    version: '7.3.0',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -3890,7 +3898,7 @@ function buildCloudSave() {
   const portable = buildPortableSave();
   const cloudSave = {
     ...portable,
-    version: '7.2.1-cloud',
+    version: '7.3.0-cloud',
     inventoryEncoding: CLOUD_INVENTORY_ENCODING,
     inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
   };
@@ -3972,7 +3980,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '7.2.1-steam',
+    version: '7.3.0-steam',
     account: {
       ...snapshot.account,
       steamId,
@@ -5482,7 +5490,9 @@ function doRevealCollectionReward(collId) {
 }
 
 function getSkinByKey(k) {
-  return CS2_SKINS.find(s => getSkinKey(s) === String(k));
+  const key = String(k);
+  return shopCatalogSkins.find(s => getSkinKey(s) === key)
+    || CS2_SKINS.find(s => getSkinKey(s) === key);
 }
 
 function isFavorite(s) {
@@ -6385,9 +6395,10 @@ function openModal(id) {
   if (id === 'prestigeModal') updatePrestigeUI();
   if (id === 'shopModal') {
     filterShop();
-    // The complete catalog is several thousand records. Load it only when the
-    // visitor actually opens the catalog instead of delaying the game itself.
+    // Cases use a compact game catalogue. The shop loads the full collection
+    // in small server pages so its first paint stays responsive.
     void loadCompleteSkinCatalog();
+    void loadShopCatalogPage();
   }
   const panel = prepareModalAccessibility(el);
   window.setTimeout(() => (getModalFocusables(el)[0] || panel)?.focus(), 0);
@@ -11435,6 +11446,63 @@ async function fetchSkinCatalog(url) {
   }
 }
 
+async function fetchSkinCatalogPage(offset = 0, limit = SHOP_CATALOG_PAGE_SIZE) {
+  const query = new URLSearchParams({ scope: 'all', offset: String(Math.max(0, offset)), limit: String(limit) });
+  const c = new AbortController();
+  const t = setTimeout(() => c.abort(), 12000);
+  try {
+    const r = await fetch(`/api/catalog/skins?${query}`, { signal: c.signal });
+    if (!r.ok) throw new Error(`Catalog page ${r.status}`);
+    const data = await r.json();
+    if (!data || !Array.isArray(data.items) || !Number.isFinite(Number(data.total))) throw new Error('Invalid catalog page');
+    return data;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+function getShopCatalogSource() {
+  return shopCatalogSkins.length ? shopCatalogSkins : CS2_SKINS;
+}
+
+function normalizeCatalogPage(items, startIndex = 0) {
+  return (Array.isArray(items) ? items : []).map((skin, index) => normalizeCatalogSkin({
+    id: skin.id || `shop-${startIndex + index}`,
+    name: skin.name,
+    weapon: skin.weapon?.name || skin.weapon,
+    category: skin.category?.name || skin.category || 'Інше',
+    rarity: skin.rarity?.name || skin.rarity || 'Consumer Grade',
+    rarityColor: skin.rarity?.color || skin.rarityColor || '#b0c3d9',
+    img: skin.image || skin.img,
+    wears: skin.wears
+  }, startIndex + index)).filter(Boolean);
+}
+
+function loadShopCatalogPage() {
+  if (shopCatalogPagePromise || !shopCatalogHasMore) return shopCatalogPagePromise || Promise.resolve();
+  const offset = shopCatalogNextOffset;
+  const countEl = document.getElementById('shopCount');
+  if (countEl && document.getElementById('shopModal')?.classList.contains('flex')) countEl.textContent = 'Завантажуємо каталог…';
+  shopCatalogPagePromise = (async () => {
+    const page = await fetchSkinCatalogPage(offset);
+    const incoming = normalizeCatalogPage(page.items, offset);
+    if (!incoming.length && Number(page.total) > offset) throw new Error('Empty catalog page');
+    const known = new Map(shopCatalogSkins.map(skin => [String(skin.id), skin]));
+    incoming.forEach(skin => known.set(String(skin.id), skin));
+    shopCatalogSkins = [...known.values()];
+    shopCatalogTotal = Math.max(shopCatalogSkins.length, Number(page.total) || 0);
+    shopCatalogNextOffset = Number.isFinite(Number(page.nextOffset)) ? Number(page.nextOffset) : shopCatalogSkins.length;
+    shopCatalogHasMore = page.nextOffset !== null && page.nextOffset !== undefined && shopCatalogNextOffset > offset;
+    populateCategoryFilter();
+    if (document.getElementById('shopModal')?.classList.contains('flex')) filterShop();
+  })().catch(() => {
+    if (countEl && document.getElementById('shopModal')?.classList.contains('flex')) countEl.textContent = 'Каталог тимчасово недоступний';
+  }).finally(() => {
+    shopCatalogPagePromise = null;
+  });
+  return shopCatalogPagePromise;
+}
+
 let completeSkinCatalogReady = false;
 let completeSkinCatalogPromise = null;
 const MARKET_PRICE_BATCH_SIZE = 80;
@@ -11613,8 +11681,10 @@ function loadCompleteSkinCatalog() {
 function populateCategoryFilter() {
   const sel = document.getElementById('shopCategory');
   if (!sel) return;
-  const cats = [...new Set(CS2_SKINS.map(s => s.category).filter(Boolean))].sort();
+  const activeValue = sel.value || 'all';
+  const cats = [...new Set([...CS2_SKINS, ...shopCatalogSkins].map(s => s.category).filter(Boolean))].sort();
   sel.innerHTML = '<option value="all">Уся зброя</option>' + cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(CATEGORY_LABELS[c] || c)}</option>`).join('');
+  sel.value = cats.includes(activeValue) ? activeValue : 'all';
 }
 
 function resetShopFilters() {
@@ -11657,7 +11727,7 @@ function filterShop() {
     }
   }
 
-  let list = CS2_SKINS.filter(s => {
+  let list = getShopCatalogSource().filter(s => {
     if (!isUsableSkin(s)) return false;
     if (cat !== 'all' && s.category !== cat) return false;
     const marketPrice = verifiedMarketPriceForWear(s);
@@ -11678,8 +11748,12 @@ function filterShop() {
 }
 
 function showMoreSkins() {
-  visibleSkinCount += 80;
-  renderShopGrid(filteredSkins);
+  if (visibleSkinCount < filteredSkins.length) {
+    visibleSkinCount += 80;
+    renderShopGrid(filteredSkins);
+    return;
+  }
+  if (shopCatalogHasMore) void loadShopCatalogPage();
 }
 
 function renderShopGrid(skins) {
@@ -11688,9 +11762,18 @@ function renderShopGrid(skins) {
   const av = skins.filter(isUsableSkin);
   const shown = av.slice(0, visibleSkinCount);
   const countEl = document.getElementById('shopCount');
-  if (countEl) countEl.textContent = `${av.length.toLocaleString('uk-UA')} скінів`;
+  if (countEl) {
+    const total = Math.max(0, Number(shopCatalogTotal) || 0);
+    countEl.textContent = total && shopCatalogSkins.length
+      ? `${av.length.toLocaleString('uk-UA')} з ${total.toLocaleString('uk-UA')} скінів`
+      : `${av.length.toLocaleString('uk-UA')} скінів`;
+  }
   const moreBtn = document.getElementById('shopMoreBtn');
-  if (moreBtn) moreBtn.classList.toggle('hidden', shown.length >= av.length);
+  if (moreBtn) {
+    const canShowLoaded = shown.length < av.length;
+    moreBtn.classList.toggle('hidden', !canShowLoaded && !shopCatalogHasMore);
+    moreBtn.textContent = canShowLoaded ? 'Показати ще' : 'Завантажити ще скіни';
+  }
 
   if (!shown.length) {
     g.innerHTML = '<div class="col-span-full py-16 text-center"><i class="fa-solid fa-crosshairs text-3xl text-amber-500/40 mb-3"></i><p class="font-bold text-gray-300">Не знайдено</p></div>';
