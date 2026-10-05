@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 7.5.5 ============ */
+/* ============ ПОТУЖНО DROP 7.6.0 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -673,8 +673,15 @@ const DAILY_TASK_MIN_REWARD = 0.20;
 const WEEKLY_TASK_MIN_REWARD = 1;
 const REWARDED_COIN_AMOUNT = 0.10;
 const REWARDED_DAILY_LIMIT = 20;
-const REFERRAL_OWNER_REWARD = 2;
-const REFERRAL_NEW_PLAYER_REWARD = 1;
+const REFERRAL_MILESTONES = Object.freeze([
+  { id: 'level_3', label: 'LVL 3', ownerReward: 10, recruitReward: 3 },
+  { id: 'level_10', label: 'LVL 10', ownerReward: 20, recruitReward: 5 },
+  { id: 'level_20', label: 'LVL 20', ownerReward: 40, recruitReward: 10 },
+  { id: 'prestige_1', label: 'Перший престиж', ownerReward: 100, recruitReward: 25 },
+]);
+const REFERRAL_WEEKLY_OWNER_REWARD = 4;
+const REFERRAL_WEEKLY_XP_UNIT = 1200;
+const REFERRAL_WEEKLY_OWNER_LIMIT = 40;
 // Return rates keep the virtual economy progressing without creating an
 // endless PC farm. They are applied consistently in every economy mode.
 const CASE_TARGET_RETURN_RATE = 0.88;
@@ -1939,7 +1946,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.5.5';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.6.0';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -4065,7 +4072,7 @@ function expandCloudInventoryItem(record, index = 0) {
 
 function buildPortableSave() {
   return {
-    version: '7.5.5',
+    version: '7.6.0',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -4088,7 +4095,7 @@ function buildCloudSave() {
   const portable = buildPortableSave();
   const cloudSave = {
     ...portable,
-    version: '7.5.5-cloud',
+    version: '7.6.0-cloud',
     inventoryEncoding: CLOUD_INVENTORY_ENCODING,
     inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
   };
@@ -4170,7 +4177,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '7.5.5-steam',
+    version: '7.6.0-steam',
     account: {
       ...snapshot.account,
       steamId,
@@ -4235,6 +4242,7 @@ async function saveSteamAccount({ silent = false, keepalive = false } = {}) {
       keepalive: keepalive && new TextEncoder().encode(JSON.stringify(body)).byteLength <= 60_000
     });
     setSteamAccountMeta(steamId, data);
+    applyServerReferralProgress(data?.referral);
     steamAccountAutoSyncLastError = '';
     saveState({ skipCloudAutoSync: true, skipSteamAutoSync: true });
     renderCloudSyncUI();
@@ -6052,18 +6060,28 @@ function renderProfileSocial() {
   if (passBadge) passBadge.classList.toggle('hidden', !getBattlePassState().premium);
 
   const referral = gameState?.referrals && typeof gameState.referrals === 'object' ? gameState.referrals : {};
-  const referralCount = Math.max(0, Number(referral.totalRewarded) || 0);
+  const referralCount = Math.max(0, Number(referral.totalPartners ?? referral.totalRewarded) || 0);
+  const referralDividends = Math.max(0, Number(referral.totalDividends) || 0);
+  const joinedFrom = referral.joinedFrom && typeof referral.joinedFrom === 'object' ? referral.joinedFrom : null;
   const referralCountNode = document.getElementById('profileReferralCount');
   const referralRewardNode = document.getElementById('profileReferralReward');
   const referralStatusNode = document.getElementById('profileReferralStatus');
+  const referralDividendsNode = document.getElementById('profileReferralDividends');
+  const referralWeeklyNode = document.getElementById('profileReferralWeekly');
   if (referralCountNode) referralCountNode.textContent = String(referralCount);
-  if (referralRewardNode) referralRewardNode.textContent = `+${formatCredits(REFERRAL_OWNER_REWARD)}`;
+  if (referralRewardNode) referralRewardNode.textContent = `${formatCredits(REFERRAL_MILESTONES.reduce((sum, milestone) => sum + milestone.ownerReward, 0))}`;
+  if (referralDividendsNode) referralDividendsNode.textContent = formatCredits(referralDividends);
+  if (referralWeeklyNode) referralWeeklyNode.textContent = `+${formatCredits(REFERRAL_WEEKLY_OWNER_REWARD)}`;
   if (referralStatusNode) {
     referralStatusNode.textContent = pendingReferralAccountId()
-      ? 'Запрошення активується після старту'
+      ? 'Підключи Steam, щоб прийняти запрошення'
+      : joinedFrom
+        ? 'Твій старт: LVL 3 відкриє перший бонус'
       : referralCount
         ? `Команда: ${referralCount}`
-        : 'Твоя команда';
+        : hasReadySteamAccount()
+          ? 'Твоя команда'
+          : 'Підключи Steam для програми';
   }
 
   const showcase = document.getElementById('profileShowcase');
@@ -7153,7 +7171,7 @@ function claimDailyCalendarReward() {
 
 function isReferralAccountId(value) {
   const id = String(value || '');
-  return UUID_PATTERN.test(id) || /^\d{17}$/.test(id);
+  return /^\d{17}$/.test(id);
 }
 
 function captureReferralFromUrl() {
@@ -7170,13 +7188,24 @@ function pendingReferralAccountId() {
   return isReferralAccountId(value) ? value : '';
 }
 
+function applyServerReferralProgress(referral) {
+  if (!referral || typeof referral !== 'object') return;
+  if (referral.state && typeof referral.state === 'object' && gameState) {
+    gameState.referrals = { ...(gameState.referrals || {}), ...referral.state };
+  }
+  const reward = clampNumber(referral.recipientReward, 0, MAX_STORED_BALANCE, 0);
+  if (!reward || !currentUser) return;
+  currentUser.balance = clampNumber(currentUser.balance + reward, 0, MAX_STORED_BALANCE, currentUser.balance);
+  updateBalanceUI();
+  const settled = Array.isArray(referral.settled) ? referral.settled : [];
+  const labels = settled.filter(entry => Number(entry?.recruitReward) > 0).map(entry => cleanText(entry.label, 48)).join(', ');
+  showToast(`Бонус за прогрес у команді: +${formatCredits(reward)}${labels ? ` · ${labels}` : ''}`, 'success');
+}
+
 async function getShareAccountId() {
   if (hasReadySteamAccount()) return String(currentUser?.steamId || account?.steamId || '');
-  if (!isCloudProfile(account?.cloud)) {
-    const created = await createCloudProfile({ silent: true });
-    if (!created) throw new Error('Не вдалося створити профіль для запрошення. Перевір інтернет і повтори.');
-  }
-  return String(account?.cloud?.id || '');
+  startSteamLogin();
+  throw new Error('Підключи Steam: так один акаунт зможе отримати бонус лише один раз.');
 }
 
 async function topupShareSite() {
@@ -7193,7 +7222,7 @@ async function topupShareSite() {
     if (navigator.share) {
       try {
         await navigator.share(shareData);
-        showToast(`Посилання відправлено. +${REFERRAL_OWNER_REWARD} PC прийдуть, коли новий гравець почне гру.`, 'success');
+        showToast('Посилання відправлено. Дивіденди відкриваються, коли напарник підтвердить Steam і прогресуватиме.', 'success');
       } catch (error) {
         if (error?.name !== 'AbortError') throw error;
       }
@@ -7201,7 +7230,7 @@ async function topupShareSite() {
     }
     if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(shareUrl.href);
     else window.prompt('Скопіюй персональне посилання:', shareUrl.href);
-    showToast(`Посилання скопійовано. Відправ його другові — +${REFERRAL_OWNER_REWARD} PC після його старту.`, 'success');
+    showToast('Посилання скопійовано. Один Steam-акаунт може бути напарником лише раз.', 'success');
   } catch (error) {
     showToast(error?.message || 'Не вдалося підготувати посилання.', 'error');
   }
@@ -7212,42 +7241,27 @@ async function activatePendingReferral() {
   const referrerAccountId = pendingReferralAccountId();
   if (!referrerAccountId || referralActivationPromise) return false;
   const ownSteamId = String(currentUser?.steamId || account?.steamId || '');
-  const ownCloudId = String(account?.cloud?.id || '');
-  if (referrerAccountId === ownSteamId || referrerAccountId === ownCloudId) {
+  if (referrerAccountId === ownSteamId) {
     localStorage.removeItem(STORAGE.pendingReferral);
     return false;
   }
+  // A referral identity is a verified SteamID, not a browser profile. Keep
+  // the pending link until Steam login has completed.
+  if (!hasReadySteamAccount()) return false;
   referralActivationPromise = (async () => {
     try {
-      let data;
-      if (hasReadySteamAccount()) {
-        await saveSteamAccount({ silent: true });
-        data = await requestJson('/api/rewards', {
-          method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'activate-referral', referrerAccountId })
-        }, 12_000);
-        setSteamAccountMeta(ownSteamId, data);
-      } else {
-        if (!isCloudProfile(account?.cloud) && !await createCloudProfile({ silent: true })) return false;
-        data = await requestJson('/api/rewards', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'activate-referral',
-            referrerAccountId,
-            accountId: account.cloud.id,
-            recoveryCode: account.cloud.recoveryCode,
-          })
-        }, 12_000);
-        account.cloud.revision = Number(data.revision) || account.cloud.revision;
-        account.cloud.updatedAt = Date.now();
-      }
+      await saveSteamAccount({ silent: true });
+      const data = await requestJson('/api/rewards', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'activate-referral', referrerAccountId })
+      }, 12_000);
+      setSteamAccountMeta(ownSteamId, data);
       localStorage.removeItem(STORAGE.pendingReferral);
       if (data.activated && currentUser) {
-        currentUser.balance = clampNumber(data.balance, 0, MAX_STORED_BALANCE, currentUser.balance);
-        updateBalanceUI();
+        applyServerReferralProgress(data.referral);
         saveState({ skipCloudAutoSync: true, skipSteamAutoSync: true });
         renderGameHub();
-        showToast(`Запрошення активовано: +${data.welcomeReward || REFERRAL_NEW_PLAYER_REWARD} ${CURRENCY_TOKEN}`, 'success');
+        showToast('Запрошення підтверджено через Steam. Перший бонус відкриється на LVL 3.', 'success');
       }
       return Boolean(data.activated || data.duplicate);
     } catch (error) {
@@ -7295,7 +7309,7 @@ function updateTopupUI() {
   const el = document.getElementById('topupLevelRewardLabel');
   if (el) el.textContent = `+${formatCredits(roundPc(Math.min(4, 0.5 + Math.max(0, getPlayerLevel() - 1) * 0.1)))}`;
   const referral = document.getElementById('topupReferralRewardLabel');
-  if (referral) referral.textContent = `+${formatCredits(REFERRAL_OWNER_REWARD)}`;
+  if (referral) referral.textContent = `${formatCredits(REFERRAL_MILESTONES.reduce((sum, milestone) => sum + milestone.ownerReward, 0))}+`;
 }
 
 function doPrestige() {

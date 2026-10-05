@@ -112,13 +112,24 @@ const ADMIN_GAME_MAX_LEVEL = Math.floor(ADMIN_GAME_MAX_XP / ADMIN_GAME_PLAYER_LE
 const ADMIN_GAME_BLOCK_REASON_MAX = 240
 const ADMIN_PLAYER_DIRECTORY_MAX = 5_000
 const ADMIN_PLAYER_DIRECTORY_PAGE_SIZE = 600
-// Referral bonuses are intentionally modest, virtual, and account-bound. A
-// successful share alone never credits coins: a distinct new profile has to
-// start playing through the shared link first.
-const REFERRAL_OWNER_REWARD = 2
-const REFERRAL_NEW_PLAYER_REWARD = 1
+// Referral rewards are virtual and server-owned. A link can be shared freely,
+// but only one verified Steam identity can ever become a recruit, and every
+// milestone below has a permanent receipt.
 const REFERRAL_DAILY_OWNER_LIMIT = 20
 const REFERRAL_NEW_ACCOUNT_WINDOW = 7 * 24 * 60 * 60_000
+const REFERRAL_IDENTITY_KEY = 'referral:identity'
+const REFERRAL_MILESTONE_RECEIPT_LIMIT = 1_200
+const REFERRAL_WEEKLY_XP_UNIT = 1_200
+const REFERRAL_WEEKLY_OWNER_REWARD = 4
+const REFERRAL_WEEKLY_OWNER_LIMIT = 40
+const REFERRAL_WEEKLY_XP_LIMIT = 12_000
+const REFERRAL_MILESTONES = Object.freeze([
+  { id: 'level_3', level: 3, minAgeMs: 24 * 60 * 60_000, ownerReward: 10, recruitReward: 3, label: 'LVL 3' },
+  { id: 'level_10', level: 10, minAgeMs: 7 * 24 * 60 * 60_000, ownerReward: 20, recruitReward: 5, label: 'LVL 10' },
+  { id: 'level_20', level: 20, minAgeMs: 21 * 24 * 60 * 60_000, ownerReward: 40, recruitReward: 10, label: 'LVL 20' },
+  { id: 'prestige_1', prestige: 1, minAgeMs: 30 * 24 * 60 * 60_000, ownerReward: 100, recruitReward: 25, label: 'Перший престиж' },
+])
+const REFERRAL_MILESTONE_BY_ID = new Map(REFERRAL_MILESTONES.map(entry => [entry.id, entry]))
 const ADMIN_ROLES = Object.freeze({
   owner: {
     label: 'Власник',
@@ -228,6 +239,58 @@ function gameAccountType(accountId) {
 
 function isGameAccountId(accountId) {
   return Boolean(gameAccountType(accountId))
+}
+
+function referralWeekKey(now = Date.now()) {
+  const date = new Date(now)
+  const offset = (date.getUTCDay() + 6) % 7
+  date.setUTCDate(date.getUTCDate() - offset)
+  return date.toISOString().slice(0, 10)
+}
+
+function referralProgress(payload) {
+  const gameState = payload?.gameState && typeof payload.gameState === 'object' && !Array.isArray(payload.gameState)
+    ? payload.gameState
+    : {}
+  const xp = boundedInteger(gameState.xp, 0, ADMIN_GAME_MAX_XP, 0)
+  const prestige = boundedInteger(gameState.prestige, 0, ADMIN_GAME_MAX_PRESTIGE, 0)
+  const level = Math.floor(xp / ADMIN_GAME_PLAYER_LEVEL_XP) + 1
+  // Prestige resets the visible level. This cumulative counter retains the
+  // verified progress needed for weekly team dividends after that reset.
+  const totalXp = Math.min(ADMIN_GAME_MAX_XP, xp + prestige * ADMIN_GAME_PLAYER_LEVEL_XP * 30)
+  return { xp, prestige, level, totalXp }
+}
+
+function referralState(payload) {
+  const value = payload?.gameState?.referrals
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+function withServerReferralState(payload, previousPayload) {
+  const previous = referralState(previousPayload)
+  const next = structuredClone(payload)
+  const gameState = next.gameState && typeof next.gameState === 'object' && !Array.isArray(next.gameState)
+    ? next.gameState
+    : {}
+  // Referral attribution and payment receipts never come from the browser.
+  // This prevents a stale tab from dropping them, or a caller from forging
+  // "earned" referrals in a profile save.
+  next.gameState = { ...gameState, referrals: previous }
+  return next
+}
+
+function referralMilestoneView(claim) {
+  const definition = REFERRAL_MILESTONE_BY_ID.get(claim?.id)
+  if (definition) return { ...definition }
+  if (/^weekly_xp:\d{4}-\d{2}-\d{2}:\d{1,6}$/.test(cleanText(claim?.id, 96))) {
+    return {
+      id: 'weekly_xp',
+      ownerReward: boundedMoney(claim.ownerReward, 0, REFERRAL_WEEKLY_OWNER_LIMIT),
+      recruitReward: 0,
+      label: 'Командний дивіденд',
+    }
+  }
+  return null
 }
 
 function cleanImage(value) {
@@ -1504,6 +1567,7 @@ export class PotuzhnoState {
       if (path === '/__internal/steam-session-valid') return await this.internalSteamSessionValidity(request)
       if (path === '/__internal/steam-account') return await this.internalSteamAccount(request)
       if (path === '/__internal/referral-credit') return await this.internalReferralCredit(request)
+      if (path === '/__internal/referral-identity') return await this.internalReferralIdentity(request)
       if (path === '/__internal/migrate-profile') return await this.internalProfileMigration(request)
       if (path === '/__internal/migrate-public-profile') return await this.internalPublicProfileMigration(request)
       if (path === '/__internal/delete-public-profile') return await this.internalDeletePublicProfile(request)
@@ -1671,7 +1735,8 @@ export class PotuzhnoState {
       const created = await this.storage.transaction(async transaction => {
         const current = await transaction.get(key)
         if (current) return null
-        const next = { version: 1, steamId, revision: 1, payload: body.payload, createdAt: Date.now(), updatedAt: Date.now() }
+        const payload = withServerReferralState(body.payload, null)
+        const next = { version: 1, steamId, revision: 1, payload, createdAt: Date.now(), updatedAt: Date.now() }
         await transaction.put(key, next)
         return next
       })
@@ -1739,7 +1804,7 @@ export class PotuzhnoState {
           revision,
         }
       }
-      const payload = { ...body.payload, moderation, visibility }
+      const payload = { ...withServerReferralState(body.payload, current.payload), moderation, visibility }
       if (!isPayload(payload)) return { error: 'Профіль завеликий після збереження.', status: 413 }
       const updatedAt = Date.now()
       const next = { ...current, version: 1, revision: revision + 1, payload, updatedAt }
@@ -1748,7 +1813,14 @@ export class PotuzhnoState {
     })
     if (saved.error) return json({ error: saved.error, code: saved.code, moderation: saved.moderation, revision: saved.revision }, saved.status)
     await this.indexGameProfile(steamId, saved.entry, 'steam')
-    return json({ updatedAt: saved.updatedAt, revision: saved.revision })
+    const referral = await this.processReferralProgressAfterSteamSave(steamId)
+    const finalEntry = referral?.entry || saved.entry
+    if (finalEntry && finalEntry !== saved.entry) await this.indexGameProfile(steamId, finalEntry, 'steam')
+    return json({
+      updatedAt: finalEntry?.updatedAt || saved.updatedAt,
+      revision: Math.max(1, Number(finalEntry?.revision) || saved.revision),
+      referral: referral ? { recipientReward: referral.recipientReward, settled: referral.settled, state: referral.state } : undefined,
+    })
   }
 
   async internalProfileMigration(request) {
@@ -2224,9 +2296,18 @@ export class PotuzhnoState {
       return json({ error: 'Некоректне запрошення.' }, 400)
     }
     const accountId = cleanText(body?.accountId, 64)
-    const referredAccountId = cleanText(body?.referredAccountId, 64)
+    const referredSteamId = cleanText(body?.referredSteamId, 64)
     const accountType = gameAccountType(accountId)
-    if (!accountType || !isGameAccountId(referredAccountId) || accountId === referredAccountId) {
+    const claimId = cleanText(body?.claim?.id, 96)
+    const fixedMilestone = REFERRAL_MILESTONE_BY_ID.get(claimId)
+    const isWeeklyDividend = /^weekly_xp:\d{4}-\d{2}-\d{2}:\d{1,6}$/.test(claimId)
+    const requestedReward = boundedMoney(body?.claim?.ownerReward, 0, REFERRAL_WEEKLY_OWNER_LIMIT)
+    const ownerReward = fixedMilestone
+      ? fixedMilestone.ownerReward
+      : isWeeklyDividend
+        ? requestedReward
+        : -1
+    if (accountType !== 'steam' || !/^\d{17}$/.test(referredSteamId) || accountId === referredSteamId || ownerReward < 0) {
       return json({ error: 'Некоректне запрошення.' }, 400)
     }
     const key = accountType === 'steam' ? 'steam-account' : `profile:${accountId}`
@@ -2246,25 +2327,35 @@ export class PotuzhnoState {
       const rewarded = Array.isArray(stored.rewardedAccounts)
         ? stored.rewardedAccounts.filter(value => isGameAccountId(cleanText(value, 64))).slice(-240)
         : []
-      if (rewarded.includes(referredAccountId)) {
+      const receipts = Array.isArray(stored.dividendReceipts)
+        ? stored.dividendReceipts.filter(value => /^[0-9]{17}:[a-z0-9:_-]{2,96}$/.test(cleanText(value, 128))).slice(-REFERRAL_MILESTONE_RECEIPT_LIMIT)
+        : []
+      const receipt = `${referredSteamId}:${claimId}`
+      if (receipts.includes(receipt)) {
         return { credited: false, duplicate: true, balance: boundedMoney(payload.balance, 0, ADMIN_GAME_MAX_BALANCE) }
       }
       const rewardDate = cleanText(stored.rewardDate, 10) === today ? today : today
       const rewardCount = cleanText(stored.rewardDate, 10) === today
         ? boundedInteger(stored.rewardCount, 0, REFERRAL_DAILY_OWNER_LIMIT)
         : 0
-      if (rewardCount >= REFERRAL_DAILY_OWNER_LIMIT) {
+      if (ownerReward > 0 && rewardCount >= REFERRAL_DAILY_OWNER_LIMIT) {
         return { error: 'Денний ліміт запрошень уже використано.', status: 429 }
       }
+      const isFirstActiveMilestone = claimId === 'level_3' && !rewarded.includes(referredSteamId)
+      const totalPartners = Math.max(0, boundedInteger(stored.totalPartners ?? stored.totalRewarded, 0, 1_000_000, 0)) + (isFirstActiveMilestone ? 1 : 0)
       gameState.referrals = {
         ...stored,
         rewardDate,
-        rewardCount: rewardCount + 1,
-        rewardedAccounts: [...rewarded, referredAccountId].slice(-240),
-        totalRewarded: boundedInteger(stored.totalRewarded, 0, 1_000_000) + 1,
+        rewardCount: rewardCount + (ownerReward > 0 ? 1 : 0),
+        rewardedAccounts: isFirstActiveMilestone ? [...rewarded, referredSteamId].slice(-240) : rewarded,
+        dividendReceipts: [...receipts, receipt].slice(-REFERRAL_MILESTONE_RECEIPT_LIMIT),
+        totalPartners,
+        totalRewarded: totalPartners,
+        totalDividends: boundedMoney(boundedMoney(stored.totalDividends, 0, ADMIN_GAME_MAX_BALANCE) + ownerReward, 0, ADMIN_GAME_MAX_BALANCE),
         lastRewardAt: now,
+        lastDividend: { id: claimId, amount: ownerReward, at: now },
       }
-      payload.balance = boundedMoney(boundedMoney(payload.balance, 0, ADMIN_GAME_MAX_BALANCE) + REFERRAL_OWNER_REWARD, 0, ADMIN_GAME_MAX_BALANCE)
+      payload.balance = boundedMoney(boundedMoney(payload.balance, 0, ADMIN_GAME_MAX_BALANCE) + ownerReward, 0, ADMIN_GAME_MAX_BALANCE)
       if (!isPayload(payload)) return { error: 'Профіль завеликий після нагороди.', status: 413 }
       const next = {
         ...current,
@@ -2274,14 +2365,143 @@ export class PotuzhnoState {
         updatedAt: now,
       }
       await transaction.put(key, next)
-      return { credited: true, balance: payload.balance, revision: next.revision, entry: next }
+      return { credited: true, balance: payload.balance, ownerReward, revision: next.revision, entry: next }
     })
     if (result.error) return json({ error: result.error }, result.status)
     if (result.entry) await this.indexGameProfile(accountId, result.entry, accountType)
-    return json({ credited: result.credited, duplicate: result.duplicate === true, balance: result.balance, revision: result.revision })
+    return json({ credited: result.credited, duplicate: result.duplicate === true, balance: result.balance, ownerReward: result.ownerReward || 0, revision: result.revision })
   }
 
-  async creditReferralOwner(accountId, referredAccountId) {
+  async internalReferralIdentity(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try {
+      body = await this.readBody(request, 8_192)
+    } catch {
+      return json({ error: 'Некоректний стан запрошення.' }, 400)
+    }
+    const action = cleanText(body?.action, 32)
+    const steamId = cleanText(body?.steamId, 64)
+    if (!/^\d{17}$/.test(steamId)) return json({ error: 'Некоректний Steam-акаунт.' }, 400)
+    const now = Date.now()
+
+    if (action === 'lock') {
+      const referrerAccountId = cleanText(body?.referrerAccountId, 64)
+      if (!/^\d{17}$/.test(referrerAccountId) || referrerAccountId === steamId) return json({ error: 'Некоректне посилання-запрошення.' }, 400)
+      const result = await this.storage.transaction(async transaction => {
+        const existing = await transaction.get(REFERRAL_IDENTITY_KEY)
+        if (existing?.steamId === steamId) {
+          if (existing.referrerAccountId === referrerAccountId) return { locked: true, duplicate: true, referrerAccountId }
+          return { locked: false, conflict: true }
+        }
+        const identity = {
+          version: 1,
+          steamId,
+          referrerAccountId,
+          lockedAt: now,
+          maxTotalXp: 0,
+          weekly: { week: referralWeekKey(now), xp: 0, earned: 0, carry: 0, sequence: 0 },
+          claims: {},
+        }
+        await transaction.put(REFERRAL_IDENTITY_KEY, identity)
+        return { locked: true, duplicate: false, referrerAccountId }
+      })
+      return json(result, result.conflict ? 409 : 200)
+    }
+
+    if (action === 'claim-progress') {
+      const result = await this.storage.transaction(async transaction => {
+        const identity = await transaction.get(REFERRAL_IDENTITY_KEY)
+        if (!identity || identity.steamId !== steamId || !/^\d{17}$/.test(String(identity.referrerAccountId || ''))) {
+          return { error: 'Запрошення не підтверджено.', status: 404 }
+        }
+        const rawProgress = body?.progress && typeof body.progress === 'object' ? body.progress : {}
+        const progress = {
+          level: boundedInteger(rawProgress.level, 1, ADMIN_GAME_MAX_LEVEL, 1),
+          prestige: boundedInteger(rawProgress.prestige, 0, ADMIN_GAME_MAX_PRESTIGE, 0),
+          totalXp: boundedInteger(rawProgress.totalXp, 0, ADMIN_GAME_MAX_XP, 0),
+        }
+        const claims = identity.claims && typeof identity.claims === 'object' && !Array.isArray(identity.claims) ? identity.claims : {}
+        const age = Math.max(0, now - boundedInteger(identity.lockedAt, 0, now, now))
+        for (const milestone of REFERRAL_MILESTONES) {
+          const achieved = milestone.level ? progress.level >= milestone.level : progress.prestige >= milestone.prestige
+          if (achieved && age >= milestone.minAgeMs && !claims[milestone.id]) {
+            claims[milestone.id] = { ...milestone, createdAt: now, ownerCredited: false, recruitCredited: false }
+          }
+        }
+
+        const week = referralWeekKey(now)
+        const previousWeekly = identity.weekly && typeof identity.weekly === 'object' ? identity.weekly : {}
+        const weekly = cleanText(previousWeekly.week, 10) === week
+          ? {
+              week,
+              xp: boundedInteger(previousWeekly.xp, 0, REFERRAL_WEEKLY_XP_LIMIT, 0),
+              earned: boundedMoney(previousWeekly.earned, 0, REFERRAL_WEEKLY_OWNER_LIMIT),
+              carry: boundedInteger(previousWeekly.carry, 0, REFERRAL_WEEKLY_XP_UNIT - 1, 0),
+              sequence: boundedInteger(previousWeekly.sequence, 0, 1_000_000, 0),
+            }
+          : { week, xp: 0, earned: 0, carry: 0, sequence: 0 }
+        const previousTotalXp = boundedInteger(identity.maxTotalXp, 0, ADMIN_GAME_MAX_XP, 0)
+        const xpGain = Math.max(0, progress.totalXp - previousTotalXp)
+        const acceptedXp = progress.level >= 10 || progress.prestige >= 1
+          ? Math.min(xpGain, Math.max(0, REFERRAL_WEEKLY_XP_LIMIT - weekly.xp))
+          : 0
+        if (acceptedXp > 0) {
+          const availablePayout = Math.max(0, REFERRAL_WEEKLY_OWNER_LIMIT - weekly.earned)
+          const units = Math.min(
+            Math.floor((weekly.carry + acceptedXp) / REFERRAL_WEEKLY_XP_UNIT),
+            Math.floor(availablePayout / REFERRAL_WEEKLY_OWNER_REWARD),
+          )
+          weekly.xp += acceptedXp
+          weekly.carry = (weekly.carry + acceptedXp) % REFERRAL_WEEKLY_XP_UNIT
+          if (units > 0) {
+            weekly.sequence += 1
+            const ownerReward = units * REFERRAL_WEEKLY_OWNER_REWARD
+            const claimId = `weekly_xp:${week}:${weekly.sequence}`
+            claims[claimId] = { id: claimId, ownerReward, recruitReward: 0, label: 'Командний дивіденд', createdAt: now, ownerCredited: false, recruitCredited: false }
+            weekly.earned += ownerReward
+          }
+        }
+        identity.claims = claims
+        identity.weekly = weekly
+        identity.maxTotalXp = Math.max(previousTotalXp, progress.totalXp)
+        await transaction.put(REFERRAL_IDENTITY_KEY, identity)
+        const pending = Object.values(claims).filter(claim => !claim.ownerCredited || !claim.recruitCredited)
+        return { referrerAccountId: identity.referrerAccountId, claims: pending }
+      })
+      return result.error ? json({ error: result.error }, result.status) : json(result)
+    }
+
+    if (action === 'ack') {
+      const claimId = cleanText(body?.claimId, 96)
+      const result = await this.storage.transaction(async transaction => {
+        const identity = await transaction.get(REFERRAL_IDENTITY_KEY)
+        const claim = identity?.claims?.[claimId]
+        if (!identity || identity.steamId !== steamId || !claim) return { error: 'Віха запрошення не знайдена.', status: 404 }
+        if (body?.ownerCredited === true) claim.ownerCredited = true
+        if (body?.recruitCredited === true) claim.recruitCredited = true
+        identity.claims[claimId] = claim
+        await transaction.put(REFERRAL_IDENTITY_KEY, identity)
+        return { acknowledged: true }
+      })
+      return result.error ? json({ error: result.error }, result.status) : json(result)
+    }
+
+    return json({ error: 'Невідома дія запрошення.' }, 400)
+  }
+
+  async referralIdentityRequest(steamId, body) {
+    const identity = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(`referral-identity:${steamId}`))
+    const response = await identity.fetch(new Request('https://internal/__internal/referral-identity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...body, steamId }),
+    }))
+    const data = await response.json().catch(() => ({ error: 'Не вдалося підтвердити запрошення.' }))
+    return { ...data, status: response.status }
+  }
+
+  async creditReferralOwner(accountId, referredSteamId, claim) {
     const accountType = gameAccountType(accountId)
     if (!accountType) return { error: 'Профіль автора запрошення не знайдено.', status: 404 }
     const name = accountType === 'steam' ? `steam-account:${accountId}` : `profile:${accountId}`
@@ -2289,23 +2509,101 @@ export class PotuzhnoState {
     const response = await profile.fetch(new Request('https://internal/__internal/referral-credit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accountId, referredAccountId }),
+      body: JSON.stringify({ accountId, referredSteamId, claim }),
     }))
     const data = await response.json().catch(() => ({ error: 'Не вдалося підтвердити запрошення.' }))
     return { ...data, status: response.status }
   }
 
+  async creditReferralRecruit(steamId, claim) {
+    const milestone = referralMilestoneView(claim)
+    const claimId = cleanText(claim?.id, 96)
+    if (!milestone || !claimId) return { error: 'Некоректна віха запрошення.', status: 400 }
+    const reward = boundedMoney(milestone.recruitReward, 0, ADMIN_GAME_MAX_BALANCE)
+    const now = Date.now()
+    const result = await this.storage.transaction(async transaction => {
+      const current = await transaction.get('steam-account')
+      if (!current || current.steamId !== steamId || !isPayload(current.payload)) return { error: 'Steam-акаунт не знайдено.', status: 404 }
+      const payload = structuredClone(current.payload)
+      const gameState = payload.gameState && typeof payload.gameState === 'object' && !Array.isArray(payload.gameState) ? payload.gameState : {}
+      payload.gameState = gameState
+      const referrals = gameState.referrals && typeof gameState.referrals === 'object' && !Array.isArray(gameState.referrals) ? gameState.referrals : {}
+      const received = Array.isArray(referrals.receivedMilestones)
+        ? referrals.receivedMilestones.filter(value => /^[a-z0-9:_-]{2,96}$/.test(cleanText(value, 96))).slice(-REFERRAL_MILESTONE_RECEIPT_LIMIT)
+        : []
+      if (received.includes(claimId)) return { credited: false, duplicate: true, balance: boundedMoney(payload.balance, 0, ADMIN_GAME_MAX_BALANCE), entry: current }
+      gameState.referrals = {
+        ...referrals,
+        receivedMilestones: [...received, claimId].slice(-REFERRAL_MILESTONE_RECEIPT_LIMIT),
+        totalRecruitRewards: boundedMoney(boundedMoney(referrals.totalRecruitRewards, 0, ADMIN_GAME_MAX_BALANCE) + reward, 0, ADMIN_GAME_MAX_BALANCE),
+        lastRecruitReward: { id: claimId, amount: reward, at: now },
+      }
+      payload.balance = boundedMoney(boundedMoney(payload.balance, 0, ADMIN_GAME_MAX_BALANCE) + reward, 0, ADMIN_GAME_MAX_BALANCE)
+      if (!isPayload(payload)) return { error: 'Профіль завеликий після нагороди.', status: 413 }
+      const next = {
+        ...current,
+        revision: Math.max(1, Math.floor(Number(current.revision) || 1)) + 1,
+        payload,
+        updatedAt: now,
+      }
+      await transaction.put('steam-account', next)
+      return { credited: true, balance: payload.balance, reward, revision: next.revision, entry: next }
+    })
+    if (result.entry) await this.indexGameProfile(steamId, result.entry, 'steam')
+    return result
+  }
+
+  async processReferralProgressAfterSteamSave(steamId) {
+    const entry = await this.storage.get('steam-account')
+    if (!entry || entry.steamId !== steamId || !isPayload(entry.payload)) return null
+    const joinedFrom = referralState(entry.payload).joinedFrom
+    const referrerAccountId = cleanText(joinedFrom?.accountId, 64)
+    if (!/^\d{17}$/.test(referrerAccountId) || referrerAccountId === steamId) return null
+
+    const claimed = await this.referralIdentityRequest(steamId, {
+      action: 'claim-progress',
+      progress: referralProgress(entry.payload),
+    })
+    if (claimed.status !== 200 || !Array.isArray(claimed.claims)) return null
+
+    let recruitReward = 0
+    const settled = []
+    for (const claim of claimed.claims) {
+      const milestone = referralMilestoneView(claim)
+      if (!milestone) continue
+      const ownerCredit = claim.ownerCredited === true
+        ? { credited: true, duplicate: true }
+        : await this.creditReferralOwner(referrerAccountId, steamId, claim)
+      if (!ownerCredit.credited && !ownerCredit.duplicate) continue
+      const recruitCredit = claim.recruitCredited === true
+        ? { credited: true, duplicate: true, reward: 0 }
+        : await this.creditReferralRecruit(steamId, claim)
+      if (recruitCredit.error) continue
+      await this.referralIdentityRequest(steamId, {
+        action: 'ack',
+        claimId: claim.id,
+        ownerCredited: true,
+        recruitCredited: true,
+      })
+      if (recruitCredit.credited) recruitReward += boundedMoney(recruitCredit.reward, 0, ADMIN_GAME_MAX_BALANCE)
+      settled.push({ id: claim.id, label: milestone.label, ownerReward: milestone.ownerReward, recruitReward: milestone.recruitReward })
+    }
+    const current = await this.storage.get('steam-account')
+    const state = current?.payload ? referralState(current.payload) : {}
+    return { entry: current, recipientReward: recruitReward, settled, state }
+  }
+
   async activateReferralForAccount({ accountId, accountType, referrerAccountId, recoveryHash = '' }) {
-    const key = accountType === 'steam' ? 'steam-account' : `profile:${accountId}`
+    if (accountType !== 'steam' || !/^\d{17}$/.test(accountId)) {
+      return { error: 'Для участі в програмі напарників підключи Steam-акаунт.', status: 409 }
+    }
+    const key = 'steam-account'
     const now = Date.now()
     const referrer = cleanText(referrerAccountId, 64)
-    if (!isGameAccountId(referrer) || referrer === accountId) return { error: 'Некоректне посилання-запрошення.', status: 400 }
+    if (!/^\d{17}$/.test(referrer) || referrer === accountId) return { error: 'Некоректне посилання-запрошення.', status: 400 }
     const existing = await this.storage.get(key)
-    if (!existing || !isPayload(existing.payload) || (accountType === 'steam' && existing.steamId !== accountId)) {
+    if (!existing || !isPayload(existing.payload) || existing.steamId !== accountId) {
       return { error: 'Профіль гравця не знайдено.', status: 404 }
-    }
-    if (accountType === 'cloud' && !equalHash(existing.recoveryHash, recoveryHash)) {
-      return { error: 'Не вдалося підтвердити профіль.', status: 403 }
     }
     const previousReferral = existing.payload?.gameState?.referrals?.joinedFrom
     if (isGameAccountId(cleanText(previousReferral?.accountId, 64))) {
@@ -2315,19 +2613,15 @@ export class PotuzhnoState {
     if (now - createdAt > REFERRAL_NEW_ACCOUNT_WINDOW) {
       return { error: 'Бонус доступний лише новим профілям протягом перших 7 днів.', status: 409 }
     }
-
-    // The owner object keeps a permanent, idempotent receipt for the new
-    // profile. Retrying a request after a network interruption never mints a
-    // second bonus.
-    const ownerCredit = await this.creditReferralOwner(referrer, accountId)
-    if (!ownerCredit.credited && !ownerCredit.duplicate) return ownerCredit
+    const identity = await this.referralIdentityRequest(accountId, { action: 'lock', referrerAccountId: referrer })
+    if (identity.conflict) return { error: 'Цей Steam-акаунт уже закріплений за іншим запрошенням.', status: 409 }
+    if (identity.status !== 200 || !identity.locked) return { error: identity.error || 'Не вдалося підтвердити Steam-акаунт.', status: identity.status || 502 }
 
     const activated = await this.storage.transaction(async transaction => {
       const current = await transaction.get(key)
-      if (!current || !isPayload(current.payload) || (accountType === 'steam' && current.steamId !== accountId)) {
+      if (!current || !isPayload(current.payload) || current.steamId !== accountId) {
         return { error: 'Профіль гравця не знайдено.', status: 404 }
       }
-      if (accountType === 'cloud' && !equalHash(current.recoveryHash, recoveryHash)) return { error: 'Не вдалося підтвердити профіль.', status: 403 }
       const payload = structuredClone(current.payload)
       const gameState = payload.gameState && typeof payload.gameState === 'object' && !Array.isArray(payload.gameState) ? payload.gameState : {}
       payload.gameState = gameState
@@ -2338,9 +2632,10 @@ export class PotuzhnoState {
       }
       gameState.referrals = {
         ...stored,
-        joinedFrom: { accountId: referrer, at: now },
+        joinedFrom: { accountId: referrer, steamId: accountId, at: now, program: 2 },
+        program: 2,
+        programStatus: 'pending_level_3',
       }
-      payload.balance = boundedMoney(boundedMoney(payload.balance, 0, ADMIN_GAME_MAX_BALANCE) + REFERRAL_NEW_PLAYER_REWARD, 0, ADMIN_GAME_MAX_BALANCE)
       if (!isPayload(payload)) return { error: 'Профіль завеликий після нагороди.', status: 413 }
       const next = {
         ...current,
@@ -2359,9 +2654,7 @@ export class PotuzhnoState {
       duplicate: activated.duplicate === true,
       balance: activated.balance,
       revision: activated.revision,
-      ownerCredited: ownerCredit.credited === true,
-      ownerReward: REFERRAL_OWNER_REWARD,
-      welcomeReward: REFERRAL_NEW_PLAYER_REWARD,
+      referral: { state: referralState(activated.entry?.payload) },
       status: 200,
     }
   }
