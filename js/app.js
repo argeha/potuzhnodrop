@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 7.5.3 ============ */
+/* ============ ПОТУЖНО DROP 7.5.4 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -1445,6 +1445,12 @@ function createSteamAvatarFallback(name = 'Steam') {
 
 function handleSteamAvatarError(image) {
   if (!image) return;
+  const directAvatar = cleanImageUrl(image.dataset.steamAvatar || '');
+  if (directAvatar && image.dataset.steamAvatarAttempt !== 'direct') {
+    image.dataset.steamAvatarAttempt = 'direct';
+    image.src = directAvatar;
+    return;
+  }
   image.src = createSteamAvatarFallback(image.dataset.steamName || image.alt || 'Steam');
   image.classList.add('fallback-skin');
 }
@@ -1452,6 +1458,11 @@ function handleSteamAvatarError(image) {
 function setSteamAvatarSource(image, steamId, avatar, name = 'Steam') {
   if (!image) return;
   image.dataset.steamName = name || 'Steam';
+  const directAvatar = cleanImageUrl(avatar);
+  if (directAvatar) image.dataset.steamAvatar = directAvatar;
+  else delete image.dataset.steamAvatar;
+  delete image.dataset.steamAvatarAttempt;
+  image.classList.remove('fallback-skin');
   // The same-origin endpoint avoids client-side Steam CDN/CSP/hotlink failures.
   // It validates the active HttpOnly Steam session before resolving and proxying
   // an avatar. Do not wait for a locally cached URL: right after OpenID the
@@ -1459,10 +1470,10 @@ function setSteamAvatarSource(image, steamId, avatar, name = 'Steam') {
   // A native image tag cannot attach the mobile bearer token to the protected
   // avatar relay. Steam's already validated public avatar URL is safe to
   // render directly there; the web version retains the protected relay.
-  const mobileAvatar = window.PotuzhnoMobile?.isNative ? cleanImageUrl(avatar) : '';
+  const mobileAvatar = window.PotuzhnoMobile?.isNative ? directAvatar : '';
   image.src = mobileAvatar || /^\d{17}$/.test(String(steamId || ''))
     ? mobileAvatar || gameApiUrl('/api/steam/avatar')
-    : createSteamAvatarFallback(image.dataset.steamName);
+    : directAvatar || createSteamAvatarFallback(image.dataset.steamName);
 }
 
 function normalizeSteamProfile(profile, steamId = '') {
@@ -1917,7 +1928,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.5.3';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.5.4';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -2137,10 +2148,37 @@ function getHalloweenCosmetics() {
   return { state, winter, selection, activeTitle, activeFrame, titles, frames };
 }
 
+function getProfileAvatarPreviewSource() {
+  const profile = currentUser?.steamProfile || account?.steamProfile;
+  return cleanImageUrl(currentUser?.avatar || profile?.avatar) || createSteamAvatarFallback(currentUser?.name || account?.nick || 'Гравець');
+}
+
+function getFramePresentationClass(frame) {
+  if (!frame) return '';
+  return WINTER_COSMETICS[frame.id] ? 'is-winter-frame' : 'is-halloween-frame';
+}
+
+function renderProfileFramePresentation(cosmetics = getHalloweenCosmetics()) {
+  const signalForge = getPulseCircuitState().badgeUnlocked === true && !cosmetics.activeFrame;
+  const frameClass = getFramePresentationClass(cosmetics.activeFrame);
+  const targets = [
+    document.querySelector('.profile-portrait'),
+    document.getElementById('headerAvatarShell'),
+    document.getElementById('profileSteamAvatarShell')
+  ].filter(Boolean);
+  targets.forEach(target => {
+    target.classList.toggle('is-halloween-frame', frameClass === 'is-halloween-frame');
+    target.classList.toggle('is-winter-frame', frameClass === 'is-winter-frame');
+    target.classList.toggle('is-signal-forge-frame', signalForge);
+    if (cosmetics.activeFrame) target.dataset.frameName = cosmetics.activeFrame.title;
+    else delete target.dataset.frameName;
+  });
+  return { signalForge, frameClass };
+}
+
 function renderProfileCosmeticsSummary() {
   const button = document.getElementById('profileCosmeticsButton');
   const label = document.getElementById('profileCosmeticsLabel');
-  const portrait = document.querySelector('.profile-portrait');
   if (!button || !label) return;
   const cosmetics = getHalloweenCosmetics();
   const winterFrame = Boolean(cosmetics.activeFrame && WINTER_COSMETICS[cosmetics.activeFrame.id]);
@@ -2148,22 +2186,18 @@ function renderProfileCosmeticsSummary() {
   button.classList.toggle('is-winter', winterFrame);
   button.classList.remove('hidden');
   label.textContent = cosmetics.activeTitle?.title || cosmetics.activeFrame?.title || getProfileStyleDefinition().title;
-  if (portrait) {
-    portrait.classList.toggle('is-halloween-frame', Boolean(cosmetics.activeFrame) && !winterFrame);
-    portrait.classList.toggle('is-winter-frame', winterFrame);
-  }
+  renderProfileFramePresentation(cosmetics);
   renderProfileStyleSummary();
 }
 
 function renderSignalForgeProfile() {
   const state = getPulseCircuitState();
   const badge = document.getElementById('profileSignalForgeBadge');
-  const portrait = document.querySelector('.profile-portrait');
   if (badge) {
     badge.classList.toggle('hidden', !state.badgeUnlocked);
     badge.title = state.badgeUnlocked ? `Signal Forge · ${state.completed} маршрут(ів) Nightfall` : '';
   }
-  if (portrait) portrait.classList.toggle('is-signal-forge-frame', state.badgeUnlocked);
+  renderProfileFramePresentation();
 }
 
 function renderProfileCosmeticsModal() {
@@ -2171,8 +2205,15 @@ function renderProfileCosmeticsModal() {
   if (!content) return;
   const cosmetics = getHalloweenCosmetics();
   const activeStyle = getProfileStyleDefinition();
+  const avatarPreview = getProfileAvatarPreviewSource();
   const renderGroup = (entries, activeId, kind, empty) => entries.length
-    ? entries.map(entry => `<button type="button" class="halloween-cosmetic-choice ${entry.id === activeId ? 'is-active' : ''}" data-halloween-equip="${entry.id}"><i class="fa-solid ${entry.icon}"></i><span><b>${escapeHtml(entry.title)}</b><small>${escapeHtml(entry.note)}</small></span><em>${entry.id === activeId ? 'Активно' : 'Обрати'}</em></button>`).join('')
+    ? entries.map(entry => {
+      const framePreview = kind === 'frame'
+        ? `<span class="cosmetic-frame-preview ${getFramePresentationClass(entry)}"><img src="${escapeHtml(avatarPreview)}" alt="Твій Steam-аватар" onerror="handleSteamAvatarError(this)"></span>`
+        : `<i class="fa-solid ${entry.icon}"></i>`;
+      const note = kind === 'frame' ? `${entry.note} · видно на Steam-аватарі` : entry.note;
+      return `<button type="button" class="halloween-cosmetic-choice ${entry.id === activeId ? 'is-active' : ''}" data-halloween-equip="${entry.id}">${framePreview}<span><b>${escapeHtml(entry.title)}</b><small>${escapeHtml(note)}</small></span><em>${entry.id === activeId ? 'Активно' : 'Обрати'}</em></button>`;
+    }).join('')
     : `<p class="halloween-cosmetic-empty"><i class="fa-solid ${kind === 'title' ? 'fa-crosshairs' : 'fa-ghost'}"></i>${empty}</p>`;
   const styles = PROFILE_STYLE_DEFINITIONS.map(style => {
     const unlocked = isProfileStyleUnlocked(style);
@@ -4013,7 +4054,7 @@ function expandCloudInventoryItem(record, index = 0) {
 
 function buildPortableSave() {
   return {
-    version: '7.5.3',
+    version: '7.5.4',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -4036,7 +4077,7 @@ function buildCloudSave() {
   const portable = buildPortableSave();
   const cloudSave = {
     ...portable,
-    version: '7.5.3-cloud',
+    version: '7.5.4-cloud',
     inventoryEncoding: CLOUD_INVENTORY_ENCODING,
     inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
   };
@@ -4118,7 +4159,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '7.5.3-steam',
+    version: '7.5.4-steam',
     account: {
       ...snapshot.account,
       steamId,
