@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 7.2.0 ============ */
+/* ============ ПОТУЖНО DROP 7.2.1 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -15,7 +15,9 @@ const STORAGE = {
   pendingReferral: 'potuzhno_v7_pending_referral',
   economyVersion: 'potuzhno_v72_stable_economy',
   freeCase: 'potuzhno_v5_freecase',
-  catalogCache: 'potuzhno_catalog_cache_v41',
+  // v42 deliberately discards the former multi-thousand-record browser cache.
+  // It could stall mobile browsers before the Cases interface was interactive.
+  catalogCache: 'potuzhno_catalog_cache_v42',
   pendingWager: 'potuzhno_v6_pending_wager',
   fair: 'potuzhno_v9_fair',
   steamNudge: 'potuzhno_v10_steam_nudge',
@@ -190,11 +192,16 @@ function stableWearCode(value) {
 
 // The small fixed variation makes catalogue tiers readable without reacting
 // to supply, demand, a browser cache or any external marketplace.
+const stableCatalogPriceCache = new Map();
 function stableCatalogPrice(skin, wear = 'FT') {
   const name = stableCatalogField(skin, 'name') || 'CS2 Skin';
   const category = stableCatalogField(skin, 'category', 64);
   const weapon = stableCatalogField(skin, 'weapon', 64);
   const rarity = stableCatalogField(skin, 'rarity', 48) || 'Consumer Grade';
+  const wearCode = stableWearCode(wear);
+  const cacheKey = `${name}|${category}|${weapon}|${rarity}|${wearCode}`;
+  const cached = stableCatalogPriceCache.get(cacheKey);
+  if (cached !== undefined) return cached;
   const lowerName = name.toLowerCase();
   const inferredKnife = /^★/.test(name) || /knife|karambit|bayonet|talon|falchion|navaja|daggers/i.test(name);
   const inferredGloves = /gloves|wraps|hand wraps|hydra gloves|sport gloves|specialist gloves/i.test(name);
@@ -229,8 +236,10 @@ function stableCatalogPrice(skin, wear = 'FT') {
         : 0.85;
     base = (STABLE_RARITY_VALUES[rarity] || 16) * weaponFactor * finishMultiplier * hashFactor;
   }
-  const value = Math.round(base * (STABLE_WEAR_MULTIPLIERS[stableWearCode(wear)] || 1) * 2) / 2;
-  return Math.max(1, Math.min(1_000_000, roundPc(value, 1)));
+  const value = Math.max(1, Math.min(1_000_000, roundPc(Math.round(base * (STABLE_WEAR_MULTIPLIERS[wearCode] || 1) * 2) / 2, 1)));
+  if (stableCatalogPriceCache.size >= 12_000) stableCatalogPriceCache.clear();
+  stableCatalogPriceCache.set(cacheKey, value);
+  return value;
 }
 
 function rollWear(randomValue = Math.random()) {
@@ -282,13 +291,9 @@ const CATEGORY_LABELS = {
   Equipment: 'Спорядження'
 };
 
-const CS2_SKINS_APIS = [
-  // The function is the primary source. The mirrors keep the full catalogue
-  // available when a serverless function is cold-starting or temporarily down.
-  '/api/catalog/skins',
-  'https://cdn.jsdelivr.net/gh/ByMykel/CSGO-API@main/public/api/en/skins.json',
-  'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/skins.json'
-];
+// Never fetch the multi-megabyte public mirror in a browser. The Worker
+// returns a compact, balanced game catalogue and is the sole client source.
+const CS2_SKINS_APIS = ['/api/catalog/skins'];
 
 // These images are kept locally as URLs for the first painted case catalog.
 // They are current Steam CDN locations; the previous legacy CDN paths return
@@ -316,12 +321,11 @@ const FEATURED_SKIN_IMAGES = Object.freeze({
 });
 
 function applyFeaturedSkinMetadata(skin) {
-  const prices = Object.fromEntries(WEAR_TIERS.map(wear => [wear.code, stableCatalogPrice(skin, wear)]));
-  const ftPrice = prices.FT;
+  const ftPrice = stableCatalogPrice(skin, 'FT');
   return {
     ...skin,
     img: FEATURED_SKIN_IMAGES[skin.name] || skin.img,
-    marketPrices: prices,
+    marketPrices: { ...(skin.marketPrices || {}), FT: ftPrice },
     marketPrice: ftPrice,
     marketUpdatedAt: 0,
     marketSource: STABLE_ECONOMY_SOURCE,
@@ -460,8 +464,8 @@ function normalizeCatalogSkin(skin, index = 0) {
     pricingVersion: STABLE_ECONOMY_VERSION,
     price: 1
   };
-  const marketPrices = Object.fromEntries(WEAR_TIERS.map(wear => [wear.code, stableCatalogPrice(catalogSkin, wear)]));
-  return { ...catalogSkin, marketPrices, marketPrice: marketPrices.FT, price: marketPrices.FT };
+  const ftPrice = stableCatalogPrice(catalogSkin, 'FT');
+  return { ...catalogSkin, marketPrices: { FT: ftPrice }, marketPrice: ftPrice, price: ftPrice };
 }
 
 function marketPriceForWear(skin, wear) {
@@ -1800,7 +1804,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.2.0';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.2.1';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -3863,7 +3867,7 @@ function expandCloudInventoryItem(record, index = 0) {
 
 function buildPortableSave() {
   return {
-    version: '7.2.0',
+    version: '7.2.1',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -3886,7 +3890,7 @@ function buildCloudSave() {
   const portable = buildPortableSave();
   const cloudSave = {
     ...portable,
-    version: '7.2.0-cloud',
+    version: '7.2.1-cloud',
     inventoryEncoding: CLOUD_INVENTORY_ENCODING,
     inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
   };
@@ -3968,7 +3972,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '7.2.0-steam',
+    version: '7.2.1-steam',
     account: {
       ...snapshot.account,
       steamId,
@@ -8009,18 +8013,10 @@ function getFreeCaseCatalogCandidates() {
 
 async function ensureCaseMarketPrices(caseType) {
   const key = caseType === 'free' ? 'free' : resolveCaseConfig(caseType).id;
-  if (caseMarketSyncPromises.has(key)) return caseMarketSyncPromises.get(key);
-  const source = key === 'free' ? getFreeCaseCatalogCandidates() : getCaseCatalogCandidates(key);
-  const candidates = source.slice(0, CASE_MARKET_SAMPLE_SIZE);
-  const task = syncStableCatalogPrices(candidates).then(() => {
-    _casePoolCache.clear();
-    _dropChanceCache.clear();
-    _caseMetricsCache.clear();
-    renderCaseCatalog();
-    return getCaseSkinPool(key).length >= 8;
-  }).finally(() => caseMarketSyncPromises.delete(key));
-  caseMarketSyncPromises.set(key, task);
-  return task;
+  // Stable values are calculated locally. A former compatibility path rebuilt
+  // the full catalogue and rerendered every case before each open, which could
+  // block a phone for seconds even though no network price was needed.
+  return getCaseSkinPool(key).length >= 8;
 }
 
 function getCaseCost(caseType) {
@@ -8235,9 +8231,18 @@ function renderCaseCatalog() {
   const grid = document.getElementById('casesCatalogGrid');
   if (!grid) return;
 
-  // The compact starter set renders instantly. Load the rich catalogue only
-  // when the visitor opens the Cases page, then redraw with full themed pools.
-  if (currentPage === 'case' && !completeSkinCatalogReady) void loadCompleteSkinCatalog();
+  // Keep the page responsive during the first compact catalogue fetch. The
+  // previous starter list did not contain each theme and produced a misleading
+  // "catalog unavailable" warning on otherwise healthy connections.
+  if (currentPage === 'case' && !completeSkinCatalogReady) {
+    void loadCompleteSkinCatalog();
+    grid.innerHTML = `<div class="col-span-full rounded-2xl border border-cyan-400/25 bg-cyan-500/5 px-5 py-10 text-center">
+      <i class="fa-solid fa-boxes-stacked mb-3 text-3xl text-cyan-300 animate-pulse"></i>
+      <p class="font-heading text-xl font-extrabold uppercase tracking-wide text-white">Готуємо каталоги кейсів</p>
+      <p class="mt-2 text-sm text-slate-400">Завантажуємо компактний склад без блокування гри…</p>
+    </div>`;
+    return;
+  }
 
   const validEntries = Object.entries(CASE_TYPES).filter(([id, c]) => !c.aliasTo && (!c.seasonal || getSeasonalEventStatus(c.seasonal).active));
   const filtered = validEntries.filter(([id, c]) => {
@@ -11457,44 +11462,14 @@ function marketQuoteMeta(skin) {
 }
 
 function warmVisibleShopMarketPrices(skins) {
-  const candidates = (Array.isArray(skins) ? skins : []).filter(isUsableSkin);
-  if (candidates.length) void syncStableCatalogPrices(candidates);
+  // Prices are deterministic and already available synchronously. Keeping
+  // this no-op avoids reprocessing the whole catalogue while the shop renders.
 }
 
 function applyStableCatalogQuotes(quotes) {
-  const bySkin = new Map();
-  (Array.isArray(quotes) ? quotes : []).forEach(quote => {
-    const id = cleanText(quote?.id, 128);
-    const wear = cleanText(quote?.wear, 2).toUpperCase();
-    const catalogSkin = CS2_SKINS.find(skin => String(skin.id) === id);
-    const price = catalogSkin && stableCatalogPrice(catalogSkin, wear);
-    if (!id || !catalogSkin || !WEAR_TIERS.some(tier => tier.code === wear) || !Number.isFinite(price) || price <= 0) return;
-    const entry = bySkin.get(id) || { prices: {}, source: '', updatedAt: 0 };
-    entry.prices[wear] = roundPc(price);
-    entry.source = STABLE_ECONOMY_SOURCE;
-    entry.updatedAt = 0;
-    bySkin.set(id, entry);
-  });
-  if (!bySkin.size) return false;
-  CS2_SKINS = CS2_SKINS.map(skin => {
-    const incoming = bySkin.get(String(skin.id));
-    if (!incoming) return skin;
-    const marketPrices = { ...(skin.marketPrices || {}), ...incoming.prices };
-    const defaultPrice = marketPrices.FT || marketPrices.MW || marketPrices.FN || skin.price;
-    return applyFeaturedSkinMetadata({
-      ...skin,
-      marketPrices,
-      marketPrice: defaultPrice,
-      marketUpdatedAt: 0,
-      marketSource: STABLE_ECONOMY_SOURCE,
-      pricingVersion: STABLE_ECONOMY_VERSION
-    });
-  });
-  _casePoolCache.clear();
-  _dropChanceCache.clear();
-  _caseMetricsCache.clear();
-  try { sessionStorage.setItem(STORAGE.catalogCache, JSON.stringify(CS2_SKINS)); } catch {}
-  return true;
+  // Retained as a compatibility hook for existing game actions. There is no
+  // remote quote to merge into the catalogue under the stable economy.
+  return Array.isArray(quotes) && quotes.length > 0;
 }
 
 async function syncStableCatalogPrices(skins, wear = WEAR_TIERS[2]) {
@@ -11517,11 +11492,6 @@ async function syncStableCatalogPrices(skins, wear = WEAR_TIERS[2]) {
     source: STABLE_ECONOMY_SOURCE,
     pricingVersion: STABLE_ECONOMY_VERSION
   }));
-  if (applyStableCatalogQuotes(quotes)) {
-    filterShop();
-    renderCaseTopDrops();
-    renderCaseButtons();
-  }
   return quotes;
 }
 
@@ -11574,16 +11544,15 @@ function loadCompleteSkinCatalog() {
     } catch {}
 
     if (cachedSkins) {
-      CS2_SKINS = cachedSkins.map(applyFeaturedSkinMetadata);
+      CS2_SKINS = cachedSkins;
       completeSkinCatalogReady = true;
       _casePoolCache.clear();
       _dropChanceCache.clear();
       _caseMetricsCache.clear();
       populateCategoryFilter();
-      filterShop();
-      renderGameHub();
-      renderCaseTopDrops();
-      renderCaseButtons();
+      if (document.getElementById('shopModal')?.classList.contains('flex')) filterShop();
+      if (currentPage === 'hub') renderGameHub();
+      if (currentPage === 'case') renderCaseButtons();
       // Existing inventory comes first: those values drive every economic
       // action, unlike decorative catalogue cards.
       void refreshRecentInventoryMarketPrices(80);
@@ -11613,7 +11582,6 @@ function loadCompleteSkinCatalog() {
     }, index)).filter(Boolean);
     if (normalizedCatalog.length < 50) throw new Error('Catalog validation failed');
     CS2_SKINS = normalizedCatalog
-      .map(applyFeaturedSkinMetadata)
       .sort((a, b) => a.weapon.localeCompare(b.weapon) || a.name.localeCompare(b.name));
     completeSkinCatalogReady = true;
     _casePoolCache.clear();
@@ -11625,10 +11593,9 @@ function loadCompleteSkinCatalog() {
     } catch {}
 
     populateCategoryFilter();
-    filterShop();
-    renderGameHub();
-    renderCaseTopDrops();
-    renderCaseButtons();
+    if (document.getElementById('shopModal')?.classList.contains('flex')) filterShop();
+    if (currentPage === 'hub') renderGameHub();
+    if (currentPage === 'case') renderCaseButtons();
     void refreshRecentInventoryMarketPrices(80);
   } catch {
     filteredSkins = CS2_SKINS;

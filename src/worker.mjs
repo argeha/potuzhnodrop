@@ -21,6 +21,10 @@ const CATALOG_SOURCES = [
   'https://cdn.jsdelivr.net/gh/ByMykel/CSGO-API@main/public/api/en/skins.json',
   'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/skins.json',
 ]
+// The public CS2 data set is intentionally much larger than a game screen
+// needs. Sending thousands of images and records to a phone was enough to
+// freeze the renderer. The Worker keeps a balanced, game-ready slice instead.
+const CATALOG_GAME_ITEM_LIMIT = 960
 const STEAM_OPENID = 'https://steamcommunity.com/openid/login'
 const ID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i
 const RECOVERY_CODE = /^[A-Za-z0-9_-]{40,160}$/
@@ -587,6 +591,50 @@ function stableHash(value) {
     hash = Math.imul(hash, 16777619)
   }
   return hash >>> 0
+}
+
+function catalogPriority(skin) {
+  const name = cleanText(skin?.name, 160)
+  if (Object.hasOwn(STABLE_ANCHOR_VALUES, name)) return 3
+  return /dragon lore|fire serpent|wild lotus|gungnir|medusa|howl|printstream|asiimov|neo-noir|wildfire|atheris|redline|case hardened|doppler|fade|marble fade|butterfly|karambit|sport gloves|moto gloves|specialist gloves|hand wraps/i.test(name)
+    ? 2
+    : 0
+}
+
+function selectGameCatalog(items) {
+  const selected = new Map()
+  const byPriority = (left, right) => {
+    const priorityDiff = catalogPriority(right) - catalogPriority(left)
+    if (priorityDiff) return priorityDiff
+    return stableHash(left.id || left.name) - stableHash(right.id || right.name)
+  }
+  const add = (matches, limit) => {
+    matches.sort(byPriority).slice(0, limit).forEach(item => selected.set(item.id, item))
+  }
+  const hasName = (skin, pattern) => pattern.test(skin.name)
+  const isWeapon = skin => skin.category.name !== 'Knives' && skin.category.name !== 'Gloves'
+
+  // Every named case receives enough candidates before the general fill. This
+  // also prevents a first server response from showing "catalog unavailable".
+  add(items.filter(skin => isWeapon(skin) && hasName(skin, /dragon lore|fire serpent|printstream|fade|howl|wild lotus|gungnir|medusa/i)), 32)
+  add(items.filter(skin => isWeapon(skin) && hasName(skin, /ice coaled|winterized|whiteout|asiimov|vulcan|coolant|snow leopard|neo-noir/i)), 32)
+  add(items.filter(skin => isWeapon(skin) && hasName(skin, /atheris|neo-noir|wildfire|see ya later|kill confirmed|printstream|case hardened|redline/i)), 32)
+  add(items.filter(skin => isWeapon(skin) && hasName(skin, /hyper beast|asiimov|neo-noir|mecha|vaporwave|temukau|legion of anubis/i)), 32)
+  add(items.filter(skin => /^AWP$/i.test(skin.weapon.name)), 70)
+  add(items.filter(skin => /^AK-47$/i.test(skin.weapon.name)), 70)
+  add(items.filter(skin => /^(M4A4|M4A1-S)$/i.test(skin.weapon.name)), 60)
+  add(items.filter(skin => skin.category.name === 'Knives' && hasName(skin, /butterfly knife/i)), 32)
+  add(items.filter(skin => skin.category.name === 'Knives' && hasName(skin, /karambit/i)), 32)
+  add(items.filter(skin => skin.category.name === 'Knives'), 96)
+  add(items.filter(skin => skin.category.name === 'Gloves' && hasName(skin, /sport gloves/i)), 32)
+  add(items.filter(skin => skin.category.name === 'Gloves' && hasName(skin, /moto gloves|specialist gloves|hand wraps/i)), 48)
+  add(items.filter(skin => skin.category.name === 'Gloves'), 96)
+  add(items.filter(isWeapon), 256)
+
+  if (selected.size < CATALOG_GAME_ITEM_LIMIT) {
+    add(items.filter(item => !selected.has(item.id)), CATALOG_GAME_ITEM_LIMIT - selected.size)
+  }
+  return [...selected.values()].sort((left, right) => left.weapon.name.localeCompare(right.weapon.name) || left.name.localeCompare(right.name))
 }
 
 function stableWearCode(value) {
@@ -3341,7 +3389,7 @@ export class PotuzhnoState {
   }
 
   async readSkinCatalog() {
-    const cacheKey = 'catalog:skins:v2'
+    const cacheKey = 'catalog:skins:v3-compact'
     const cached = await this.storage.get(cacheKey)
     const cachedItems = Array.isArray(cached?.items) ? cached.items : []
     const cacheAge = Date.now() - Number(cached?.updatedAt || 0)
@@ -3369,8 +3417,9 @@ export class PotuzhnoState {
             wears,
           }
         }).filter(skin => skin.name && skin.weapon.name && skin.category.name && skin.image)
-        if (safeCatalog.length >= 50) {
-          const result = { items: safeCatalog, updatedAt: Date.now() }
+        const gameCatalog = selectGameCatalog(safeCatalog)
+        if (gameCatalog.length >= 50) {
+          const result = { items: gameCatalog, updatedAt: Date.now() }
           await this.storage.put(cacheKey, result)
           return { items: result.items, stale: false }
         }
