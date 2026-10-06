@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 7.6.0 ============ */
+/* ============ ПОТУЖНО DROP 7.6.1 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -1946,7 +1946,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.6.0';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.6.1';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -3620,24 +3620,46 @@ function isPublicProfileIdentity(value) {
   return Boolean(value && UUID_PATTERN.test(String(value.id || '')) && SECRET_PATTERN.test(String(value.writeKey || '')));
 }
 
+function buildPublicShowcasePayload() {
+  return getShowcaseItems().slice(0, 3).map(item => ({
+    name: cleanText(item?.name, 160),
+    img: cleanImageUrl(getKnownSkinImageUrl(item)),
+    price: roundPc(clampNumber(verifiedInventoryMarketPrice(item), 0, MAX_STORED_ITEM_VALUE, 0)),
+    rarity: cleanText(item?.rarity?.name || item?.rarity, 48) || 'CS2',
+    rarityColor: cleanColor(item?.rarity?.color || item?.rarityColor)
+  })).filter(item => item.name);
+}
+
+function buildPublicAchievementsPayload() {
+  const unlocked = ACHIEVEMENT_DEFINITIONS
+    .filter(achievement => gameState?.achievements?.[achievement.id])
+    .sort((left, right) => Number(gameState.achievements[right.id]) - Number(gameState.achievements[left.id]))
+    .slice(0, 8)
+    .map(achievement => achievement.id);
+  return { count: ACHIEVEMENT_DEFINITIONS.filter(achievement => gameState?.achievements?.[achievement.id]).length, unlocked };
+}
+
 function buildPublicProfilePayload() {
   const stats = gameState?.stats || {};
   const cosmetics = getHalloweenCosmetics();
   const signalForge = getPulseCircuitState();
+  const profileStyle = getProfileStyleDefinition();
   return {
     name: cleanText(account?.nick || currentUser?.name || 'Гравець', 24) || 'Гравець',
     avatar: cleanImageUrl(currentUser?.avatar || account?.steamProfile?.avatar),
     level: getPlayerLevel(),
     prestige: clampNumber(gameState?.prestige, 0, 99, 0),
     steamConnected: Boolean(currentUser?.steamId),
-    cosmetics: { title: cosmetics.activeTitle?.id || '', frame: cosmetics.activeFrame?.id || '' },
+    cosmetics: { title: cosmetics.activeTitle?.id || '', frame: cosmetics.activeFrame?.id || '', style: profileStyle.id },
     signal: { forged: signalForge.badgeUnlocked === true, routes: clampNumber(signalForge.completed, 0, 9_999, 0) },
     stats: {
       rounds: clampNumber(stats.rounds, 0, 9_999_999, 0),
       cases: clampNumber(stats.cases, 0, 9_999_999, 0),
       battles: clampNumber(stats.battles, 0, 9_999_999, 0),
       bestValue: clampNumber(stats.bestValue, 0, MAX_STORED_ITEM_VALUE, 0)
-    }
+    },
+    showcase: buildPublicShowcasePayload(),
+    achievements: buildPublicAchievementsPayload()
   };
 }
 
@@ -3733,9 +3755,17 @@ function profileIdFromInput(value) {
 }
 
 function getPublicAvatarSource(profile) {
-  return UUID_PATTERN.test(String(profile?.id || '')) && String(profile?.avatarUrl || '').startsWith('/api/public-avatar')
-    ? gameApiUrl(profile.avatarUrl)
-    : createSteamAvatarFallback(profile?.name || 'Гравець');
+  const avatarPath = cleanText(profile?.avatarUrl, 512);
+  const isPublicAvatar = /^\/api\/public-avatar\?id=[a-f0-9-]{36}$/i.test(avatarPath);
+  const isCommunityAvatar = /^\/api\/community-avatar\?player=[a-f0-9]{64}$/i.test(avatarPath);
+  if (isPublicAvatar || isCommunityAvatar) return gameApiUrl(avatarPath);
+  // The current player's local live event has an already verified Steam CDN
+  // avatar. Keep it visible while the public profile request is in flight.
+  if (profile?.isOwn === true) {
+    const ownAvatar = cleanImageUrl(profile?.avatar || currentUser?.avatar || account?.steamProfile?.avatar);
+    if (ownAvatar) return ownAvatar;
+  }
+  return createSteamAvatarFallback(profile?.name || 'Гравець');
 }
 
 function renderPublicProfileModal(profile, { demo = false } = {}) {
@@ -3749,11 +3779,33 @@ function renderPublicProfileModal(profile, { demo = false } = {}) {
   const safeName = escapeHtml(cleanText(profile.name, 24) || 'Гравець');
   const publicTitle = SEASONAL_COSMETICS[profile?.cosmetics?.title] || null;
   const publicFrame = SEASONAL_COSMETICS[profile?.cosmetics?.frame] || null;
+  const publicStyle = PROFILE_STYLE_DEFINITIONS.find(style => style.id === profile?.cosmetics?.style) || PROFILE_STYLE_DEFINITIONS[0];
   const winterPublicFrame = Boolean(publicFrame && WINTER_COSMETICS[publicFrame.id]);
   const signalForge = profile?.signal?.forged === true;
   const signalRoutes = clampNumber(profile?.signal?.routes, 0, 9_999, 0);
   const isOwnProfile = profile.isOwn === true || (profile.id && profile.id === account?.publicProfile?.id);
   const canJoinBattle = !demo && !communityProfile && !isOwnProfile && UUID_PATTERN.test(String(profile.id || ''));
+  const showcase = Array.isArray(profile.showcase) ? profile.showcase.slice(0, 3) : [];
+  const showcaseMarkup = showcase.length
+    ? showcase.map(item => {
+      const itemName = cleanText(item?.name, 160) || 'CS2 Skin';
+      const image = getSkinImageSrc(item);
+      return `<article class="public-profile-skin" title="${escapeHtml(itemName)}"><img src="${escapeHtml(image)}" alt="${escapeHtml(itemName)}" data-skin-name="${escapeHtml(itemName)}" loading="lazy" onerror="handleSkinImageError(this)"><strong>${escapeHtml(itemName)}</strong><small>${formatCredits(clampNumber(item?.price, 0, MAX_STORED_ITEM_VALUE, 0))}</small></article>`;
+    }).join('')
+    : '<p class="public-profile-empty"><i class="fa-solid fa-gem"></i> Вітрина поки порожня</p>';
+  const unlockedAchievementIds = [...new Set(Array.isArray(profile?.achievements?.unlocked) ? profile.achievements.unlocked.map(String) : [])];
+  const achievementCards = unlockedAchievementIds
+    .map(id => ACHIEVEMENT_DEFINITIONS.find(achievement => achievement.id === id))
+    .filter(Boolean)
+    .map(achievement => `<span class="public-profile-achievement" title="${escapeHtml(achievement.description)}"><i class="fa-solid ${achievement.icon}"></i><b>${escapeHtml(achievement.title)}</b></span>`)
+    .join('');
+  const achievementCount = clampNumber(profile?.achievements?.count, unlockedAchievementIds.length, ACHIEVEMENT_DEFINITIONS.length, unlockedAchievementIds.length);
+  const cosmeticsMarkup = [
+    `<span><i class="fa-solid ${publicStyle.icon}"></i><b>${escapeHtml(publicStyle.title)}</b><small>стиль</small></span>`,
+    publicTitle ? `<span><i class="fa-solid ${publicTitle.icon}"></i><b>${escapeHtml(publicTitle.title)}</b><small>титул</small></span>` : '',
+    publicFrame ? `<span><i class="fa-solid ${publicFrame.icon}"></i><b>${escapeHtml(publicFrame.title)}</b><small>рамка</small></span>` : '',
+    signalForge ? '<span><i class="fa-solid fa-tower-broadcast"></i><b>Signal Forge</b><small>ефект</small></span>' : ''
+  ].filter(Boolean).join('');
   const statsMarkup = communityProfile
     ? `<div><span>XP</span><strong>${Math.round(Number(profile.xp) || 0).toLocaleString('uk-UA')}</strong></div>
       <div><span>Перемог</span><strong>${Math.round(Number(profile.wins) || 0).toLocaleString('uk-UA')}</strong></div>
@@ -3764,20 +3816,23 @@ function renderPublicProfileModal(profile, { demo = false } = {}) {
       <div><span>Боїв</span><strong>${Math.round(Number(stats.battles) || 0).toLocaleString('uk-UA')}</strong></div>
       <div><span>Рекорд</span><strong>${formatCredits(Number(stats.bestValue) || 0)}</strong></div>`;
   content.innerHTML = `
+    <div class="public-profile-card public-profile-style-${escapeHtml(publicStyle.id)}">
     <div class="public-profile-hero">
       <div class="public-profile-avatar-shell ${publicFrame ? winterPublicFrame ? 'is-winter-frame' : 'is-halloween-frame' : ''} ${signalForge ? 'is-signal-forge-frame' : ''}"><img src="${escapeHtml(avatar)}" alt="Аватар ${safeName}" onerror="handleSteamAvatarError(this)"></div>
       <div class="min-w-0"><p class="public-profile-kicker">${demo ? 'ДЕМО-АКТИВНІСТЬ' : communityProfile ? 'ПРОФІЛЬ У СПІЛЬНОТІ' : 'ПРОФІЛЬ ГРАВЦЯ'}</p><h3>${safeName}</h3><p class="public-profile-level">LVL ${level}${prestige ? ` · P${prestige}` : ''}${profile.steamConnected ? ' · <i class="fa-brands fa-steam"></i> Steam' : ''}</p>${publicTitle ? `<span class="public-profile-title"><i class="fa-solid ${publicTitle.icon}"></i>${escapeHtml(publicTitle.title)}</span>` : ''}</div>
     </div>
     <div class="public-profile-stats">${statsMarkup}</div>
     ${signalForge ? `<p class="public-profile-signal"><i class="fa-solid fa-tower-broadcast"></i><span><b>SIGNAL FORGE</b><small>Nightfall-маршрутів: ${signalRoutes}</small></span></p>` : ''}
-    <p class="public-profile-note"><i class="fa-solid fa-shield-halved"></i>${demo ? ' Це візуальна демонстрація стрічки: дані не належать реальному користувачу.' : communityProfile ? ' Це безпечна картка зі спільноти. Баланс, інвентар, Steam ID та інші приватні дані приховані.' : ' Видимі лише публічні дані. Баланс, інвентар і дані Steam приховані.'}</p>
+    ${!demo && !communityProfile ? `<section class="public-profile-section"><header><span><i class="fa-solid fa-wand-magic-sparkles"></i> ОФОРМЛЕННЯ</span><small>Екіпіровано</small></header><div class="public-profile-cosmetics">${cosmeticsMarkup}</div></section><section class="public-profile-section"><header><span><i class="fa-solid fa-gem"></i> ВІТРИНА СКІНІВ</span><small>${showcase.length} / 3</small></header><div class="public-profile-showcase">${showcaseMarkup}</div></section><section class="public-profile-section"><header><span><i class="fa-solid fa-medal"></i> ДОСЯГНЕННЯ</span><small>${achievementCount} / ${ACHIEVEMENT_DEFINITIONS.length}</small></header><div class="public-profile-achievements">${achievementCards || '<p class="public-profile-empty"><i class="fa-solid fa-medal"></i> Ще немає відкритих досягнень</p>'}</div></section>` : ''}
+    <p class="public-profile-note"><i class="fa-solid fa-shield-halved"></i>${demo ? ' Це візуальна демонстрація стрічки: дані не належать реальному користувачу.' : communityProfile ? ' Це безпечна картка зі спільноти. Баланс, інвентар, Steam ID та інші приватні дані приховані.' : ' Видимі лише публічні дані: стиль, рамка, титул, вітрина та досягнення. Баланс, повний інвентар і Steam ID приховані.'}</p>
     ${canJoinBattle ? '<button type="button" onclick="joinPublicProfileBattle()" class="public-profile-battle"><i class="fa-solid fa-dice"></i> Приєднатися до 1v1</button>' : ''}
-    ${!demo && isOwnProfile && !communityProfile ? '<button type="button" onclick="openOwnBattleRoom()" class="public-profile-battle"><i class="fa-solid fa-dice"></i> Відкрити мою кімнату 1v1</button>' : ''}`;
+    ${!demo && isOwnProfile && !communityProfile ? '<button type="button" onclick="openOwnBattleRoom()" class="public-profile-battle"><i class="fa-solid fa-dice"></i> Відкрити мою кімнату 1v1</button>' : ''}
+    </div>`;
   activePublicProfile = { ...profile, demo };
   openModal('publicProfileModal');
 }
 
-async function openPublicProfile(profileId) {
+async function openPublicProfile(profileId, { fallbackProfile = null } = {}) {
   const id = profileIdFromInput(profileId);
   if (!id) {
     showToast('Встав коректне посилання на профіль.', 'warn');
@@ -3789,8 +3844,11 @@ async function openPublicProfile(profileId) {
   try {
     const data = await requestJson(`/api/public-profile?id=${encodeURIComponent(id)}`, {}, 6_000);
     if (!data?.profile) throw new Error('Профіль не знайдено.');
-    renderPublicProfileModal(data.profile);
-    return data.profile;
+    const profile = !data.profile.avatarUrl && fallbackProfile?.avatarUrl
+      ? { ...data.profile, avatarUrl: fallbackProfile.avatarUrl }
+      : data.profile;
+    renderPublicProfileModal(profile);
+    return profile;
   } catch (error) {
     if (content) content.innerHTML = `<div class="public-profile-loading is-error"><i class="fa-solid fa-link-slash"></i>${escapeHtml(error?.message || 'Профіль не знайдено.')}</div>`;
     return null;
@@ -3884,7 +3942,7 @@ function renderCloudSyncUI() {
       ? (steamAccountAutoSyncLastError ? 'Steam-збереження очікує повторної спроби' : 'Steam-акаунт захищає прогрес')
       : 'Підключаємо серверне збереження Steam…';
     if (details) details.textContent = steamReady
-      ? `${steamAccountAutoSyncLastError ? 'Попередня копія лишається доступною. ' : ''}Steam ID ${steamId}. Остання синхронізація: ${formatSyncTime(account.steamAccount.updatedAt)}. Код відновлення не потрібен.`
+      ? `${steamAccountAutoSyncLastError ? 'Попередня копія лишається доступною. ' : ''}Steam ID ${steamId}. Остання синхронізація: ${formatSyncTime(account.steamAccount.updatedAt)}. Сайт і Android автооновлюють цей самий прогрес.`
       : 'Після перевірки Steam ID сайт безпечно завантажить або створить твій серверний прогрес.';
     if (steamLogin) {
       steamLogin.onclick = startSteamLogin;
@@ -4008,6 +4066,10 @@ const CLOUD_AUTOSAVE_RETRY_MS = 45_000;
 const STEAM_ACCOUNT_AUTOSAVE_DEBOUNCE_MS = 3_000;
 const STEAM_ACCOUNT_AUTOSAVE_MIN_INTERVAL_MS = 8_000;
 const STEAM_ACCOUNT_AUTOSAVE_RETRY_MS = 25_000;
+// Website and Android intentionally use the same Steam-bound save. A quiet
+// periodic revision check lets an already-open client adopt progress made on
+// the other device without ever overwriting unsaved local actions.
+const STEAM_ACCOUNT_REMOTE_REFRESH_MS = 45_000;
 let cloudAutoSyncStarted = false;
 let cloudAutoSyncDirty = false;
 let cloudAutoSyncTimer = null;
@@ -4026,6 +4088,7 @@ let steamAccountAutoSyncPending = false;
 let steamAccountAutoSyncVersion = 0;
 let steamAccountAutoSyncLastAt = 0;
 let steamAccountAutoSyncLastError = '';
+let steamAccountRemoteRefreshInFlight = false;
 
 function hasSteamIdentity() {
   return /^\d{17}$/.test(String(currentUser?.steamId || account?.steamId || ''));
@@ -4072,7 +4135,7 @@ function expandCloudInventoryItem(record, index = 0) {
 
 function buildPortableSave() {
   return {
-    version: '7.6.0',
+    version: '7.6.1',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -4095,7 +4158,7 @@ function buildCloudSave() {
   const portable = buildPortableSave();
   const cloudSave = {
     ...portable,
-    version: '7.6.0-cloud',
+    version: '7.6.1-cloud',
     inventoryEncoding: CLOUD_INVENTORY_ENCODING,
     inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
   };
@@ -4177,7 +4240,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '7.6.0-steam',
+    version: '7.6.1-steam',
     account: {
       ...snapshot.account,
       steamId,
@@ -4192,6 +4255,7 @@ async function createSteamAccount({ silent = false } = {}) {
   try {
     const data = await requestSteamAccount('create', { payload: buildSteamAccountSave() });
     setSteamAccountMeta(steamId, data);
+    steamAccountAutoSyncLastAt = Date.now();
     steamAccountAutoSyncLastError = '';
     saveState({ skipCloudAutoSync: true, skipSteamAutoSync: true });
     renderCloudSyncUI();
@@ -4217,6 +4281,7 @@ async function loadSteamAccount({ silent = false } = {}) {
     // that has just been verified by the server session.
     applySteamIdentity(steamId, profile, { skipAutoSync: true });
     setSteamAccountMeta(steamId, data);
+    steamAccountAutoSyncLastAt = Date.now();
     steamAccountAutoSyncLastError = '';
     saveState({ skipCloudAutoSync: true, skipSteamAutoSync: true });
     renderCloudSyncUI();
@@ -4225,6 +4290,42 @@ async function loadSteamAccount({ silent = false } = {}) {
   } catch (error) {
     if (!silent) showToast(error?.message || 'Не вдалося завантажити Steam-прогрес.', 'error');
     throw error;
+  }
+}
+
+async function refreshSteamAccountFromServer({ announce = false } = {}) {
+  // A local action always wins until it reaches the server. Pulling while the
+  // client is dirty could silently replace a case opening, sale or reward
+  // that is waiting for its autosave window.
+  if (!hasReadySteamAccount() || steamAccountAutoSyncDirty || steamAccountAutoSyncInFlight || steamAccountRemoteRefreshInFlight) return false;
+  const steamId = String(currentUser?.steamId || account?.steamId || '');
+  if (!/^\d{17}$/.test(steamId)) return false;
+  steamAccountRemoteRefreshInFlight = true;
+  try {
+    const data = await requestSteamAccount('load');
+    const localRevision = Number(account?.steamAccount?.revision || 0);
+    const remoteRevision = Number(data?.revision || 0);
+    if (!Number.isSafeInteger(remoteRevision) || remoteRevision <= localRevision) return false;
+
+    const profile = normalizeSteamProfile(currentUser?.steamProfile || account?.steamProfile, steamId) || fallbackSteamProfile(steamId);
+    applyPortableSave(data.payload, { skipCloudAutoSync: true, skipSteamAutoSync: true });
+    // Keep the identity verified by this device's current Steam session even
+    // if a very old stored snapshot contains an obsolete profile picture.
+    applySteamIdentity(steamId, profile, { skipAutoSync: true });
+    setSteamAccountMeta(steamId, data);
+    steamAccountAutoSyncLastAt = Date.now();
+    steamAccountAutoSyncLastError = '';
+    saveState({ skipCloudAutoSync: true, skipSteamAutoSync: true });
+    renderCloudSyncUI();
+    void syncCommunity();
+    if (announce) showToast('Прогрес синхронізовано з іншого пристрою.', 'info');
+    return true;
+  } catch {
+    // This is a background convenience check. A temporary network failure
+    // must not make gameplay look broken or replace the last good local copy.
+    return false;
+  } finally {
+    steamAccountRemoteRefreshInFlight = false;
   }
 }
 
@@ -4243,6 +4344,7 @@ async function saveSteamAccount({ silent = false, keepalive = false } = {}) {
     });
     setSteamAccountMeta(steamId, data);
     applyServerReferralProgress(data?.referral);
+    steamAccountAutoSyncLastAt = Date.now();
     steamAccountAutoSyncLastError = '';
     saveState({ skipCloudAutoSync: true, skipSteamAutoSync: true });
     renderCloudSyncUI();
@@ -4261,7 +4363,10 @@ async function saveSteamAccount({ silent = false, keepalive = false } = {}) {
       steamAccountAutoSyncLastError = 'Є новіша версія на іншому пристрої';
       steamAccountAutoSyncDirty = false;
       renderCloudSyncUI();
-      if (!silent) showToast('На іншому пристрої є новіший прогрес. Натисни «Відновити», щоб безпечно його завантажити.', 'warn');
+      // Saving is optimistic. If another device won the revision race, adopt
+      // its copy immediately after the in-flight save has released its lock.
+      window.setTimeout(() => void refreshSteamAccountFromServer({ announce: true }), 0);
+      if (!silent) showToast('На іншому пристрої є новіший прогрес. Завантажуємо актуальну копію…', 'info');
       return false;
     }
     steamAccountAutoSyncLastError = 'Steam-збереження тимчасово недоступне';
@@ -4671,9 +4776,16 @@ function startSteamAccountAutoSync() {
       });
     } catch {}
   };
+  const refreshFromOtherDevice = () => {
+    if (!hasReadySteamAccount() || steamAccountAutoSyncDirty) return;
+    void refreshSteamAccountFromServer({ announce: true });
+  };
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && steamAccountAutoSyncDirty) void syncSteamAccountAutomatically({ finalAttempt: true });
-    if (!document.hidden) refreshFromAdminChange();
+    if (!document.hidden) {
+      refreshFromAdminChange();
+      refreshFromOtherDevice();
+    }
   });
   window.addEventListener('pagehide', () => {
     if (steamAccountAutoSyncDirty) void syncSteamAccountAutomatically({ finalAttempt: true });
@@ -4681,8 +4793,15 @@ function startSteamAccountAutoSync() {
   window.addEventListener('storage', event => {
     if (event.key === STORAGE.adminGameRefresh) refreshFromAdminChange();
   });
-  window.addEventListener('pageshow', refreshFromAdminChange);
+  window.addEventListener('pageshow', () => {
+    refreshFromAdminChange();
+    refreshFromOtherDevice();
+  });
+  window.setInterval(() => {
+    if (!document.hidden) refreshFromOtherDevice();
+  }, STEAM_ACCOUNT_REMOTE_REFRESH_MS);
   refreshFromAdminChange();
+  refreshFromOtherDevice();
 }
 
 function openCloudRecoveryModal() {
@@ -5847,7 +5966,8 @@ function buildCommunityProfile(player) {
     name: cleanText(source.name, 24) || 'Гравець',
     level: clampNumber(source.level, 1, 9_999, 1),
     prestige: clampNumber(source.prestige, 0, 99, 0),
-    steamConnected: false,
+    steamConnected: Boolean(cleanText(source.avatarUrl, 512)),
+    avatarUrl: cleanText(source.avatarUrl, 512),
     xp: clampNumber(source.xp, 0, 9_999_999, 0),
     wins: clampNumber(source.wins, 0, 9_999_999, 0),
     stats: {
@@ -12014,7 +12134,7 @@ function openLiveFeedProfile(event) {
   const profile = event?.currentTarget?._liveProfile;
   if (!profile) return;
   if (UUID_PATTERN.test(String(profile.id || ''))) {
-    void openPublicProfile(profile.id).then(loaded => {
+    void openPublicProfile(profile.id, { fallbackProfile: profile }).then(loaded => {
       if (!loaded && profile.communityFallback === true) {
         renderPublicProfileModal({ ...profile, id: '', community: true });
       }

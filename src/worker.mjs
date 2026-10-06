@@ -59,6 +59,15 @@ const ROYALE_LIVE_START_DELAY = 5_000
 const PUBLIC_PROFILE_TTL = 90 * 24 * 60 * 60_000
 const PUBLIC_PROFILE_TITLES = new Set(['night_hunter_2026', 'midnight_keeper_2026', 'rift_breaker_2026', 'aurora_conductor_2026', 'icewire_survivor_2026'])
 const PUBLIC_PROFILE_FRAMES = new Set(['halloween_night_2026', 'aurora_frame_2026'])
+const PUBLIC_PROFILE_STYLES = new Set(['standard', 'void', 'neon', 'arcade', 'prism'])
+const PUBLIC_SHOWCASE_LIMIT = 3
+const PUBLIC_ACHIEVEMENT_LIMIT = 8
+const PUBLIC_ACHIEVEMENTS = new Set([
+  'first-roll', 'first-win', 'streak-three', 'high-value', 'case-opener', 'seller', 'fighter', 'contractor',
+  'prestige-once', 'roll-100', 'roll-500', 'streak-7', 'rich-50k', 'collector-10', 'collector-25',
+  'case-10', 'case-30', 'battle-10', 'contract-10', 'seller-20', 'multi-10', 'credit-20', 'legendary',
+  'prestige-3', 'free-case-7', 'all-collections', 'royale-1', 'royale-5',
+])
 const STEAM_PROFILE_TTL = 6 * 60 * 60_000
 const STEAM_SESSION_TTL = 30 * 24 * 60 * 60_000
 const CATALOG_TTL = 6 * 60 * 60_000
@@ -381,11 +390,34 @@ function cleanAvatar(value) {
   }
 }
 
+function publicShowcaseItem(value) {
+  const name = cleanText(value?.name, 160)
+  if (!name) return null
+  const price = Number(value?.price)
+  return {
+    name,
+    img: cleanImage(value?.img),
+    price: Number.isFinite(price) ? Math.round(Math.min(MAX_PRICE, Math.max(0, price)) * 100) / 100 : 0,
+    rarity: cleanText(value?.rarity, 48) || 'CS2',
+    rarityColor: cleanColor(value?.rarityColor),
+  }
+}
+
 function publicProfilePayload(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const stats = value.stats && typeof value.stats === 'object' && !Array.isArray(value.stats) ? value.stats : {}
   const cosmetics = value.cosmetics && typeof value.cosmetics === 'object' && !Array.isArray(value.cosmetics) ? value.cosmetics : {}
   const signal = value.signal && typeof value.signal === 'object' && !Array.isArray(value.signal) ? value.signal : {}
+  const showcase = Array.isArray(value.showcase)
+    ? value.showcase.map(publicShowcaseItem).filter(Boolean).slice(0, PUBLIC_SHOWCASE_LIMIT)
+    : []
+  const achievementIds = Array.isArray(value?.achievements?.unlocked)
+    ? [...new Set(value.achievements.unlocked.map(id => cleanText(id, 48)).filter(id => PUBLIC_ACHIEVEMENTS.has(id)))].slice(0, PUBLIC_ACHIEVEMENT_LIMIT)
+    : []
+  const achievementCount = Math.max(
+    achievementIds.length,
+    boundedInteger(value?.achievements?.count, 0, PUBLIC_ACHIEVEMENTS.size, 0),
+  )
   const name = cleanText(value.name, 24)
   if (!name) return null
   return {
@@ -397,6 +429,7 @@ function publicProfilePayload(value) {
     cosmetics: {
       title: PUBLIC_PROFILE_TITLES.has(String(cosmetics.title || '')) ? String(cosmetics.title) : '',
       frame: PUBLIC_PROFILE_FRAMES.has(String(cosmetics.frame || '')) ? String(cosmetics.frame) : '',
+      style: PUBLIC_PROFILE_STYLES.has(String(cosmetics.style || '')) ? String(cosmetics.style) : 'standard',
     },
     signal: {
       forged: signal.forged === true,
@@ -408,6 +441,8 @@ function publicProfilePayload(value) {
       battles: Math.round(Math.min(9_999_999, Math.max(0, Number(stats.battles) || 0))),
       bestValue: Math.round(Math.min(MAX_PRICE, Math.max(0, Number(stats.bestValue) || 0))),
     },
+    showcase,
+    achievements: { count: achievementCount, unlocked: achievementIds },
   }
 }
 
@@ -542,7 +577,7 @@ function rateLimitGroup(path) {
   if (path.startsWith('/api/steam/')) return 'steam'
   if (path === '/api/catalog/skins' || path === '/api/catalog/market-prices') return 'catalog'
   if (path === '/api/presence') return 'presence'
-  if (path === '/api/community') return 'community'
+  if (path === '/api/community' || path === '/api/community-avatar') return 'community'
   return 'api'
 }
 
@@ -890,6 +925,10 @@ function normalizeCommunityPlayer(value, visitorHash, now) {
     inventoryTotal: boundedInteger(value?.inventoryTotal, 0, ADMIN_GAME_MAX_INVENTORY),
     level: boundedInteger(value?.level, 1, 9_999),
     prestige: boundedInteger(value?.prestige, 0, 99),
+    // This is written by the Worker after it validates the Steam session. It
+    // lets the live feed use a short-lived, server-owned avatar route without
+    // publishing a Steam ID to other players.
+    avatar: cleanAvatar(value?.avatar),
     // This marker is written only after the server matches the submitted
     // Steam ID to the authenticated Steam session for this exact request.
     // It is deliberately not trusted when it comes from the browser.
@@ -965,6 +1004,9 @@ function normalizeCommunityState(value, now) {
 
 function communityResponse(state, visitorHash) {
   const isPublicPlayer = player => player?.hidden !== true && isVerifiedSteamCommunityPlayer(player)
+  const avatarUrlFor = player => cleanAvatar(player?.avatar)
+    ? `/api/community-avatar?player=${encodeURIComponent(player.id)}`
+    : ''
   const rows = Object.values(state.players)
     .filter(isPublicPlayer)
     .sort((left, right) => right.xp - left.xp || right.wins - left.wins || right.collectionValue - left.collectionValue || right.updatedAt - left.updatedAt)
@@ -978,6 +1020,7 @@ function communityResponse(state, visitorHash) {
     collectionValue: player.collectionValue,
     level: player.level,
     prestige: player.prestige,
+    avatarUrl: avatarUrlFor(player),
     isMe: player.id === visitorHash,
   }))
   const ownRank = rows.findIndex(player => player.id === visitorHash) + 1
@@ -994,6 +1037,7 @@ function communityResponse(state, visitorHash) {
         inventoryTotal: player?.inventoryTotal || 0,
         level: player?.level || event.level,
         prestige: player?.prestige || event.prestige,
+        avatarUrl: avatarUrlFor(player),
       }
     })
   const circuit = normalizeCommunityCircuit(state.circuit, Date.now())
@@ -1586,6 +1630,7 @@ export class PotuzhnoState {
       if (path === '/api/royale') return await this.royale(request)
       if (path === '/api/presence') return await this.presence(request)
       if (path === '/api/community') return await this.community(request)
+      if (path === '/api/community-avatar') return await this.communityAvatar(request)
       if (path === '/api/steam/auth') return await this.steamAuth(request)
       if (path === '/api/mobile/session') return await this.mobileSession(request)
       if (path === '/api/steam/session') return await this.steamSession(request)
@@ -3192,6 +3237,15 @@ export class PotuzhnoState {
     if (sessionSteamId && sessionSteamId === claimedSteamId) {
       player.cloudProfileId = sessionSteamId
       player.steamVerifiedAt = now
+      // Never accept an avatar URL from the browser. Resolve it for the
+      // authenticated Steam identity here, then expose only a short-lived
+      // community image route in the public feed response.
+      try {
+        const steamProfile = await this.resolveSteamProfile(sessionSteamId)
+        player.avatar = cleanAvatar(steamProfile?.avatar)
+      } catch {
+        player.avatar = ''
+      }
       const profile = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(`steam-account:${sessionSteamId}`))
       try {
         const visibilityResponse = await profile.fetch(new Request('https://internal/__internal/profile-visibility', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId: sessionSteamId, accountType: 'steam' }) }))
@@ -3203,6 +3257,7 @@ export class PotuzhnoState {
     } else {
       player.cloudProfileId = ''
       player.steamVerifiedAt = 0
+      player.avatar = ''
     }
     const rawEvent = body?.event && typeof body.event === 'object'
       ? { ...body.event, playerId: visitorHash, name: player.name, profileId: player.profileId, level: player.level, prestige: player.prestige, at: now }
@@ -3230,6 +3285,34 @@ export class PotuzhnoState {
       return communityResponse(state, visitorHash)
     })
     return json(result)
+  }
+
+  async communityAvatar(request) {
+    if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
+    const playerId = new URL(request.url).searchParams.get('player') || ''
+    if (!/^[a-f0-9]{64}$/i.test(playerId)) return json({ error: 'Некоректний гравець.' }, 400)
+    const now = Date.now()
+    const state = normalizeCommunityState(await this.storage.get('community:season'), now)
+    const player = state.players?.[playerId]
+    const avatar = isVerifiedSteamCommunityPlayer(player) && player?.hidden !== true
+      ? cleanAvatar(player.avatar)
+      : ''
+    if (!avatar) return json({ error: 'Аватар не знайдено.' }, 404)
+    try {
+      const response = await timedFetch(avatar, { headers: { Accept: 'image/avif,image/webp,image/*,*/*;q=0.8' } })
+      const contentType = response.headers.get('Content-Type') || ''
+      if (!response.ok || !/^image\//i.test(contentType) || !response.body) throw new Error('Invalid community avatar response')
+      return new Response(response.body, {
+        status: 200,
+        headers: {
+          'Content-Type': contentType,
+          'Cache-Control': 'public, max-age=300, s-maxage=300',
+          'X-Content-Type-Options': 'nosniff',
+        },
+      })
+    } catch {
+      return json({ error: 'Steam тимчасово не віддає аватар.' }, 502)
+    }
   }
 
   async authenticatedSteamIdForCommunity(request) {
@@ -4324,7 +4407,7 @@ async function stateForRequest(request, env, path) {
     name = 'catalog'
   } else if (path === '/api/presence') {
     name = 'presence'
-  } else if (path === '/api/community') {
+  } else if (path === '/api/community' || path === '/api/community-avatar') {
     name = 'community'
   } else if (path === '/api/matchmaking' && request.method === 'POST') {
     const body = await requestBodyForRouting(request)
