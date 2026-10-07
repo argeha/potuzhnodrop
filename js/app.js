@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 7.6.4 ============ */
+/* ============ ПОТУЖНО DROP 7.6.5 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -256,12 +256,32 @@ function getWear(i) {
   return normalizeWear(i?.wear);
 }
 
+const CS2_RARITY_META = Object.freeze({
+  'consumer grade': { name: 'ШИРВЖИТОК', color: '#b0c3d9', tier: 'consumer' },
+  'industrial grade': { name: 'ПРОМИСЛОВЕ', color: '#5e98d9', tier: 'industrial' },
+  'mil spec grade': { name: 'АРМІЙСЬКЕ', color: '#4b69ff', tier: 'mil-spec' },
+  restricted: { name: 'ЗАБОРОНЕНЕ', color: '#8847ff', tier: 'restricted' },
+  classified: { name: 'ЗАСЕКРЕЧЕНЕ', color: '#d32ce6', tier: 'classified' },
+  covert: { name: 'ТАЄМНЕ', color: '#eb4b4b', tier: 'covert' },
+  contraband: { name: 'КОНТРАБАНДА', color: '#e4ae39', tier: 'contraband' },
+  extraordinary: { name: 'НАДЗВИЧАЙНЕ', color: '#e4ae39', tier: 'extraordinary' }
+});
+
 function getItemRarity(item) {
   const rawRarity = item?.rarity;
+  const sourceName = cleanText(rawRarity?.name || rawRarity || 'CS2', 48) || 'CS2';
+  const lookupKey = sourceName.toLowerCase().replace(/[^a-z]+/g, ' ').trim();
+  const mapped = CS2_RARITY_META[lookupKey];
   return {
-    name: cleanText(rawRarity?.name || rawRarity || 'CS2', 48) || 'CS2',
-    color: cleanColor(rawRarity?.color || item?.rarityColor)
+    name: mapped?.name || sourceName.toUpperCase(),
+    sourceName,
+    color: mapped?.color || cleanColor(rawRarity?.color || item?.rarityColor),
+    tier: mapped?.tier || 'default'
   };
+}
+
+function rarityStripMarkup(rarity, className) {
+  return `<div class="${className}" title="Рідкість: ${escapeHtml(rarity.name)}"><span>${escapeHtml(rarity.name)}</span></div>`;
 }
 
 function priceWithWear(b, w) {
@@ -1954,7 +1974,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.6.4';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.6.5';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -3801,7 +3821,8 @@ function renderPublicProfileModal(profile, { demo = false } = {}) {
     ? showcase.map(item => {
       const itemName = cleanText(item?.name, 160) || 'CS2 Skin';
       const image = getSkinImageSrc(item);
-      return `<article class="public-profile-skin" title="${escapeHtml(itemName)}"><img src="${escapeHtml(image)}" alt="${escapeHtml(itemName)}" data-skin-name="${escapeHtml(itemName)}" loading="lazy" onerror="handleSkinImageError(this)"><strong>${escapeHtml(itemName)}</strong><small>${formatCredits(clampNumber(item?.price, 0, MAX_STORED_ITEM_VALUE, 0))}</small></article>`;
+      const rarity = getItemRarity(item);
+      return `<article class="public-profile-skin rarity-surface" style="--rarity-color:${rarity.color}" title="${escapeHtml(itemName)}"><img src="${escapeHtml(image)}" alt="${escapeHtml(itemName)}" data-skin-name="${escapeHtml(itemName)}" loading="lazy" onerror="handleSkinImageError(this)"><strong>${escapeHtml(itemName)}</strong><small>${formatCredits(clampNumber(item?.price, 0, MAX_STORED_ITEM_VALUE, 0))}</small>${rarityStripMarkup(rarity, 'public-profile-rarity')}</article>`;
     }).join('')
     : '<p class="public-profile-empty"><i class="fa-solid fa-gem"></i> Вітрина поки порожня</p>';
   const unlockedAchievementIds = [...new Set(Array.isArray(profile?.achievements?.unlocked) ? profile.achievements.unlocked.map(String) : [])];
@@ -4146,7 +4167,7 @@ function expandCloudInventoryItem(record, index = 0) {
 
 function buildPortableSave() {
   return {
-    version: '7.6.4',
+    version: '7.6.5',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -4169,7 +4190,7 @@ function buildCloudSave() {
   const portable = buildPortableSave();
   const cloudSave = {
     ...portable,
-    version: '7.6.4-cloud',
+    version: '7.6.5-cloud',
     inventoryEncoding: CLOUD_INVENTORY_ENCODING,
     inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
   };
@@ -4251,7 +4272,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '7.6.4-steam',
+    version: '7.6.5-steam',
     account: {
       ...snapshot.account,
       steamId,
@@ -6264,7 +6285,10 @@ function renderProfileSocial() {
   const showcase = document.getElementById('profileShowcase');
   if (showcase) {
     const items = getShowcaseItems();
-    const selectedSlots = items.map(item => `<button type="button" class="profile-showcase-item" data-showcase-detail="${escapeHtml(String(item.id))}" title="Деталі: ${escapeHtml(item.name)}"><img src="${escapeHtml(getSkinImageSrc(item))}" alt="${escapeHtml(item.name)}" data-skin-id="${escapeHtml(getSkinKey(item))}" data-skin-name="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><strong>${escapeHtml(item.name)}</strong><small>${formatCredits(verifiedInventoryMarketPrice(item))}</small></button>`);
+    const selectedSlots = items.map(item => {
+      const rarity = getItemRarity(item);
+      return `<button type="button" class="profile-showcase-item rarity-surface" style="--rarity-color:${rarity.color}" data-showcase-detail="${escapeHtml(String(item.id))}" title="Деталі: ${escapeHtml(item.name)}"><img src="${escapeHtml(getSkinImageSrc(item))}" alt="${escapeHtml(item.name)}" data-skin-id="${escapeHtml(getSkinKey(item))}" data-skin-name="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><strong>${escapeHtml(item.name)}</strong><small>${formatCredits(verifiedInventoryMarketPrice(item))}</small>${rarityStripMarkup(rarity, 'profile-showcase-rarity')}</button>`;
+    });
     const emptySlots = Array.from({ length: Math.max(0, 3 - selectedSlots.length) }, () => '<button type="button" class="profile-showcase-empty profile-showcase-add" data-showcase-manage><i class="fa-solid fa-plus"></i><span>Обрати скін</span></button>');
     showcase.innerHTML = [...selectedSlots, ...emptySlots].join('');
     showcase.querySelectorAll('[data-showcase-detail]').forEach(button => button.addEventListener('click', () => showItemDetail(button.dataset.showcaseDetail)));
@@ -7548,7 +7572,7 @@ function renderInventoryGrid() {
         </div>
       </button>
       ${isBound ? '<div class="mt-2 w-full rounded-lg border border-violet-500/30 bg-violet-500/10 text-violet-200 text-[10px] font-extrabold uppercase py-1.5 text-center"><i class="fa-solid fa-lock mr-1"></i>Колекційний</div>' : `<button type="button" data-sell-id="${escapeHtml(String(s.id))}" title="Продати за ${formatCredits(sellPrice)}" class="mt-2 w-full rounded-lg bg-emerald-500/15 border border-emerald-500/40 hover:bg-emerald-500 hover:text-black text-emerald-200 text-[11px] font-extrabold uppercase py-1.5 transition flex items-center justify-center gap-1"><i class="fa-solid fa-sack-dollar text-[10px]"></i>Продати</button>`}
-      <div class="inventory-rarity-bar" title="Рідкість: ${escapeHtml(rarity.name)}"><span>${escapeHtml(rarity.name)}</span></div>
+      ${rarityStripMarkup(rarity, 'inventory-rarity-bar')}
     </div>`;
   }).join('');
 
@@ -7696,7 +7720,7 @@ function renderProfileInventory() {
     const skinName = cleanText(skinParts.join('|'), 110) || weapon;
     const source = getInventorySource(s);
     const origin = source === 'steam' ? 'STEAM' : source === 'exclusive' ? 'EXCLUSIVE' : 'DROP';
-    return `<article class="profile-inv-card ${s.exclusive ? 'is-exclusive' : ''}" style="--rarity-color:${rarity.color}">
+    return `<article class="profile-inv-card rarity-surface ${s.exclusive ? 'is-exclusive' : ''}" style="--rarity-color:${rarity.color}">
       <div class="profile-inv-card-top"><span class="wear-badge wear-${wear.code}">${wear.code}</span><span class="profile-inv-origin">${isBound ? 'BOUND' : origin}</span></div>
       <button type="button" class="profile-inv-inspect" data-profile-inspect="${escapeHtml(String(s.id))}" title="Відкрити деталі: ${escapeHtml(s.name)}">
         <img src="${escapeHtml(getSkinImageSrc(s))}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" loading="lazy" onerror="handleSkinImageError(this)">
@@ -7706,7 +7730,7 @@ function renderProfileInventory() {
         ${isBound ? '<span class="info-btn text-violet-300 border-violet-500/40" title="Прив’язано до профілю"><i class="fa-solid fa-lock"></i></span>' : `<button class="sell-btn" data-profile-sell="${escapeHtml(String(s.id))}" title="Продати за ${formatCredits(sellPrice)}"><i class="fa-solid fa-sack-dollar"></i><span>Продати</span></button>`}
         <button class="info-btn ${isShowcased ? 'text-amber-300 border-amber-400/60' : ''}" data-profile-showcase="${escapeHtml(String(s.id))}" title="${isShowcased ? 'Прибрати з вітрини' : 'Додати на вітрину'}"><i class="${isShowcased ? 'fa-solid' : 'fa-regular'} fa-star"></i></button>
         <button class="info-btn" data-profile-info="${escapeHtml(String(s.id))}" title="Деталі"><i class="fa-solid fa-circle-info"></i></button>
-      </div><div class="profile-inv-rarity" title="Рідкість: ${escapeHtml(rarity.name)}"><span>${escapeHtml(rarity.name)}</span></div></div>
+      </div>${rarityStripMarkup(rarity, 'profile-inv-rarity')}</div>
     </article>`;
   }).join('');
 
@@ -9323,11 +9347,13 @@ function buildSingleReelTrack(trackId, winner, config = getCaseReelConfig()) {
 
   track.innerHTML = items.map(it => {
     const image = getSkinImageSrc(it);
+    const rarity = getItemRarity(it);
     return `
-    <div class="case-reel-card">
+    <div class="case-reel-card rarity-surface" style="--rarity-color:${rarity.color}">
       <img src="${escapeHtml(image)}" alt="" data-skin-name="${escapeHtml(it.name)}" loading="eager" decoding="async" onerror="handleSkinImageError(this)">
       <p>${escapeHtml(it.name.split('|').pop().trim().slice(0, 18))}</p>
       <p class="text-[10px] font-extrabold text-amber-300">${formatCredits(it.price || 0)}</p>
+      ${rarityStripMarkup(rarity, 'case-reel-rarity')}
     </div>
   `;
   }).join('');
@@ -9616,9 +9642,9 @@ function displayCaseDropResult(items, isFree, caseName, resultKind = 'case') {
   if (grid) {
     grid.innerHTML = items.map(it => {
       const wear = getWear(it);
-      const isLegendary = (it.price || 0) >= 20000;
+      const rarity = getItemRarity(it);
       return `
-        <div class="case-result-card ${isLegendary ? 'is-legendary' : ''}">
+        <div class="case-result-card rarity-surface" style="--rarity-color:${rarity.color}">
           <div class="relative w-full flex items-center justify-center">
             <img src="${escapeHtml(getSkinImageSrc(it))}" alt="" data-skin-name="${escapeHtml(it.name)}" class="h-28 sm:h-36 object-contain my-2" decoding="async" onerror="handleSkinImageError(this)">
           </div>
@@ -9627,6 +9653,7 @@ function displayCaseDropResult(items, isFree, caseName, resultKind = 'case') {
             <span class="font-heading text-xl font-black text-amber-300">${formatCredits(it.price)}</span>
             <span class="wear-badge wear-${wear.code}">${wear.code} · ${wear.name}</span>
           </div>
+          ${rarityStripMarkup(rarity, 'case-result-rarity')}
         </div>
       `;
     }).join('');
@@ -12592,22 +12619,24 @@ function renderShopGrid(skins) {
   }
 
   g.innerHTML = shown.map(s => {
+    const rarity = getItemRarity(s);
     const marketPrice = verifiedMarketPriceForWear(s);
     const priceMarkup = marketPrice
       ? `<p class="text-amber-400 font-extrabold text-xs mt-0.5">${formatCredits(marketPrice)}</p><p class="text-[9px] text-gray-500">${escapeHtml(marketQuoteMeta(s))}</p>`
       : '<p class="text-cyan-300 font-extrabold text-[11px] mt-1"><i class="fa-solid fa-arrows-rotate fa-spin-pulse mr-1"></i>Оновлюємо Steam</p><p class="text-[9px] text-gray-500">ціна ще не підтверджена</p>';
-    return `<article data-skin-card="${escapeHtml(getSkinKey(s))}" class="skin-card relative bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 transition group focus-within:border-amber-500">
+    return `<article data-skin-card="${escapeHtml(getSkinKey(s))}" class="skin-card rarity-surface relative bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 transition group focus-within:border-amber-500" style="--rarity-color:${rarity.color}">
       <button type="button" data-select-skin-id="${escapeHtml(getSkinKey(s))}" class="w-full text-left flex flex-col items-center justify-between focus:outline-none">
         <img src="${escapeHtml(getSkinImageSrc(s))}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" class="h-20 w-full object-contain group-hover:scale-105 transition image-skeleton" loading="lazy" onerror="handleSkinImageError(this)">
         <div class="text-center w-full mt-2 min-w-0">
           <p class="font-bold text-xs text-white truncate" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</p>
-          <p class="text-[10px] truncate mt-1" style="color:${escapeHtml(s.rarityColor || '#f59e0b')}">${escapeHtml(s.rarity)}</p>
+          <p class="text-[10px] truncate mt-1 shop-rarity-label">${escapeHtml(rarity.name)}</p>
           ${priceMarkup}
         </div>
       </button>
       <button type="button" data-favorite-toggle="${escapeHtml(getSkinKey(s))}" title="Улюблене" class="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-lg border ${isFavorite(s) ? 'border-amber-400/60 bg-amber-500 text-black' : 'border-gray-700 bg-black/60 text-gray-400 hover:border-amber-400 hover:text-amber-300'}">
         <i class="${isFavorite(s) ? 'fa-solid' : 'fa-regular'} fa-heart text-xs"></i>
       </button>
+      ${rarityStripMarkup(rarity, 'shop-rarity-bar')}
     </article>`;
   }).join('');
 
