@@ -999,3 +999,56 @@ body.performance-lite::before{display:none}body.performance-lite .case-catalog-p
 #siteHeader>.max-w-7xl{max-width:1600px;min-width:0}.header-brand{min-width:0}.header-brand>span{min-width:0}.header-actions{flex:0 0 auto}
 @media(min-width:1024px) and (max-width:1600px){#siteHeader .desktop-nav{display:none!important}#siteHeader .mobile-menu-btn{display:flex}#mobileMenu:not(.hidden){display:block!important}#mobileMenu:not(.hidden)>div{max-width:1280px;grid-template-columns:repeat(3,minmax(0,1fr));padding-top:12px;padding-bottom:12px}#mobileMenu:not(.hidden) .mobile-nav-link.col-span-2{grid-column:span 3/span 3}}
 @media(max-width:420px){#siteHeader>.max-w-7xl{height:60px;padding-right:10px;padding-left:10px;gap:6px}.header-brand{gap:7px}.header-brand>div:first-child{width:38px;height:38px;border-radius:11px}.header-brand>div:first-child img{width:27px;height:27px}.header-brand>.font-heading{font-size:20px;letter-spacing:.04em}.header-actions{gap:5px}#siteHeader .mobile-menu-btn,#siteHeader .theme-drop>button,#siteHeader #steamAuthBtn{width:36px;height:36px;padding:0;justify-content:center}}
+
+/* ===== 7.6.9 · Quiet luxury interface pass =====
+ * A single visual language for the everyday UI: calm surfaces, deliberate
+ * colour and one obvious primary action. Seasonal themes retain their own
+ * stronger art direction below. */
+body:not(.halloween-season):not(.winter-season){
+  --pd-surface:#0d121c;
+  --pd-surface-raised:#111824;
+  --pd-line:rgba(174,192,216,.14);
+  --pd-line-strong:rgba(139,231,255,.32);
+  --pd-text-muted:#8e9caf;
+  background-color:#070a10;
+  background-image:radial-gradient(680px 430px at 100% -12%,rgba(56,189,248,.07),transparent 70%),radial-gradient(620px 400px at -8% 24%,rgba(139,92,246,.055),transparent 72%);
+}
+body:not(.halloween-season):not(.winter-season) #siteHeader{border-bottom-color:rgba(174,192,216,.1);box-shadow:0 1px 0 rgba(255,255,255,.025),0 14px 32px rgba(0,0,0,.24)}
+body:not(.halloween-season):not(.winter-season) .live-skin-strip{background:#090d14!important;box-shadow:none}
+body:not(.halloween-season):not(.winter-season) .live-skin-strip::before{display:none}
+body:not(.halloween-season):not(.winter-season) #steamNudge{border-color:rgba(103,232,249,.22);background:linear-gradient(100deg,rgba(10,21,34,.92),rgba(13,19,31,.94))!important;box-shadow:none}
+body:not(.halloween-season):not(.winter-season) #steamNudge>div>div:first-child>div:first-child{border-color:rgba(103,232,249,.28);background:rgba(34,211,238,.07)}
+body:not(.halloween-season):not(.winter-season) .command-hub-page{gap:18px!important}
+body:not(.halloween-season):not(.winter-season) .command-hub-hero{min-height:234px;border-color:var(--pd-line-strong);background:linear-gradient(118deg,#0d1826 0%,#101522 57%,#16152a 100%);box-shadow:inset 0 1px rgba(255,255,255,.055),0 26px 58px rgba(0,0,0,.28);padding:30px 32px}
+body:not(.halloween-season):not(.winter-season) .command-hub-hero::before{width:52%;height:100%;right:0;top:0;border:0;border-radius:0;background:radial-gradient(ellipse at 88% 8%,rgba(103,232,249,.17),transparent 45%),linear-gradient(90deg,transparent,rgba(139,92,246,.06));box-shadow:none}
+body:not(.halloween-season):not(.winter-season) .command-hub-hero::after{width:44%;height:1px;left:auto;right:0;bottom:0;border:0;border-radius:99px;background:linear-gradient(90deg,transparent,#67e8f9 48%,transparent);box-shadow:0 0 17px rgba(103,232,249,.45)}
+body:not(.halloween-season):not(.winter-season) .command-hub-hero h1{letter-spacing:.052em;text-shadow:0 2px 0 rgba(0,0,0,.22)}
+body:not(.halloween-season):not(.winter-season) .command-hub-hero h1 em{color:#fcd34d;text-shadow:none}
+body:not(.halloween-season):not(.winter-season) .command-hub-hero p:not(.command-hub-kicker){color:#a8b6c7}
+body:not(.halloween-season):not(.winter-season) .command-hub-level-orbit::before{border-color:rgba(4,10,18,.92);background:conic-gradient(#8be7ff var(--hub-progress,0%),rgba(255,255,255,.09) 0);box-shadow:inset 0 0 0 1px rgba(255,255,255,.09),0 0 30px rgba(34,211,238,.11)}
+body:not(.halloween-season):not(.winter-season) .command-hub-level-orbit::after{border-color:rgba(139,231,255,.2);background:#0d1724}
+body:not(.halloween-season):not(.winter-season) .command-hub-pulse{gap:10px}
+body:not(.halloween-season):not(.winter-season) .command-hub-pulse-card{border-color:var(--pd-line);background:var(--pd-surface);box-shadow:inset 0 1px rgba(255,255,255,.025)}
+body:not(.halloween-season):not(.winter-season) .command-hub-pulse-card>i{border-color:rgba(174,192,216,.13);background:rgba(255,255,255,.025)}
+body:not(.halloween-season):not(.winter-season) .command-hub-section-head p,body:not(.halloween-season):not(.winter-season) .command-hub-panel header p,body:not(.halloween-season):not(.winter-season) .stats-panel header p{color:#7f90a5}
+body:not(.halloween-season):not(.winter-season) .command-hub-mode{border-color:var(--pd-line);background:var(--pd-surface);box-shadow:inset 0 1px rgba(255,255,255,.025)}
+body:not(.halloween-season):not(.winter-season) .command-hub-mode::before{width:36px;height:2px;right:14px;bottom:0;border:0;border-radius:99px;background:currentColor;opacity:.72}
+body:not(.halloween-season):not(.winter-season) .command-hub-mode>i{border-color:color-mix(in srgb,currentColor 42%,transparent);background:color-mix(in srgb,currentColor 7%,transparent)}
+body:not(.halloween-season):not(.winter-season) .command-hub-mode:hover{border-color:color-mix(in srgb,currentColor 48%,rgba(174,192,216,.14));box-shadow:0 14px 28px rgba(0,0,0,.2);transform:translateY(-2px)}
+body:not(.halloween-season):not(.winter-season) .command-hub-mode:hover em{background:currentColor;box-shadow:0 0 14px color-mix(in srgb,currentColor 25%,transparent)}
+body:not(.halloween-season):not(.winter-season) .command-hub-panel,body:not(.halloween-season):not(.winter-season) .stats-panel{border-color:var(--pd-line);background:var(--pd-surface);box-shadow:inset 0 1px rgba(255,255,255,.025),0 16px 34px rgba(0,0,0,.16)}
+body:not(.halloween-season):not(.winter-season) .command-hub-focus-item{border-color:rgba(174,192,216,.11);background:rgba(255,255,255,.018)}
+body:not(.halloween-season):not(.winter-season) .command-hub-focus-item>div>div{background:#202b3b}
+body:not(.halloween-season):not(.winter-season) .command-hub-showcase button{border-color:rgba(174,192,216,.12);background:#0a0f17}
+body:not(.halloween-season):not(.winter-season) .command-hub-collection-summary{border-color:rgba(103,232,249,.16);background:rgba(34,211,238,.045)}
+body:not(.halloween-season):not(.winter-season) .mode-intro,body:not(.halloween-season):not(.winter-season) .page-view>.glass-panel{border-color:var(--pd-line);box-shadow:inset 0 1px rgba(255,255,255,.025),0 18px 40px rgba(0,0,0,.18)}
+body:not(.halloween-season):not(.winter-season) .case-catalog-card,body:not(.halloween-season):not(.winter-season) .profile-inv-card{box-shadow:inset 0 1px rgba(255,255,255,.025)}
+body:not(.halloween-season):not(.winter-season) .profile-command-center{border-color:var(--pd-line-strong);background:linear-gradient(118deg,#0d1826,#101522 58%,#15152a);box-shadow:inset 0 1px rgba(255,255,255,.055),0 24px 52px rgba(0,0,0,.22)}
+body:not(.halloween-season):not(.winter-season) .profile-social-card,body:not(.halloween-season):not(.winter-season) .profile-inventory-panel{border-color:var(--pd-line);background:var(--pd-surface);box-shadow:inset 0 1px rgba(255,255,255,.025),0 15px 32px rgba(0,0,0,.14)}
+body:not(.halloween-season):not(.winter-season) .case-catalog-card:hover,body:not(.halloween-season):not(.winter-season) .profile-inv-card:hover{transform:translateY(-2px)}
+.command-hub-hero-actions button,.command-hub-section-head button,.command-hub-panel header button,.stats-panel header button,.stats-back-button{transition:border-color .16s ease,background-color .16s ease,color .16s ease,transform .16s ease,box-shadow .16s ease}
+.command-hub-primary{box-shadow:0 8px 18px rgba(245,158,11,.18)!important}
+.command-hub-primary:hover{box-shadow:0 12px 24px rgba(245,158,11,.26)!important}
+button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid #8be7ff!important;outline-offset:3px}
+@media(max-width:760px){body:not(.halloween-season):not(.winter-season) .command-hub-hero{min-height:0;padding:20px}body:not(.halloween-season):not(.winter-season) .command-hub-hero::before{width:63%;opacity:.72}body:not(.halloween-season):not(.winter-season) .command-hub-pulse{gap:8px}body:not(.halloween-season):not(.winter-season) .command-hub-mode{box-shadow:none}}
+@media(prefers-reduced-motion:reduce){.command-hub-mode,.case-catalog-card,.profile-inv-card,.command-hub-primary{transition:none!important}.command-hub-mode:hover,.case-catalog-card:hover,.profile-inv-card:hover{transform:none!important}}
