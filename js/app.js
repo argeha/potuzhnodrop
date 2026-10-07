@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 7.6.6 ============ */
+/* ============ ПОТУЖНО DROP 7.6.7 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -281,7 +281,7 @@ function getItemRarity(item) {
 }
 
 function rarityStripMarkup(rarity, className) {
-  return `<div class="${className}" title="Рідкість: ${escapeHtml(rarity.name)}"><span>${escapeHtml(rarity.name)}</span></div>`;
+  return `<div class="${className}" role="img" aria-label="Рідкість: ${escapeHtml(rarity.name)}" title="Рідкість: ${escapeHtml(rarity.name)}"></div>`;
 }
 
 function priceWithWear(b, w) {
@@ -1974,7 +1974,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.6.6';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.6.7';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -4167,7 +4167,7 @@ function expandCloudInventoryItem(record, index = 0) {
 
 function buildPortableSave() {
   return {
-    version: '7.6.6',
+    version: '7.6.7',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -4190,7 +4190,7 @@ function buildCloudSave() {
   const portable = buildPortableSave();
   const cloudSave = {
     ...portable,
-    version: '7.6.6-cloud',
+    version: '7.6.7-cloud',
     inventoryEncoding: CLOUD_INVENTORY_ENCODING,
     inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
   };
@@ -4272,7 +4272,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '7.6.6-steam',
+    version: '7.6.7-steam',
     account: {
       ...snapshot.account,
       steamId,
@@ -12629,7 +12629,6 @@ function renderShopGrid(skins) {
         <img src="${escapeHtml(getSkinImageSrc(s))}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" class="h-20 w-full object-contain group-hover:scale-105 transition image-skeleton" loading="lazy" onerror="handleSkinImageError(this)">
         <div class="text-center w-full mt-2 min-w-0">
           <p class="font-bold text-xs text-white truncate" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</p>
-          <p class="text-[10px] truncate mt-1 shop-rarity-label">${escapeHtml(rarity.name)}</p>
           ${priceMarkup}
         </div>
       </button>
