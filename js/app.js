@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 7.6.9 ============ */
+/* ============ ПОТУЖНО DROP 7.7.0 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -1974,7 +1974,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.6.9';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.7.0';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -3549,6 +3549,7 @@ function updateAccountUI() {
   renderFairUI();
   renderSteamProfileCard();
   renderSteamNudge();
+  renderLegendProfile();
 }
 
 function setSteamConnectionState(state, message = '') {
@@ -4167,7 +4168,7 @@ function expandCloudInventoryItem(record, index = 0) {
 
 function buildPortableSave() {
   return {
-    version: '7.6.9',
+    version: '7.7.0',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -4190,7 +4191,7 @@ function buildCloudSave() {
   const portable = buildPortableSave();
   const cloudSave = {
     ...portable,
-    version: '7.6.9-cloud',
+    version: '7.7.0-cloud',
     inventoryEncoding: CLOUD_INVENTORY_ENCODING,
     inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
   };
@@ -4272,7 +4273,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '7.6.9-steam',
+    version: '7.7.0-steam',
     account: {
       ...snapshot.account,
       steamId,
@@ -6247,7 +6248,142 @@ function openShowcaseManager() {
   openModal('showcaseModal');
 }
 
+function getLegendTitle(snapshot) {
+  if (snapshot.prestige >= 3) return { label: 'ТРІЙНА КОРОНА', note: 'Три престижі — це вже не випадковість.', icon: 'fa-crown', tone: 'violet' };
+  if (snapshot.rank.title === 'Легенда') return { label: 'ЛЕГЕНДА АРЕНИ', note: 'Профіль, який говорить сам за себе.', icon: 'fa-trophy', tone: 'emerald' };
+  if (snapshot.collections > 0) return { label: 'КОЛЕКЦІОНЕР СИГНАЛУ', note: 'Повна добірка — рідкісна форма терпіння.', icon: 'fa-gem', tone: 'cyan' };
+  if (snapshot.bestValue >= 500) return { label: 'ВЕЛИКА ЦІЛЬ', note: 'У колекції вже є предмет, яким варто пишатися.', icon: 'fa-bullseye', tone: 'amber' };
+  if (snapshot.achievements >= 3) return { label: 'ЗБИРАЧ ВІДЗНАК', note: 'Досягнення тут не для галочки.', icon: 'fa-medal', tone: 'cyan' };
+  if (snapshot.rounds >= 10) return { label: 'УТРИМУЄ ТЕМП', note: 'Вже достатньо раундів, щоб формувати стиль гри.', icon: 'fa-fire', tone: 'amber' };
+  return { label: 'ПЕРШИЙ СИГНАЛ', note: 'Кожна сильна колекція починається з одного предмета.', icon: 'fa-satellite-dish', tone: 'cyan' };
+}
+
+function getLegendSnapshot() {
+  const level = getPlayerLevel();
+  const rank = getPlayerRank(level);
+  const prestige = Math.max(0, Number(gameState?.prestige) || 0);
+  const stats = gameState?.stats || {};
+  const allTime = gameState?.allTime || {};
+  const inventory = [...userInventory].sort((left, right) => verifiedInventoryMarketPrice(right) - verifiedInventoryMarketPrice(left));
+  const showcase = getShowcaseItems();
+  const signatureItems = (showcase.length ? showcase : inventory).slice(0, 3);
+  const best = inventory[0] || null;
+  const collections = COLLECTION_DEFINITIONS.filter(collection => getCollectionProgress(collection).complete).length;
+  const snapshot = {
+    player: cleanText(account?.nick || currentUser?.name || 'Гравець', 28) || 'Гравець',
+    avatar: getProfileAvatarPreviewSource(),
+    connectedSteam: Boolean(currentUser?.steamId),
+    level,
+    rank,
+    prestige,
+    rounds: Math.max(0, Number(allTime.rounds) || Number(stats.rounds) || 0),
+    bestValue: Math.max(0, Number(stats.bestValue) || verifiedInventoryMarketPrice(best)),
+    collectionValue: inventory.reduce((sum, item) => sum + verifiedInventoryMarketPrice(item), 0),
+    achievements: ACHIEVEMENT_DEFINITIONS.filter(achievement => gameState?.achievements?.[achievement.id]).length,
+    collections,
+    streak: Math.max(0, Number(stats.bestStreak) || 0),
+    best,
+    signatureItems,
+    latest: Array.isArray(gameState?.rounds) ? gameState.rounds[0] : null,
+    style: getProfileStyleDefinition(),
+    frame: getHalloweenCosmetics().activeFrame,
+    title: null
+  };
+  snapshot.title = getLegendTitle(snapshot);
+  return snapshot;
+}
+
+function getLegendNarrative(snapshot) {
+  if (snapshot.latest?.win) return `Останній запис: перемога за ${formatCredits(snapshot.latest.targetValue || 0)} у режимі «${cleanText(snapshot.latest.mode, 24) || 'гра'}».`;
+  if (snapshot.prestige) return `Престиж P${snapshot.prestige} підсилює XP-потік назавжди. Наступний сигнал уже формується.`;
+  if (snapshot.best) return `Яскравий експонат — ${cleanText(snapshot.best.name, 52)}. Колекція має своє обличчя.`;
+  return 'Зіграні раунди, скіни та досягнення автоматично збираються у твою історію.';
+}
+
+function legendSkinMarkup(item) {
+  if (!item) return '<div class="legend-skin is-empty"><i class="fa-solid fa-plus"></i><span>Твій перший дроп</span></div>';
+  const rarity = getItemRarity(item);
+  const tone = cleanColor(rarity.color) || '#67e8f9';
+  return `<div class="legend-skin" style="--legend-rarity:${tone}"><img src="${escapeHtml(getSkinImageSrc(item))}" alt="${escapeHtml(item.name)}" data-skin-name="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><span>${escapeHtml(cleanText(item.name, 36))}</span><small>${formatCredits(verifiedInventoryMarketPrice(item))}</small><i class="legend-skin-rarity" aria-label="Рідкість: ${escapeHtml(rarity.name)}"></i></div>`;
+}
+
+function legendDossierMarkup(snapshot, { expanded = false } = {}) {
+  const bestRarity = snapshot.best ? getItemRarity(snapshot.best) : null;
+  const bestTone = cleanColor(bestRarity?.color) || '#67e8f9';
+  const badge = snapshot.prestige ? `<span class="legend-prestige"><i class="fa-solid fa-crown"></i>P${snapshot.prestige}</span>` : '';
+  const frame = snapshot.frame ? `<span class="legend-frame-label"><i class="fa-solid fa-wand-magic-sparkles"></i>${escapeHtml(snapshot.frame.title)}</span>` : `<span class="legend-frame-label"><i class="fa-solid ${snapshot.style.icon}"></i>${escapeHtml(snapshot.style.title)}</span>`;
+  const bestMarkup = snapshot.best
+    ? `<img src="${escapeHtml(getSkinImageSrc(snapshot.best))}" alt="${escapeHtml(snapshot.best.name)}" data-skin-name="${escapeHtml(snapshot.best.name)}" loading="lazy" onerror="handleSkinImageError(this)"><div><p>ГОЛОВНИЙ ЕКСПОНАТ</p><strong>${escapeHtml(cleanText(snapshot.best.name, 48))}</strong><small>${formatCredits(verifiedInventoryMarketPrice(snapshot.best))} · ${escapeHtml(bestRarity.name)}</small></div>`
+    : `<i class="fa-solid fa-box-open"></i><div><p>ГОЛОВНИЙ ЕКСПОНАТ</p><strong>Твій перший дроп</strong><small>Відкрий кейс — і він з’явиться тут.</small></div>`;
+  return `<section class="legend-dossier ${expanded ? 'is-expanded' : ''}" data-style="${escapeHtml(snapshot.style.id)}" style="--legend-tone:${bestTone}">
+    <div class="legend-dossier-glow" aria-hidden="true"></div>
+    <header class="legend-dossier-head"><p><i class="fa-solid fa-fingerprint"></i> ПАСПОРТ ЛЕГЕНДИ</p><span>PD // ${String(snapshot.level).padStart(2, '0')}</span></header>
+    <div class="legend-dossier-main">
+      <div class="legend-identity"><div class="legend-avatar"><img src="${escapeHtml(snapshot.avatar)}" alt="Аватар ${escapeHtml(snapshot.player)}" onerror="handleSteamAvatarError(this)"><i class="fa-solid ${snapshot.connectedSteam ? 'fa-steam' : 'fa-gamepad'}"></i></div><div><p class="legend-kicker">${snapshot.connectedSteam ? 'STEAM · СИНХРОНІЗОВАНО' : 'ПРОФІЛЬ ГРИ · АКТИВНИЙ'}</p><h3>${escapeHtml(snapshot.player)} ${badge}</h3><span class="legend-rank"><i class="fa-solid ${snapshot.rank.icon}"></i>${escapeHtml(snapshot.rank.title)} · LVL ${snapshot.level}</span></div></div>
+      <div class="legend-title-seal is-${snapshot.title.tone}"><i class="fa-solid ${snapshot.title.icon}"></i><div><p>СТАТУС</p><strong>${escapeHtml(snapshot.title.label)}</strong><span>${escapeHtml(snapshot.title.note)}</span></div></div>
+    </div>
+    <div class="legend-spotlight" style="--legend-rarity:${bestTone}">${bestMarkup}</div>
+    <div class="legend-stats"><div><span>КОЛЕКЦІЯ</span><strong>${formatCredits(snapshot.collectionValue)}</strong></div><div><span>РАУНДИ</span><strong>${snapshot.rounds}</strong></div><div><span>СЕРІЯ</span><strong>${snapshot.streak || '—'}</strong></div><div><span>ВІДЗНАКИ</span><strong>${snapshot.achievements}/${ACHIEVEMENT_DEFINITIONS.length}</strong></div></div>
+    <div class="legend-bottom"><div class="legend-lineup"><span>СИГНАТУРНА ЛІНІЙКА</span><div>${[0, 1, 2].map(index => legendSkinMarkup(snapshot.signatureItems[index])).join('')}</div></div><div class="legend-summary"><p>${escapeHtml(getLegendNarrative(snapshot))}</p>${frame}</div></div>
+    ${expanded ? `<div class="legend-dossier-actions"><button type="button" onclick="shareLegendDossier()"><i class="fa-solid fa-share-nodes"></i> Поділитися легендою</button><button type="button" class="legend-copy-action" onclick="copyLegendDossierLink()"><i class="fa-solid fa-link"></i> Скопіювати посилання</button></div>` : `<button type="button" class="legend-open-action" onclick="openLegendDossier()"><span>Відкрити досьє</span><i class="fa-solid fa-arrow-up-right-from-square"></i></button>`}
+  </section>`;
+}
+
+function renderLegendProfile() {
+  const root = document.getElementById('profileLegendCard');
+  if (!root || !gameState) return;
+  root.innerHTML = legendDossierMarkup(getLegendSnapshot());
+}
+
+function renderLegendDossier() {
+  const root = document.getElementById('legendDossierContent');
+  if (!root || !gameState) return;
+  root.innerHTML = legendDossierMarkup(getLegendSnapshot(), { expanded: true });
+}
+
+function openLegendDossier() {
+  renderLegendDossier();
+  openModal('legendModal');
+}
+
+async function copyLegendDossierLink() {
+  const url = getPublicShareUrl();
+  url.hash = 'profile';
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(url.href);
+    showToast('Посилання на профіль скопійовано.', 'success');
+  } catch {
+    window.prompt('Скопіюй посилання на профіль:', url.href);
+  }
+}
+
+async function shareLegendDossier() {
+  const snapshot = getLegendSnapshot();
+  const url = getPublicShareUrl();
+  url.hash = 'profile';
+  const title = `Паспорт легенди · ${snapshot.player}`;
+  const mainSkin = snapshot.best ? ` · ${cleanText(snapshot.best.name, 56)}` : '';
+  const text = `${snapshot.player} · ${snapshot.title.label} · LVL ${snapshot.level}${snapshot.prestige ? ` · P${snapshot.prestige}` : ''}${mainSkin}. Колекція: ${formatCredits(snapshot.collectionValue)}.`;
+  try {
+    if (navigator.share) {
+      await navigator.share({ title, text, url: url.href });
+      showToast('Паспорт легенди готовий до поширення.', 'success');
+      return;
+    }
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(`${text}\n${url.href}`);
+      showToast('Текст і посилання на паспорт скопійовано.', 'success');
+      return;
+    }
+    window.prompt('Скопіюй паспорт легенди:', `${text}\n${url.href}`);
+  } catch (error) {
+    if (error?.name !== 'AbortError') showToast('Не вдалося відкрити поширення.', 'warn');
+  }
+}
+
 function renderProfileSocial() {
+  renderLegendProfile();
   const rank = getPlayerRank();
   const rankBadge = document.getElementById('profileRankBadge');
   if (rankBadge) rankBadge.innerHTML = `<i class="fa-solid ${rank.icon}"></i>${escapeHtml(rank.title)}`;
@@ -12834,6 +12970,9 @@ window.toggleMobileMenu = toggleMobileMenu;
 window.toggleSound = toggleSound;
 window.toggleHaptics = toggleHaptics;
 window.shareLatestMoment = shareLatestMoment;
+window.openLegendDossier = openLegendDossier;
+window.shareLegendDossier = shareLegendDossier;
+window.copyLegendDossierLink = copyLegendDossierLink;
 window.claimDailyBonus = claimDailyBonus;
 window.openDailyCalendar = openDailyCalendar;
 window.claimDailyCalendarReward = claimDailyCalendarReward;
