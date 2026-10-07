@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 7.7.0 ============ */
+/* ============ ПОТУЖНО DROP 7.8.0 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -1326,7 +1326,15 @@ const WINTER_COSMETICS = Object.freeze({
   icewire_survivor_2026: { id: 'icewire_survivor_2026', kind: 'title', icon: 'fa-snowflake', title: 'Той, хто пережив заметіль', note: 'Постійний титул за сезонний прогрес' },
   aurora_frame_2026: { id: 'aurora_frame_2026', kind: 'frame', icon: 'fa-wand-magic-sparkles', title: 'Aurora', note: 'Постійна рамка профілю' }
 });
-const SEASONAL_COSMETICS = Object.freeze({ ...HALLOWEEN_COSMETICS, ...WINTER_COSMETICS });
+// The Signal campaign is always available.  Its rewards are only cosmetic,
+// so every player can keep progressing between limited-time events without
+// affecting their balance, drop odds or game power.
+const SIGNAL_SEASON_COSMETICS = Object.freeze({
+  signal_pathfinder_2026: { id: 'signal_pathfinder_2026', kind: 'title', icon: 'fa-satellite-dish', title: 'Провідник Сигналу', note: 'Постійний титул за 4 вузли кампанії' },
+  signal_resonance_2026: { id: 'signal_resonance_2026', kind: 'frame', icon: 'fa-wave-square', title: 'Резонанс', note: 'Постійна рамка за завершення маршруту' }
+});
+const SIGNAL_SEASON = Object.freeze({ id: 'signal-2026', title: 'СЕЗОН: СИГНАЛ', rewardSteps: Object.freeze([2, 4, 6]) });
+const SEASONAL_COSMETICS = Object.freeze({ ...HALLOWEEN_COSMETICS, ...WINTER_COSMETICS, ...SIGNAL_SEASON_COSMETICS });
 const HALLOWEEN_ADMIN_PREVIEW_QUERY = 'adminPreview';
 let halloweenAdminPreviewRequested = new URLSearchParams(window.location.search).get(HALLOWEEN_ADMIN_PREVIEW_QUERY) === HALLOWEEN_EVENT.id;
 let halloweenAdminPreviewAuthorized = false;
@@ -1645,6 +1653,15 @@ function createDefaultWinterEvent() {
   };
 }
 
+function createDefaultSignalSeason() {
+  return {
+    claimed: [],
+    cosmetics: { titles: [], frames: [], activeTitle: '', activeFrame: '' },
+    moments: [],
+    startedAt: Date.now()
+  };
+}
+
 function createDefaultSeasonalCosmetics() {
   return { activeTitle: '', activeFrame: '' };
 }
@@ -1672,6 +1689,7 @@ function createDefaultGameState() {
     powerRun: createDefaultPowerRun(),
     halloweenEvent: createDefaultHalloweenEvent(),
     winterEvent: createDefaultWinterEvent(),
+    signalSeason: createDefaultSignalSeason(),
     seasonalCosmetics: createDefaultSeasonalCosmetics(),
     profileStyle: 'standard',
     pulseCircuit: createDefaultPulseCircuit(),
@@ -1725,6 +1743,7 @@ function loadGameState() {
       powerRun: { ...createDefaultPowerRun(), ...(s.powerRun || {}) },
       halloweenEvent: { ...createDefaultHalloweenEvent(), ...(s.halloweenEvent || {}) },
       winterEvent: { ...createDefaultWinterEvent(), ...(s.winterEvent || {}) },
+      signalSeason: { ...createDefaultSignalSeason(), ...(s.signalSeason || {}) },
       seasonalCosmetics: { ...createDefaultSeasonalCosmetics(), ...(s.seasonalCosmetics || {}) },
       pulseCircuit: { ...createDefaultPulseCircuit(), ...(s.pulseCircuit || {}) },
       targetArena: { ...createDefaultTargetArena(), ...(s.targetArena || {}) },
@@ -1974,7 +1993,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.7.0';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.8.0';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -2100,7 +2119,32 @@ function getWinterEventState() {
   return state;
 }
 
-function getSeasonalCosmeticSelection(titles, frames, halloween, winter) {
+function getSignalSeasonState() {
+  if (!gameState) return createDefaultSignalSeason();
+  const stored = gameState.signalSeason && typeof gameState.signalSeason === 'object' ? gameState.signalSeason : {};
+  const defaults = createDefaultSignalSeason();
+  const storedCosmetics = stored.cosmetics && typeof stored.cosmetics === 'object' ? stored.cosmetics : {};
+  const idsFor = kind => Array.isArray(storedCosmetics[kind === 'title' ? 'titles' : 'frames'])
+    ? [...new Set(storedCosmetics[kind === 'title' ? 'titles' : 'frames'].map(String).filter(id => SIGNAL_SEASON_COSMETICS[id]?.kind === kind))]
+    : [];
+  const titles = idsFor('title');
+  const frames = idsFor('frame');
+  const state = {
+    claimed: Array.isArray(stored.claimed) ? [...new Set(stored.claimed.map(Number).filter(step => SIGNAL_SEASON.rewardSteps.includes(step)))] : [],
+    cosmetics: {
+      titles,
+      frames,
+      activeTitle: titles.includes(String(storedCosmetics.activeTitle || '')) ? String(storedCosmetics.activeTitle) : '',
+      activeFrame: frames.includes(String(storedCosmetics.activeFrame || '')) ? String(storedCosmetics.activeFrame) : ''
+    },
+    moments: Array.isArray(stored.moments) ? stored.moments.filter(moment => moment && typeof moment === 'object').slice(0, 12) : [],
+    startedAt: clampNumber(stored.startedAt, 0, Number.MAX_SAFE_INTEGER, defaults.startedAt)
+  };
+  gameState.signalSeason = state;
+  return state;
+}
+
+function getSeasonalCosmeticSelection(titles, frames, halloween, winter, signal = getSignalSeasonState()) {
   const stored = gameState?.seasonalCosmetics && typeof gameState.seasonalCosmetics === 'object'
     ? gameState.seasonalCosmetics
     : {};
@@ -2108,8 +2152,10 @@ function getSeasonalCosmeticSelection(titles, frames, halloween, winter) {
   const valid = (id, entries) => entries.some(entry => entry.id === id) ? id : '';
   const legacyChoice = (key, entries) => {
     const preferred = activeSeason === 'winter'
-      ? [winter.cosmetics[key], halloween.cosmetics[key]]
-      : [halloween.cosmetics[key], winter.cosmetics[key]];
+      ? [winter.cosmetics[key], halloween.cosmetics[key], signal.cosmetics[key]]
+      : activeSeason === 'halloween'
+        ? [halloween.cosmetics[key], winter.cosmetics[key], signal.cosmetics[key]]
+        : [signal.cosmetics[key], winter.cosmetics[key], halloween.cosmetics[key]];
     return preferred.map(id => valid(String(id || ''), entries)).find(Boolean) || '';
   };
   const selection = {
@@ -2125,17 +2171,19 @@ function activateSeasonalCosmetic(id, { toggle = false } = {}) {
   if (!cosmetic || !gameState) return '';
   const halloween = getHalloweenEventState();
   const winter = getWinterEventState();
-  const owner = WINTER_COSMETICS[id] ? winter : halloween;
+  const signal = getSignalSeasonState();
+  const owner = SIGNAL_SEASON_COSMETICS[id] ? signal : WINTER_COSMETICS[id] ? winter : halloween;
   const collection = cosmetic.kind === 'title' ? owner.cosmetics.titles : owner.cosmetics.frames;
   if (!collection.includes(id)) return '';
-  const titles = [...new Set([...halloween.cosmetics.titles, ...winter.cosmetics.titles])].map(entry => SEASONAL_COSMETICS[entry]).filter(Boolean);
-  const frames = [...new Set([...halloween.cosmetics.frames, ...winter.cosmetics.frames])].map(entry => SEASONAL_COSMETICS[entry]).filter(Boolean);
-  const selection = getSeasonalCosmeticSelection(titles, frames, halloween, winter);
+  const titles = [...new Set([...halloween.cosmetics.titles, ...winter.cosmetics.titles, ...signal.cosmetics.titles])].map(entry => SEASONAL_COSMETICS[entry]).filter(Boolean);
+  const frames = [...new Set([...halloween.cosmetics.frames, ...winter.cosmetics.frames, ...signal.cosmetics.frames])].map(entry => SEASONAL_COSMETICS[entry]).filter(Boolean);
+  const selection = getSeasonalCosmeticSelection(titles, frames, halloween, winter, signal);
   const key = cosmetic.kind === 'title' ? 'activeTitle' : 'activeFrame';
   const next = toggle && selection[key] === id ? '' : id;
   selection[key] = next;
   halloween.cosmetics[key] = '';
   winter.cosmetics[key] = '';
+  signal.cosmetics[key] = '';
   if (next) owner.cosmetics[key] = next;
   gameState.seasonalCosmetics = selection;
   return next;
@@ -2189,12 +2237,13 @@ function awardWinterShards(source, amount = 1) {
 function getHalloweenCosmetics() {
   const state = getHalloweenEventState();
   const winter = getWinterEventState();
-  const titles = [...new Set([...state.cosmetics.titles, ...winter.cosmetics.titles])].map(id => SEASONAL_COSMETICS[id]).filter(Boolean);
-  const frames = [...new Set([...state.cosmetics.frames, ...winter.cosmetics.frames])].map(id => SEASONAL_COSMETICS[id]).filter(Boolean);
-  const selection = getSeasonalCosmeticSelection(titles, frames, state, winter);
+  const signal = getSignalSeasonState();
+  const titles = [...new Set([...state.cosmetics.titles, ...winter.cosmetics.titles, ...signal.cosmetics.titles])].map(id => SEASONAL_COSMETICS[id]).filter(Boolean);
+  const frames = [...new Set([...state.cosmetics.frames, ...winter.cosmetics.frames, ...signal.cosmetics.frames])].map(id => SEASONAL_COSMETICS[id]).filter(Boolean);
+  const selection = getSeasonalCosmeticSelection(titles, frames, state, winter, signal);
   const activeTitle = SEASONAL_COSMETICS[selection.activeTitle] || null;
   const activeFrame = SEASONAL_COSMETICS[selection.activeFrame] || null;
-  return { state, winter, selection, activeTitle, activeFrame, titles, frames };
+  return { state, winter, signal, selection, activeTitle, activeFrame, titles, frames };
 }
 
 function getProfileAvatarPreviewSource() {
@@ -2204,6 +2253,7 @@ function getProfileAvatarPreviewSource() {
 
 function getFramePresentationClass(frame) {
   if (!frame) return '';
+  if (SIGNAL_SEASON_COSMETICS[frame.id]) return 'is-signal-frame';
   return WINTER_COSMETICS[frame.id] ? 'is-winter-frame' : 'is-halloween-frame';
 }
 
@@ -2218,6 +2268,7 @@ function renderProfileFramePresentation(cosmetics = getHalloweenCosmetics()) {
   targets.forEach(target => {
     target.classList.toggle('is-halloween-frame', frameClass === 'is-halloween-frame');
     target.classList.toggle('is-winter-frame', frameClass === 'is-winter-frame');
+    target.classList.toggle('is-signal-frame', frameClass === 'is-signal-frame');
     target.classList.toggle('is-signal-forge-frame', signalForge);
     if (cosmetics.activeFrame) target.dataset.frameName = cosmetics.activeFrame.title;
     else delete target.dataset.frameName;
@@ -2231,8 +2282,10 @@ function renderProfileCosmeticsSummary() {
   if (!button || !label) return;
   const cosmetics = getHalloweenCosmetics();
   const winterFrame = Boolean(cosmetics.activeFrame && WINTER_COSMETICS[cosmetics.activeFrame.id]);
+  const signalFrame = Boolean(cosmetics.activeFrame && SIGNAL_SEASON_COSMETICS[cosmetics.activeFrame.id]);
   button.classList.toggle('has-frame', Boolean(cosmetics.activeFrame));
   button.classList.toggle('is-winter', winterFrame);
+  button.classList.toggle('is-signal', signalFrame);
   button.classList.remove('hidden');
   label.textContent = cosmetics.activeTitle?.title || cosmetics.activeFrame?.title || getProfileStyleDefinition().title;
   renderProfileFramePresentation(cosmetics);
@@ -2295,7 +2348,7 @@ function setProfileStyle(styleId) {
 function setHalloweenCosmetic(id) {
   const cosmetic = SEASONAL_COSMETICS[id];
   if (!cosmetic) return;
-  const state = WINTER_COSMETICS[id] ? getWinterEventState() : getHalloweenEventState();
+  const state = SIGNAL_SEASON_COSMETICS[id] ? getSignalSeasonState() : WINTER_COSMETICS[id] ? getWinterEventState() : getHalloweenEventState();
   const collection = cosmetic.kind === 'title' ? state.cosmetics.titles : state.cosmetics.frames;
   if (!collection.includes(id)) return;
   const activeId = activateSeasonalCosmetic(id, { toggle: true });
@@ -3675,6 +3728,7 @@ function buildPublicProfilePayload() {
   const stats = gameState?.stats || {};
   const cosmetics = getHalloweenCosmetics();
   const signalForge = getPulseCircuitState();
+  const campaign = getSignalCampaignProgress();
   const profileStyle = getProfileStyleDefinition();
   return {
     name: cleanText(account?.nick || currentUser?.name || 'Гравець', 24) || 'Гравець',
@@ -3683,7 +3737,12 @@ function buildPublicProfilePayload() {
     prestige: clampNumber(gameState?.prestige, 0, 99, 0),
     steamConnected: Boolean(currentUser?.steamId),
     cosmetics: { title: cosmetics.activeTitle?.id || '', frame: cosmetics.activeFrame?.id || '', style: profileStyle.id },
-    signal: { forged: signalForge.badgeUnlocked === true, routes: clampNumber(signalForge.completed, 0, 9_999, 0) },
+    signal: {
+      forged: signalForge.badgeUnlocked === true,
+      routes: clampNumber(signalForge.completed, 0, 9_999, 0),
+      campaign: clampNumber(campaign.completed, 0, campaign.total, 0),
+      claimed: campaign.state.claimed.slice(0, 3)
+    },
     stats: {
       rounds: clampNumber(stats.rounds, 0, 9_999_999, 0),
       cases: clampNumber(stats.cases, 0, 9_999_999, 0),
@@ -3812,9 +3871,10 @@ function renderPublicProfileModal(profile, { demo = false } = {}) {
   const publicTitle = SEASONAL_COSMETICS[profile?.cosmetics?.title] || null;
   const publicFrame = SEASONAL_COSMETICS[profile?.cosmetics?.frame] || null;
   const publicStyle = PROFILE_STYLE_DEFINITIONS.find(style => style.id === profile?.cosmetics?.style) || PROFILE_STYLE_DEFINITIONS[0];
-  const winterPublicFrame = Boolean(publicFrame && WINTER_COSMETICS[publicFrame.id]);
+  const publicFrameClass = getFramePresentationClass(publicFrame);
   const signalForge = profile?.signal?.forged === true;
   const signalRoutes = clampNumber(profile?.signal?.routes, 0, 9_999, 0);
+  const signalCampaign = clampNumber(profile?.signal?.campaign, 0, 6, 0);
   const isOwnProfile = profile.isOwn === true || (profile.id && profile.id === account?.publicProfile?.id);
   const canJoinBattle = !demo && !communityProfile && !isOwnProfile && UUID_PATTERN.test(String(profile.id || ''));
   const showcase = Array.isArray(profile.showcase) ? profile.showcase.slice(0, 3) : [];
@@ -3837,7 +3897,8 @@ function renderPublicProfileModal(profile, { demo = false } = {}) {
     `<span><i class="fa-solid ${publicStyle.icon}"></i><b>${escapeHtml(publicStyle.title)}</b><small>стиль</small></span>`,
     publicTitle ? `<span><i class="fa-solid ${publicTitle.icon}"></i><b>${escapeHtml(publicTitle.title)}</b><small>титул</small></span>` : '',
     publicFrame ? `<span><i class="fa-solid ${publicFrame.icon}"></i><b>${escapeHtml(publicFrame.title)}</b><small>рамка</small></span>` : '',
-    signalForge ? '<span><i class="fa-solid fa-tower-broadcast"></i><b>Signal Forge</b><small>ефект</small></span>' : ''
+    signalForge ? '<span><i class="fa-solid fa-tower-broadcast"></i><b>Signal Forge</b><small>ефект</small></span>' : '',
+    signalCampaign >= 2 ? `<span><i class="fa-solid fa-satellite-dish"></i><b>Сигнал ${signalCampaign}/6</b><small>кампанія</small></span>` : ''
   ].filter(Boolean).join('');
   const statsMarkup = communityProfile
     ? `<div><span>XP</span><strong>${Math.round(Number(profile.xp) || 0).toLocaleString('uk-UA')}</strong></div>
@@ -3851,11 +3912,11 @@ function renderPublicProfileModal(profile, { demo = false } = {}) {
   content.innerHTML = `
     <div class="public-profile-card public-profile-style-${escapeHtml(publicStyle.id)}">
     <div class="public-profile-hero">
-      <div class="public-profile-avatar-shell ${publicFrame ? winterPublicFrame ? 'is-winter-frame' : 'is-halloween-frame' : ''} ${signalForge ? 'is-signal-forge-frame' : ''}"><img src="${escapeHtml(avatar)}" alt="Аватар ${safeName}" onerror="handleSteamAvatarError(this)"></div>
+      <div class="public-profile-avatar-shell ${publicFrame ? publicFrameClass : ''} ${signalForge ? 'is-signal-forge-frame' : ''}"><img src="${escapeHtml(avatar)}" alt="Аватар ${safeName}" onerror="handleSteamAvatarError(this)"></div>
       <div class="min-w-0"><p class="public-profile-kicker">${demo ? 'ДЕМО-АКТИВНІСТЬ' : communityProfile ? 'ПРОФІЛЬ У СПІЛЬНОТІ' : 'ПРОФІЛЬ ГРАВЦЯ'}</p><h3>${safeName}</h3><p class="public-profile-level">LVL ${level}${prestige ? ` · P${prestige}` : ''}${profile.steamConnected ? ' · <i class="fa-brands fa-steam"></i> Steam' : ''}</p>${publicTitle ? `<span class="public-profile-title"><i class="fa-solid ${publicTitle.icon}"></i>${escapeHtml(publicTitle.title)}</span>` : ''}</div>
     </div>
     <div class="public-profile-stats">${statsMarkup}</div>
-    ${signalForge ? `<p class="public-profile-signal"><i class="fa-solid fa-tower-broadcast"></i><span><b>SIGNAL FORGE</b><small>Nightfall-маршрутів: ${signalRoutes}</small></span></p>` : ''}
+    ${signalForge || signalCampaign >= 2 ? `<p class="public-profile-signal"><i class="fa-solid ${signalForge ? 'fa-tower-broadcast' : 'fa-satellite-dish'}"></i><span><b>${signalForge ? 'SIGNAL FORGE' : 'СЕЗОН: СИГНАЛ'}</b><small>${signalForge ? `Nightfall-маршрутів: ${signalRoutes}` : `${signalCampaign} / 6 вузлів легенди активовано`}</small></span></p>` : ''}
     ${!demo && (!communityProfile || profile.communityPresentation === true) ? `<section class="public-profile-section"><header><span><i class="fa-solid fa-wand-magic-sparkles"></i> ОФОРМЛЕННЯ</span><small>Екіпіровано</small></header><div class="public-profile-cosmetics">${cosmeticsMarkup}</div></section><section class="public-profile-section"><header><span><i class="fa-solid fa-gem"></i> ВІТРИНА СКІНІВ</span><small>${showcase.length} / 3</small></header><div class="public-profile-showcase">${showcaseMarkup}</div></section><section class="public-profile-section"><header><span><i class="fa-solid fa-medal"></i> ДОСЯГНЕННЯ</span><small>${achievementCount} / ${ACHIEVEMENT_DEFINITIONS.length}</small></header><div class="public-profile-achievements">${achievementCards || '<p class="public-profile-empty"><i class="fa-solid fa-medal"></i> Ще немає відкритих досягнень</p>'}</div></section>` : ''}
     <p class="public-profile-note"><i class="fa-solid fa-shield-halved"></i>${demo ? ' Це візуальна демонстрація стрічки: дані не належать реальному користувачу.' : communityProfile ? ' Це картка зі спільноти: видно лише вибрані скіни, оформлення та досягнення. Баланс, повний інвентар і Steam ID приховані.' : ' Видимі лише публічні дані: стиль, рамка, титул, вітрина та досягнення. Баланс, повний інвентар і Steam ID приховані.'}</p>
     ${canJoinBattle ? '<button type="button" onclick="joinPublicProfileBattle()" class="public-profile-battle"><i class="fa-solid fa-dice"></i> Приєднатися до 1v1</button>' : ''}
@@ -4168,7 +4229,7 @@ function expandCloudInventoryItem(record, index = 0) {
 
 function buildPortableSave() {
   return {
-    version: '7.7.0',
+    version: '7.8.0',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -4191,7 +4252,7 @@ function buildCloudSave() {
   const portable = buildPortableSave();
   const cloudSave = {
     ...portable,
-    version: '7.7.0-cloud',
+    version: '7.8.0-cloud',
     inventoryEncoding: CLOUD_INVENTORY_ENCODING,
     inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
   };
@@ -4273,7 +4334,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '7.7.0-steam',
+    version: '7.8.0-steam',
     account: {
       ...snapshot.account,
       steamId,
@@ -6533,6 +6594,119 @@ function renderCommandHub() {
     collection.innerHTML = `<div class="command-hub-showcase">${highlights.length ? highlights.map(item => `<button type="button" data-hub-skin="${escapeHtml(String(item.id))}" title="Деталі: ${escapeHtml(item.name)}"><img src="${escapeHtml(getSkinImageSrc(item))}" alt="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><span>${escapeHtml(item.name)}</span><small>${formatCredits(verifiedInventoryMarketPrice(item))}</small></button>`).join('') : '<div class="command-hub-empty"><i class="fa-solid fa-box-open"></i><strong>Колекція ще порожня</strong><span>Перший дроп з’явиться тут.</span></div>'}</div><div class="command-hub-collection-summary"><span>Завершено колекцій</span><strong>${completedCollections} / ${COLLECTION_DEFINITIONS.length}</strong></div><div class="command-hub-collection-list">${collectionRows}</div>`;
     collection.querySelectorAll('[data-hub-skin]').forEach(button => button.addEventListener('click', () => showItemDetail(button.dataset.hubSkin)));
   }
+  renderSignalSeasonHub();
+}
+
+function getSignalCampaignProgress() {
+  const state = getSignalSeasonState();
+  const allTime = gameState?.allTime || {};
+  const stats = gameState?.stats || {};
+  const achievements = ACHIEVEMENT_DEFINITIONS.filter(achievement => gameState?.achievements?.[achievement.id]).length;
+  const totalRounds = Math.max(0, Number(allTime.rounds) || Number(stats.rounds) || 0);
+  const totalCases = Math.max(0, Number(allTime.cases) || Number(stats.cases) || 0);
+  const collectionProgress = COLLECTION_DEFINITIONS.filter(collection => getCollectionProgress(collection).complete).length;
+  const nodes = [
+    { id: 'first-signal', icon: 'fa-satellite-dish', title: 'Перший імпульс', note: 'Зіграй раунд або відкрий кейс', page: 'case', action: 'До кейсів', done: totalRounds + totalCases >= 1 },
+    { id: 'three-drops', icon: 'fa-gem', title: 'Своя колекція', note: 'Май 3 предмети в інвентарі', page: 'profile', action: 'До профілю', done: userInventory.length >= 3 },
+    { id: 'tempo', icon: 'fa-bolt', title: 'Тримай темп', note: 'Зіграй 10 раундів', page: 'upgrader', action: 'До апгрейду', done: totalRounds >= 10 },
+    { id: 'marks', icon: 'fa-medal', title: 'Знак майстерності', note: 'Відкрий 3 досягнення', page: 'tasks', action: 'До цілей', done: achievements >= 3 },
+    { id: 'showcase', icon: 'fa-star', title: 'Вітрина', note: 'Обери 3 предмети для показу', page: 'profile', action: 'Налаштувати', done: getShowcaseItems().length >= 3 },
+    { id: 'rise', icon: 'fa-tower-broadcast', title: 'Високий сигнал', note: 'Досягни LVL 5 або заверши колекцію', page: 'tasks', action: 'До цілей', done: getPlayerLevel() >= 5 || collectionProgress >= 1 }
+  ];
+  const completed = nodes.filter(node => node.done).length;
+  const rewards = [
+    { step: 2, icon: 'fa-fingerprint', title: 'Відбиток Сигналу', note: 'Видимий у твоєму публічному профілі', kind: 'badge' },
+    { step: 4, icon: 'fa-satellite-dish', title: 'Провідник Сигналу', note: 'Титул для профілю', cosmetic: 'signal_pathfinder_2026' },
+    { step: 6, icon: 'fa-wave-square', title: 'Резонанс', note: 'Рамка Steam-аватара', cosmetic: 'signal_resonance_2026' }
+  ];
+  const next = nodes.find(node => !node.done) || null;
+  return { state, nodes, rewards, completed, total: nodes.length, percent: Math.round((completed / nodes.length) * 100), next, achievements, collectionProgress };
+}
+
+function addSignalSeasonMoment(state, reward) {
+  const moment = {
+    id: `signal-${reward.step}-${Date.now()}`,
+    at: Date.now(),
+    icon: reward.icon,
+    title: reward.title,
+    note: reward.note
+  };
+  state.moments = [moment, ...(Array.isArray(state.moments) ? state.moments : [])].slice(0, 12);
+}
+
+function claimSignalSeasonReward(step) {
+  if (!gameState) return;
+  const progress = getSignalCampaignProgress();
+  const reward = progress.rewards.find(entry => entry.step === Number(step));
+  if (!reward || progress.completed < reward.step) {
+    showToast('Спочатку активуй потрібні вузли маршруту.', 'info');
+    return;
+  }
+  if (progress.state.claimed.includes(reward.step)) {
+    showToast('Ця нагорода вже у твоїй легенді.', 'info');
+    return;
+  }
+  progress.state.claimed.push(reward.step);
+  if (reward.cosmetic) {
+    const cosmetic = SIGNAL_SEASON_COSMETICS[reward.cosmetic];
+    const list = cosmetic.kind === 'title' ? progress.state.cosmetics.titles : progress.state.cosmetics.frames;
+    if (!list.includes(cosmetic.id)) list.push(cosmetic.id);
+    activateSeasonalCosmetic(cosmetic.id);
+  }
+  addSignalSeasonMoment(progress.state, reward);
+  saveState();
+  renderGameHub();
+  renderProfileCosmeticsSummary();
+  renderProfileCosmeticsModal();
+  soundWin();
+  showToast(`Сезон «Сигнал»: «${reward.title}» додано до профілю.`, 'success');
+}
+
+function getSignalJournal(progress) {
+  const stored = Array.isArray(progress.state.moments) ? progress.state.moments : [];
+  const generated = [];
+  const best = [...userInventory].sort((left, right) => verifiedInventoryMarketPrice(right) - verifiedInventoryMarketPrice(left))[0];
+  if (best) generated.push({ icon: 'fa-gem', title: cleanText(best.name, 42), note: 'Найсильніший експонат у поточній колекції' });
+  if (progress.collectionProgress) generated.push({ icon: 'fa-layer-group', title: `${progress.collectionProgress} колекц. завершено`, note: 'Колекційна робота відмічена в досьє' });
+  if (gameState?.prestige) generated.push({ icon: 'fa-crown', title: `Престиж P${gameState.prestige}`, note: 'Постійний слід у легенді профілю' });
+  if (progress.achievements) generated.push({ icon: 'fa-medal', title: `${progress.achievements} відзнак`, note: 'Відкриті досягнення формують твою історію' });
+  return [...stored, ...generated].slice(0, 4);
+}
+
+function renderSignalSeasonHub() {
+  const root = document.getElementById('hubSignalSeason');
+  if (!root || !gameState) return;
+  const progress = getSignalCampaignProgress();
+  const next = progress.next;
+  const claimed = progress.state.claimed.length;
+  root.innerHTML = `<article class="signal-season-hub-card"><div><p><i class="fa-solid fa-satellite-dish"></i> ${SIGNAL_SEASON.title}</p><h2>${progress.completed} <small>/ ${progress.total}</small> вузлів активовано</h2><span>${next ? `Наступний: ${escapeHtml(next.title)} · ${escapeHtml(next.note)}` : 'Маршрут завершено — твоя рамка вже в профілі.'}</span></div><div class="signal-season-hub-meter"><i><b style="width:${progress.percent}%"></b></i><small>${claimed}/${progress.rewards.length} нагород забрано</small></div><button type="button" onclick="showPage('tasks')">Карта Сигналу <i class="fa-solid fa-arrow-right"></i></button></article>`;
+}
+
+function renderSignalSeason() {
+  const root = document.getElementById('signalSeason');
+  if (!root || !gameState) return;
+  const progress = getSignalCampaignProgress();
+  const journal = getSignalJournal(progress);
+  const nodeMarkup = progress.nodes.map((node, index) => `<button type="button" class="signal-season-node ${node.done ? 'is-done' : progress.next?.id === node.id ? 'is-next' : ''}" data-signal-page="${escapeHtml(node.page)}"><span><i class="fa-solid ${node.done ? 'fa-check' : node.icon}"></i></span><div><em>ВУЗОЛ 0${index + 1}</em><b>${escapeHtml(node.title)}</b><small>${escapeHtml(node.done ? 'Сигнал зафіксовано' : node.note)}</small></div><i class="fa-solid ${node.done ? 'fa-circle-check' : 'fa-arrow-up-right-from-square'}"></i></button>`).join('');
+  const rewardMarkup = progress.rewards.map(reward => {
+    const claimed = progress.state.claimed.includes(reward.step);
+    const ready = progress.completed >= reward.step && !claimed;
+    return `<button type="button" class="signal-season-reward ${claimed ? 'is-claimed' : ready ? 'is-ready' : ''}" ${ready ? `data-signal-claim="${reward.step}"` : 'disabled'}><i class="fa-solid ${claimed ? 'fa-check' : reward.icon}"></i><span><em>${reward.step} / ${progress.total}</em><b>${escapeHtml(reward.title)}</b><small>${escapeHtml(reward.note)}</small></span><strong>${claimed ? 'Є' : ready ? 'Забрати' : 'Заблоковано'}</strong></button>`;
+  }).join('');
+  const journalMarkup = journal.length
+    ? journal.map(entry => `<li><i class="fa-solid ${escapeHtml(cleanText(entry.icon, 48) || 'fa-sparkles')}"></i><span><b>${escapeHtml(cleanText(entry.title, 52))}</b><small>${escapeHtml(cleanText(entry.note, 92))}</small></span></li>`).join('')
+    : '<li class="is-empty"><i class="fa-solid fa-book-open"></i><span><b>Перший запис чекає</b><small>Твій прогрес автоматично стане частиною легенди.</small></span></li>';
+  const hallRows = (Array.isArray(communitySnapshot?.leaderboard) ? communitySnapshot.leaderboard : []).slice(0, 3);
+  const hallMarkup = hallRows.length
+    ? hallRows.map((row, index) => `<button type="button" class="signal-hall-row ${row.isMe ? 'is-me' : ''}" data-signal-hall="${index}"><span>#${Number(row.rank) || index + 1}</span><b>${escapeHtml(cleanText(row.name, 24) || 'Гравець')}</b><em>LVL ${clampNumber(row.level, 1, 9999, 1)}</em></button>`).join('')
+    : '<p class="signal-hall-empty"><i class="fa-solid fa-satellite-dish"></i> Перший Steam-гравець запалить Зал резонансу.</p>';
+  root.innerHTML = `<article class="signal-season-card" aria-label="Сезон Сигнал"><header class="signal-season-head"><div><p><i class="fa-solid fa-satellite-dish"></i> ПОСТІЙНА КАМПАНІЯ · ЛИШЕ КОСМЕТИКА</p><h2>СЕЗОН: <em>СИГНАЛ</em></h2><span>${progress.next ? `Твоя наступна точка — «${escapeHtml(progress.next.title)}».` : 'Усі шість вузлів зафіксовано. Легенда завершена.'}</span></div><div class="signal-season-progress"><strong>${progress.completed}<small>/${progress.total}</small></strong><span>вузлів</span><i><b style="width:${progress.percent}%"></b></i></div></header><div class="signal-season-grid"><section class="signal-season-route"><div class="signal-season-route-line" aria-hidden="true"><i style="width:${progress.percent}%"></i></div>${nodeMarkup}</section><aside class="signal-season-side"><section><header><span><i class="fa-solid fa-gift"></i> НАГОРОДИ</span><small>Стиль, не сила</small></header><div class="signal-season-rewards">${rewardMarkup}</div></section><section class="signal-season-journal"><header><span><i class="fa-solid fa-book-open"></i> ЖУРНАЛ ЛЕГЕНДИ</span><button type="button" onclick="showPage('profile')">Профіль</button></header><ul>${journalMarkup}</ul></section><section class="signal-season-hall"><header><span><i class="fa-solid fa-ranking-star"></i> ЗАЛ РЕЗОНАНСУ</span><small>спільнота</small></header><div>${hallMarkup}</div></section></aside></div><footer><i class="fa-solid fa-shield-heart"></i> Кампанія не дає PC, шансів або переваги. Вона зберігає твій стиль і прогрес у профілі.</footer></article>`;
+  root.querySelectorAll('[data-signal-page]').forEach(button => button.addEventListener('click', () => showPage(button.dataset.signalPage)));
+  root.querySelectorAll('[data-signal-claim]').forEach(button => button.addEventListener('click', () => claimSignalSeasonReward(Number(button.dataset.signalClaim))));
+  root.querySelectorAll('[data-signal-hall]').forEach(button => button.addEventListener('click', () => {
+    const row = communitySnapshot?.leaderboard?.[Number(button.dataset.signalHall)];
+    if (row) openCommunityProfile(row);
+  }));
 }
 
 function getRecentRoundLedger(rounds = gameState?.rounds) {
@@ -6643,6 +6817,7 @@ function renderGameHub() {
   renderHalloweenSeasonShell();
   renderProfileProgress();
   renderPowerRun();
+  renderSignalSeason();
   renderSeasonalEvent();
   renderPulseCircuit();
   renderTargetArena();

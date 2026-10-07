@@ -57,8 +57,8 @@ const ROYALE_LIVE_RECEIPT_TTL = 24 * 60 * 60_000
 const ROYALE_LIVE_RECEIPT_LIMIT = 80
 const ROYALE_LIVE_START_DELAY = 5_000
 const PUBLIC_PROFILE_TTL = 90 * 24 * 60 * 60_000
-const PUBLIC_PROFILE_TITLES = new Set(['night_hunter_2026', 'midnight_keeper_2026', 'rift_breaker_2026', 'aurora_conductor_2026', 'icewire_survivor_2026'])
-const PUBLIC_PROFILE_FRAMES = new Set(['halloween_night_2026', 'aurora_frame_2026'])
+const PUBLIC_PROFILE_TITLES = new Set(['night_hunter_2026', 'midnight_keeper_2026', 'rift_breaker_2026', 'aurora_conductor_2026', 'icewire_survivor_2026', 'signal_pathfinder_2026'])
+const PUBLIC_PROFILE_FRAMES = new Set(['halloween_night_2026', 'aurora_frame_2026', 'signal_resonance_2026'])
 const PUBLIC_PROFILE_STYLES = new Set(['standard', 'void', 'neon', 'arcade', 'prism'])
 const PUBLIC_SHOWCASE_LIMIT = 3
 const PUBLIC_ACHIEVEMENT_LIMIT = 8
@@ -434,6 +434,10 @@ function publicProfilePayload(value) {
     signal: {
       forged: signal.forged === true,
       routes: Math.round(Math.min(9_999, Math.max(0, Number(signal.routes) || 0))),
+      campaign: Math.round(Math.min(6, Math.max(0, Number(signal.campaign) || 0))),
+      claimed: Array.isArray(signal.claimed)
+        ? [...new Set(signal.claimed.map(Number).filter(step => [2, 4, 6].includes(step)))].slice(0, 3)
+        : [],
     },
     stats: {
       rounds: Math.round(Math.min(9_999_999, Math.max(0, Number(stats.rounds) || 0))),
