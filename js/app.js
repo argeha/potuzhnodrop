@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 7.6.2 ============ */
+/* ============ ПОТУЖНО DROP 7.6.3 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -254,6 +254,14 @@ function rollWear(randomValue = Math.random()) {
 
 function getWear(i) {
   return normalizeWear(i?.wear);
+}
+
+function getItemRarity(item) {
+  const rawRarity = item?.rarity;
+  return {
+    name: cleanText(rawRarity?.name || rawRarity || 'CS2', 48) || 'CS2',
+    color: cleanColor(rawRarity?.color || item?.rarityColor)
+  };
 }
 
 function priceWithWear(b, w) {
@@ -1946,7 +1954,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.6.2';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.6.3';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -1971,8 +1979,11 @@ function renderHalloweenSeasonShell() {
   const active = Boolean(season?.status?.active);
   if (signal) {
     signal.classList.toggle('hidden', !active);
-    signal.title = season?.kind === 'winter' ? 'Відкрити станцію ICEWIRE' : 'Відкрити мапу Nightfall';
-    signal.innerHTML = season?.kind === 'winter' ? '<i class="fa-solid fa-snowflake"></i><span>ICEWIRE</span><small>Станція Нуль</small>' : '<i class="fa-solid fa-moon"></i><span>Nightfall</span><small>Мапа події</small>';
+    signal.classList.toggle('is-icewire', season?.kind === 'winter');
+    signal.title = season?.kind === 'winter' ? 'Відкрити карту події ICEWIRE' : 'Відкрити карту події Nightfall';
+    signal.innerHTML = season?.kind === 'winter'
+      ? '<i class="fa-solid fa-map-location-dot"></i><span>КАРТА</span><small>Подія ICEWIRE</small>'
+      : '<i class="fa-solid fa-map-location-dot"></i><span>КАРТА</span><small>Подія Nightfall</small>';
   }
   if (label) label.textContent = season?.kind === 'winter' ? 'Aurora signal' : season?.kind === 'halloween' ? 'Nightfall signal' : 'Live skins';
   if (labelWrap) labelWrap.classList.toggle('is-nightfall', season?.kind === 'halloween');
@@ -3281,7 +3292,7 @@ function renderBattlePass() {
   const tierNumbers = BATTLE_PASS_REWARDS.map(entry => `<span class="bp-tier-number ${entry.tier === currentTier ? 'is-current' : entry.tier <= unlocked ? 'is-open' : ''}">${entry.tier}</span>`).join('');
   root.innerHTML = `<article class="battle-pass-card ${battlePassExpanded ? 'is-expanded' : 'is-compact'}" aria-label="Бойовий пропуск ${BATTLE_PASS_SEASON.name}">
     <div class="battle-pass-hero">
-      <div class="bp-coin-mark"><i class="fa-solid fa-coins"></i><b>PC</b></div>
+      <div class="bp-coin-mark"><img src="/assets/brand/potuzhno-coin.svg?v=1" alt="Potuzhno Coin"></div>
       <div class="bp-hero-copy"><p>${BATTLE_PASS_SEASON.name} · БЕЗ РЕАЛЬНИХ ОПЛАТ</p><h2>${BATTLE_PASS_SEASON.title}</h2><span>Грай, заробляй XP і забирай сезонні нагороди.</span><button type="button" class="bp-expand-btn" data-bp-toggle><i class="fa-solid fa-layer-group"></i>${battlePassExpanded ? 'Сховати нагороди' : 'Показати 30 рівнів'}</button></div>
       <div class="bp-progress-box"><div class="bp-progress-label"><span>LVL ${currentTier} / ${BATTLE_PASS_SEASON.tiers}</span><b>${pass.xp.toLocaleString('uk-UA')} XP</b></div><div class="bp-progress-track"><span style="width:${progress.percent}%"></span></div><small>${inTier.toLocaleString('uk-UA')} / ${BATTLE_PASS_SEASON.tierXp.toLocaleString('uk-UA')} XP до наступного рівня</small></div>
       <button type="button" id="battlePassBuyBtn" class="bp-buy-btn ${pass.premium ? 'is-owned' : ''}"><i class="fa-solid ${pass.premium ? 'fa-circle-check' : 'fa-crown'}"></i>${pass.premium ? 'POTUZHNO PASS АКТИВНИЙ' : `ВІДКРИТИ ЗА ${formatCredits(BATTLE_PASS_SEASON.price)}`}</button>
@@ -4135,7 +4146,7 @@ function expandCloudInventoryItem(record, index = 0) {
 
 function buildPortableSave() {
   return {
-    version: '7.6.2',
+    version: '7.6.3',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -4158,7 +4169,7 @@ function buildCloudSave() {
   const portable = buildPortableSave();
   const cloudSave = {
     ...portable,
-    version: '7.6.2-cloud',
+    version: '7.6.3-cloud',
     inventoryEncoding: CLOUD_INVENTORY_ENCODING,
     inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
   };
@@ -4240,7 +4251,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '7.6.2-steam',
+    version: '7.6.3-steam',
     account: {
       ...snapshot.account,
       steamId,
@@ -5572,6 +5583,34 @@ function renderDailyTasks() {
   h.appendChild(summary);
 }
 
+function getClaimableTaskRewardsCount() {
+  if (!gameState) return 0;
+  ensureDailyState();
+  ensureWeeklyState();
+  const daily = getDailyTasks().filter(task => !gameState.daily.claimed.includes(task.id)
+    && (Number(task.value(gameState.daily)) || 0) >= task.goal).length;
+  const weekly = getWeeklyTasks().filter(task => !gameState.weekly.claimed.includes(task.id)
+    && (Number(task.value(gameState.weekly)) || 0) >= task.goal).length;
+  return daily + weekly;
+}
+
+function updateTaskRewardSignal() {
+  const count = getClaimableTaskRewardsCount();
+  const label = count > 9 ? '9+' : String(count);
+  document.querySelectorAll('[data-nav="tasks"], [data-mobile-nav="tasks"]').forEach(link => {
+    link.classList.toggle('has-claimable-reward', count > 0);
+    if (count > 0) {
+      link.dataset.taskRewards = label;
+      link.title = `Є ${count} невиданих нагород`;
+      link.setAttribute('aria-label', `Завдання — доступно нагород: ${count}`);
+    } else {
+      delete link.dataset.taskRewards;
+      link.removeAttribute('title');
+      link.removeAttribute('aria-label');
+    }
+  });
+}
+
 function claimDailyTask(id) {
   if (!gameState || !currentUser) return;
   ensureDailyState();
@@ -6450,6 +6489,7 @@ function renderGameHub() {
   renderBattlePass();
   renderDailyTasks();
   renderWeeklyTasks();
+  updateTaskRewardSignal();
   renderAchievements();
   renderCollections();
   renderLeaderboard();
@@ -7491,12 +7531,13 @@ function renderInventoryGrid() {
   }
   g.innerHTML = userInventory.map(s => {
     const wear = getWear(s);
+    const rarity = getItemRarity(s);
     const inMulti = selectedInputMode === 'multi' && multiInputSkins.some(x => x.id === s.id);
     const marketPrice = verifiedInventoryMarketPrice(s);
     const sellPrice = roundPc(marketPrice * SELL_RATE);
     const isBound = s.accountBound === true;
     const valueMarkup = `<p class="text-amber-400 font-extrabold text-xs mt-1">${formatCredits(marketPrice)}</p>`;
-    return `<div class="relative bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 flex flex-col items-center transition group inventory-card ${inMulti ? 'is-in-multi' : ''} ${s.exclusive ? 'border-violet-500/50' : ''}">
+    return `<div class="relative bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 flex flex-col items-center transition group inventory-card ${inMulti ? 'is-in-multi' : ''} ${s.exclusive ? 'border-violet-500/50' : ''}" style="--rarity-color:${rarity.color}">
       <button type="button" data-inventory-id="${escapeHtml(String(s.id))}" class="w-full text-left">
         <span class="wear-badge wear-${wear.code} absolute top-2 left-2 z-10">${wear.code}</span>
         ${isBound ? '<span class="absolute top-2 right-2 text-violet-300 text-xs" title="Прив’язано до профілю"><i class="fa-solid fa-lock"></i></span>' : s.exclusive ? `<span class="absolute top-2 right-2 text-violet-300 text-xs" title="Ексклюзив">★</span>` : ''}
@@ -7507,6 +7548,7 @@ function renderInventoryGrid() {
         </div>
       </button>
       ${isBound ? '<div class="mt-2 w-full rounded-lg border border-violet-500/30 bg-violet-500/10 text-violet-200 text-[10px] font-extrabold uppercase py-1.5 text-center"><i class="fa-solid fa-lock mr-1"></i>Колекційний</div>' : `<button type="button" data-sell-id="${escapeHtml(String(s.id))}" title="Продати за ${formatCredits(sellPrice)}" class="mt-2 w-full rounded-lg bg-emerald-500/15 border border-emerald-500/40 hover:bg-emerald-500 hover:text-black text-emerald-200 text-[11px] font-extrabold uppercase py-1.5 transition flex items-center justify-center gap-1"><i class="fa-solid fa-sack-dollar text-[10px]"></i>Продати</button>`}
+      <div class="inventory-rarity-bar" title="Рідкість: ${escapeHtml(rarity.name)}"><span>${escapeHtml(rarity.name)}</span></div>
     </div>`;
   }).join('');
 
@@ -7642,11 +7684,9 @@ function renderProfileInventory() {
     grid.innerHTML = '<div class="col-span-full rounded-xl border border-dashed border-gray-700 p-10 text-center"><i class="fa-solid fa-magnifying-glass text-2xl text-gray-600"></i><p class="mt-2 text-sm font-bold text-gray-400">Нічого не знайдено</p><p class="text-xs text-gray-500 mt-1">Спробуй інший фільтр</p></div>';
     return;
   }
-  const nameCounts = getInventoryDuplicateCounts();
   grid.innerHTML = list.map(s => {
     const wear = getWear(s);
-    const k = getInventoryDuplicateKey(s);
-    const dupes = nameCounts.get(k) || 0;
+    const rarity = getItemRarity(s);
     const marketPrice = verifiedInventoryMarketPrice(s);
     const sellPrice = roundPc(marketPrice * SELL_RATE);
     const isBound = s.accountBound === true;
@@ -7656,9 +7696,8 @@ function renderProfileInventory() {
     const skinName = cleanText(skinParts.join('|'), 110) || weapon;
     const source = getInventorySource(s);
     const origin = source === 'steam' ? 'STEAM' : source === 'exclusive' ? 'EXCLUSIVE' : 'DROP';
-    return `<article class="profile-inv-card ${s.exclusive ? 'is-exclusive' : ''}">
+    return `<article class="profile-inv-card ${s.exclusive ? 'is-exclusive' : ''}" style="--rarity-color:${rarity.color}">
       <div class="profile-inv-card-top"><span class="wear-badge wear-${wear.code}">${wear.code}</span><span class="profile-inv-origin">${isBound ? 'BOUND' : origin}</span></div>
-      ${dupes > 1 ? `<span class="dupe-badge">×${dupes}</span>` : ''}
       <button type="button" class="profile-inv-inspect" data-profile-inspect="${escapeHtml(String(s.id))}" title="Відкрити деталі: ${escapeHtml(s.name)}">
         <img src="${escapeHtml(getSkinImageSrc(s))}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" loading="lazy" onerror="handleSkinImageError(this)">
         <div class="profile-inv-copy"><span>${escapeHtml(weapon)}</span><p class="inv-name" title="${escapeHtml(s.name)}">${escapeHtml(skinName)}</p></div>
@@ -7667,7 +7706,7 @@ function renderProfileInventory() {
         ${isBound ? '<span class="info-btn text-violet-300 border-violet-500/40" title="Прив’язано до профілю"><i class="fa-solid fa-lock"></i></span>' : `<button class="sell-btn" data-profile-sell="${escapeHtml(String(s.id))}" title="Продати за ${formatCredits(sellPrice)}"><i class="fa-solid fa-sack-dollar"></i><span>Продати</span></button>`}
         <button class="info-btn ${isShowcased ? 'text-amber-300 border-amber-400/60' : ''}" data-profile-showcase="${escapeHtml(String(s.id))}" title="${isShowcased ? 'Прибрати з вітрини' : 'Додати на вітрину'}"><i class="${isShowcased ? 'fa-solid' : 'fa-regular'} fa-star"></i></button>
         <button class="info-btn" data-profile-info="${escapeHtml(String(s.id))}" title="Деталі"><i class="fa-solid fa-circle-info"></i></button>
-      </div></div>
+      </div><div class="profile-inv-rarity" title="Рідкість: ${escapeHtml(rarity.name)}"><span>${escapeHtml(rarity.name)}</span></div></div>
     </article>`;
   }).join('');
 
@@ -7699,6 +7738,7 @@ function showItemDetail(itemId) {
   if (!it) return;
   if (!verifiedInventoryMarketPrice(it)) requestInventoryMarketPrice(it);
   const wear = getWear(it);
+  const rarity = getItemRarity(it);
   const marketPrice = verifiedInventoryMarketPrice(it);
   const sellPrice = roundPc(marketPrice * SELL_RATE);
   const isBound = it.accountBound === true;
@@ -7708,11 +7748,11 @@ function showItemDetail(itemId) {
   <div class="text-center">
     ${it.exclusive ? `<div class="mb-2 inline-flex items-center gap-2 rounded-full border border-violet-500/40 bg-violet-500/15 px-3 py-1"><i class="fa-solid fa-star text-violet-300 text-xs"></i><span class="text-[10px] font-extrabold uppercase tracking-widest text-violet-200">Ексклюзив</span></div>` : ''}
     <div class="mx-auto mb-3 flex justify-center"><img src="${escapeHtml(getSkinImageSrc(it))}" alt="" class="h-40 object-contain" data-skin-name="${escapeHtml(it.name)}" onerror="handleSkinImageError(this)"></div>
-    <p class="text-[10px] font-extrabold uppercase tracking-[.2em] text-amber-400">${catLabel} · ${escapeHtml(it.rarity || 'CS2')}</p>
+    <p class="text-[10px] font-extrabold uppercase tracking-[.2em] text-amber-400">${catLabel} · ${escapeHtml(rarity.name)}</p>
     <h3 class="font-heading mt-1 text-3xl font-extrabold uppercase text-white leading-none">${escapeHtml(it.name)}</h3>
     <div class="mt-3 inline-flex items-center gap-2 flex-wrap justify-center">
       <span class="wear-badge wear-${wear.code}">${wear.code} · ${escapeHtml(wear.name)}</span>
-      <span class="wear-badge" style="color:#fbbf24;border-color:rgba(251,191,36,.4)">x${wear.mult.toFixed(2)}</span>
+      <span class="wear-badge rarity-detail-badge" style="--rarity-color:${rarity.color}"><i class="fa-solid fa-gem"></i>${escapeHtml(rarity.name)}</span>
     </div>
     <div class="mt-4 grid grid-cols-2 gap-3">
       <div class="rounded-xl border border-gray-800 bg-black/20 p-3"><p class="text-[10px] font-bold uppercase tracking-wider text-gray-500">Стабільна вартість</p><p class="font-heading text-2xl font-extrabold text-amber-300">${formatCredits(marketPrice)}</p></div>
