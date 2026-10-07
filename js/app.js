@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 7.6.3 ============ */
+/* ============ ПОТУЖНО DROP 7.6.4 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -1954,7 +1954,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.6.3';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.6.4';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -3292,7 +3292,7 @@ function renderBattlePass() {
   const tierNumbers = BATTLE_PASS_REWARDS.map(entry => `<span class="bp-tier-number ${entry.tier === currentTier ? 'is-current' : entry.tier <= unlocked ? 'is-open' : ''}">${entry.tier}</span>`).join('');
   root.innerHTML = `<article class="battle-pass-card ${battlePassExpanded ? 'is-expanded' : 'is-compact'}" aria-label="Бойовий пропуск ${BATTLE_PASS_SEASON.name}">
     <div class="battle-pass-hero">
-      <div class="bp-coin-mark"><img src="/assets/brand/potuzhno-coin.svg?v=1" alt="Potuzhno Coin"></div>
+      <div class="bp-coin-mark"><i class="fa-solid fa-coins"></i><b>PC</b></div>
       <div class="bp-hero-copy"><p>${BATTLE_PASS_SEASON.name} · БЕЗ РЕАЛЬНИХ ОПЛАТ</p><h2>${BATTLE_PASS_SEASON.title}</h2><span>Грай, заробляй XP і забирай сезонні нагороди.</span><button type="button" class="bp-expand-btn" data-bp-toggle><i class="fa-solid fa-layer-group"></i>${battlePassExpanded ? 'Сховати нагороди' : 'Показати 30 рівнів'}</button></div>
       <div class="bp-progress-box"><div class="bp-progress-label"><span>LVL ${currentTier} / ${BATTLE_PASS_SEASON.tiers}</span><b>${pass.xp.toLocaleString('uk-UA')} XP</b></div><div class="bp-progress-track"><span style="width:${progress.percent}%"></span></div><small>${inTier.toLocaleString('uk-UA')} / ${BATTLE_PASS_SEASON.tierXp.toLocaleString('uk-UA')} XP до наступного рівня</small></div>
       <button type="button" id="battlePassBuyBtn" class="bp-buy-btn ${pass.premium ? 'is-owned' : ''}"><i class="fa-solid ${pass.premium ? 'fa-circle-check' : 'fa-crown'}"></i>${pass.premium ? 'POTUZHNO PASS АКТИВНИЙ' : `ВІДКРИТИ ЗА ${formatCredits(BATTLE_PASS_SEASON.price)}`}</button>
@@ -4146,7 +4146,7 @@ function expandCloudInventoryItem(record, index = 0) {
 
 function buildPortableSave() {
   return {
-    version: '7.6.3',
+    version: '7.6.4',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -4169,7 +4169,7 @@ function buildCloudSave() {
   const portable = buildPortableSave();
   const cloudSave = {
     ...portable,
-    version: '7.6.3-cloud',
+    version: '7.6.4-cloud',
     inventoryEncoding: CLOUD_INVENTORY_ENCODING,
     inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
   };
@@ -4251,7 +4251,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '7.6.3-steam',
+    version: '7.6.4-steam',
     account: {
       ...snapshot.account,
       steamId,
