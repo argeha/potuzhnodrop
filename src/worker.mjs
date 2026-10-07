@@ -913,6 +913,15 @@ function normalizeCommunityPlayer(value, visitorHash, now) {
   if (!name) return null
   const profileId = cleanText(value?.profileId, 64)
   const cloudProfileId = cleanText(value?.cloudProfileId, 64)
+  const rawPresentation = value?.presentation && typeof value.presentation === 'object' && !Array.isArray(value.presentation)
+    ? value.presentation
+    : null
+  // Community cards carry the same constrained showcase as public profiles.
+  // Do not keep a client-submitted avatar or any private statistics here: the
+  // Worker resolves the avatar from Steam and derives the visible stats below.
+  const presentation = rawPresentation
+    ? publicProfilePayload({ ...rawPresentation, name })
+    : null
   return {
     id: visitorHash,
     name,
@@ -925,6 +934,12 @@ function normalizeCommunityPlayer(value, visitorHash, now) {
     inventoryTotal: boundedInteger(value?.inventoryTotal, 0, ADMIN_GAME_MAX_INVENTORY),
     level: boundedInteger(value?.level, 1, 9_999),
     prestige: boundedInteger(value?.prestige, 0, 99),
+    presentation: presentation ? {
+      cosmetics: presentation.cosmetics,
+      signal: presentation.signal,
+      showcase: presentation.showcase,
+      achievements: presentation.achievements,
+    } : null,
     // This is written by the Worker after it validates the Steam session. It
     // lets the live feed use a short-lived, server-owned avatar route without
     // publishing a Steam ID to other players.
@@ -1007,6 +1022,14 @@ function communityResponse(state, visitorHash) {
   const avatarUrlFor = player => cleanAvatar(player?.avatar)
     ? `/api/community-avatar?player=${encodeURIComponent(player.id)}`
     : ''
+  const presentationFor = player => player?.presentation && typeof player.presentation === 'object'
+    ? {
+      cosmetics: player.presentation.cosmetics,
+      signal: player.presentation.signal,
+      showcase: Array.isArray(player.presentation.showcase) ? player.presentation.showcase : [],
+      achievements: player.presentation.achievements,
+    }
+    : null
   const rows = Object.values(state.players)
     .filter(isPublicPlayer)
     .sort((left, right) => right.xp - left.xp || right.wins - left.wins || right.collectionValue - left.collectionValue || right.updatedAt - left.updatedAt)
@@ -1021,6 +1044,7 @@ function communityResponse(state, visitorHash) {
     level: player.level,
     prestige: player.prestige,
     avatarUrl: avatarUrlFor(player),
+    presentation: presentationFor(player),
     isMe: player.id === visitorHash,
   }))
   const ownRank = rows.findIndex(player => player.id === visitorHash) + 1
@@ -1038,6 +1062,7 @@ function communityResponse(state, visitorHash) {
         level: player?.level || event.level,
         prestige: player?.prestige || event.prestige,
         avatarUrl: avatarUrlFor(player),
+        presentation: presentationFor(player),
       }
     })
   const circuit = normalizeCommunityCircuit(state.circuit, Date.now())

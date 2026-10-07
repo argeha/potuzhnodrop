@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 7.6.1 ============ */
+/* ============ ПОТУЖНО DROP 7.6.2 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -1946,7 +1946,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.6.1';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.6.2';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -3823,8 +3823,8 @@ function renderPublicProfileModal(profile, { demo = false } = {}) {
     </div>
     <div class="public-profile-stats">${statsMarkup}</div>
     ${signalForge ? `<p class="public-profile-signal"><i class="fa-solid fa-tower-broadcast"></i><span><b>SIGNAL FORGE</b><small>Nightfall-маршрутів: ${signalRoutes}</small></span></p>` : ''}
-    ${!demo && !communityProfile ? `<section class="public-profile-section"><header><span><i class="fa-solid fa-wand-magic-sparkles"></i> ОФОРМЛЕННЯ</span><small>Екіпіровано</small></header><div class="public-profile-cosmetics">${cosmeticsMarkup}</div></section><section class="public-profile-section"><header><span><i class="fa-solid fa-gem"></i> ВІТРИНА СКІНІВ</span><small>${showcase.length} / 3</small></header><div class="public-profile-showcase">${showcaseMarkup}</div></section><section class="public-profile-section"><header><span><i class="fa-solid fa-medal"></i> ДОСЯГНЕННЯ</span><small>${achievementCount} / ${ACHIEVEMENT_DEFINITIONS.length}</small></header><div class="public-profile-achievements">${achievementCards || '<p class="public-profile-empty"><i class="fa-solid fa-medal"></i> Ще немає відкритих досягнень</p>'}</div></section>` : ''}
-    <p class="public-profile-note"><i class="fa-solid fa-shield-halved"></i>${demo ? ' Це візуальна демонстрація стрічки: дані не належать реальному користувачу.' : communityProfile ? ' Це безпечна картка зі спільноти. Баланс, інвентар, Steam ID та інші приватні дані приховані.' : ' Видимі лише публічні дані: стиль, рамка, титул, вітрина та досягнення. Баланс, повний інвентар і Steam ID приховані.'}</p>
+    ${!demo && (!communityProfile || profile.communityPresentation === true) ? `<section class="public-profile-section"><header><span><i class="fa-solid fa-wand-magic-sparkles"></i> ОФОРМЛЕННЯ</span><small>Екіпіровано</small></header><div class="public-profile-cosmetics">${cosmeticsMarkup}</div></section><section class="public-profile-section"><header><span><i class="fa-solid fa-gem"></i> ВІТРИНА СКІНІВ</span><small>${showcase.length} / 3</small></header><div class="public-profile-showcase">${showcaseMarkup}</div></section><section class="public-profile-section"><header><span><i class="fa-solid fa-medal"></i> ДОСЯГНЕННЯ</span><small>${achievementCount} / ${ACHIEVEMENT_DEFINITIONS.length}</small></header><div class="public-profile-achievements">${achievementCards || '<p class="public-profile-empty"><i class="fa-solid fa-medal"></i> Ще немає відкритих досягнень</p>'}</div></section>` : ''}
+    <p class="public-profile-note"><i class="fa-solid fa-shield-halved"></i>${demo ? ' Це візуальна демонстрація стрічки: дані не належать реальному користувачу.' : communityProfile ? ' Це картка зі спільноти: видно лише вибрані скіни, оформлення та досягнення. Баланс, повний інвентар і Steam ID приховані.' : ' Видимі лише публічні дані: стиль, рамка, титул, вітрина та досягнення. Баланс, повний інвентар і Steam ID приховані.'}</p>
     ${canJoinBattle ? '<button type="button" onclick="joinPublicProfileBattle()" class="public-profile-battle"><i class="fa-solid fa-dice"></i> Приєднатися до 1v1</button>' : ''}
     ${!demo && isOwnProfile && !communityProfile ? '<button type="button" onclick="openOwnBattleRoom()" class="public-profile-battle"><i class="fa-solid fa-dice"></i> Відкрити мою кімнату 1v1</button>' : ''}
     </div>`;
@@ -4135,7 +4135,7 @@ function expandCloudInventoryItem(record, index = 0) {
 
 function buildPortableSave() {
   return {
-    version: '7.6.1',
+    version: '7.6.2',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -4158,7 +4158,7 @@ function buildCloudSave() {
   const portable = buildPortableSave();
   const cloudSave = {
     ...portable,
-    version: '7.6.1-cloud',
+    version: '7.6.2-cloud',
     inventoryEncoding: CLOUD_INVENTORY_ENCODING,
     inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
   };
@@ -4240,7 +4240,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '7.6.1-steam',
+    version: '7.6.2-steam',
     account: {
       ...snapshot.account,
       steamId,
@@ -5936,6 +5936,7 @@ const COMMUNITY_SYNC_MS = 35_000;
 function getCommunityPlayerPayload() {
   const stats = gameState?.stats || {};
   const collectionValue = userInventory.reduce((total, item) => total + verifiedInventoryMarketPrice(item), 0);
+  const publicPresentation = buildPublicProfilePayload();
   return {
     name: cleanText(account?.nick || currentUser?.name || 'Гравець', 24) || 'Гравець',
     profileId: account?.publicProfile?.enabled ? account.publicProfile.id : '',
@@ -5953,12 +5954,24 @@ function getCommunityPlayerPayload() {
     inventoryTotal: clampNumber(userInventory.length, 0, 10_000, 0),
     level: getPlayerLevel(),
     prestige: clampNumber(gameState?.prestige, 0, 99, 0),
+    // A community heartbeat contains only the selections a player can show
+    // off: equipped cosmetics, up to three showcase skins and achievements.
+    // It intentionally excludes balance, Steam ID and the rest of inventory.
+    presentation: {
+      cosmetics: publicPresentation.cosmetics,
+      signal: publicPresentation.signal,
+      showcase: publicPresentation.showcase,
+      achievements: publicPresentation.achievements
+    },
     hidden: isProfileHidden()
   };
 }
 
 function buildCommunityProfile(player) {
   const source = player && typeof player === 'object' ? player : {};
+  const presentation = source.presentation && typeof source.presentation === 'object' && !Array.isArray(source.presentation)
+    ? source.presentation
+    : null;
   return {
     id: '',
     community: true,
@@ -5968,6 +5981,11 @@ function buildCommunityProfile(player) {
     prestige: clampNumber(source.prestige, 0, 99, 0),
     steamConnected: Boolean(cleanText(source.avatarUrl, 512)),
     avatarUrl: cleanText(source.avatarUrl, 512),
+    communityPresentation: Boolean(presentation),
+    cosmetics: presentation?.cosmetics || {},
+    signal: presentation?.signal || {},
+    showcase: Array.isArray(presentation?.showcase) ? presentation.showcase.slice(0, 3) : [],
+    achievements: presentation?.achievements || {},
     xp: clampNumber(source.xp, 0, 9_999_999, 0),
     wins: clampNumber(source.wins, 0, 9_999_999, 0),
     stats: {
