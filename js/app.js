@@ -6330,7 +6330,7 @@ function renderShowcaseManager() {
   grid.innerHTML = items.map(item => {
     const active = selected.has(String(item.id));
     const unavailable = !active && selected.size >= 3;
-    return `<button type="button" class="showcase-manager-item ${active ? 'is-selected' : ''}" data-showcase-toggle="${escapeHtml(String(item.id))}" aria-pressed="${active}" ${unavailable ? 'disabled aria-disabled="true" title="Спершу прибери один зі скінів з вітрини"' : ''}><img src="${escapeHtml(getSkinImageSrc(item))}" alt="" data-skin-name="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><span><b>${escapeHtml(item.name)}</b><small>${formatCredits(verifiedInventoryMarketPrice(item))}</small></span><i class="fa-solid ${active ? 'fa-star' : 'fa-plus'}"></i></button>`;
+    return `<button type="button" class="showcase-manager-item ${active ? 'is-selected' : ''}" data-showcase-toggle="${escapeHtml(String(item.id))}" aria-pressed="${active}" ${unavailable ? 'disabled aria-disabled="true" title="Спершу прибери один зі скінів з вітрини"' : ''}><img src="${escapeHtml(getSkinImageSrc(item))}" alt="" width="46" height="39" data-skin-name="${escapeHtml(item.name)}" loading="lazy" decoding="async" onerror="handleSkinImageError(this)"><span><b>${escapeHtml(item.name)}</b><small>${formatCredits(verifiedInventoryMarketPrice(item))}</small></span><i class="fa-solid ${active ? 'fa-star' : 'fa-plus'}"></i></button>`;
   }).join('');
   grid.querySelectorAll('[data-showcase-toggle]').forEach(button => button.addEventListener('click', () => toggleShowcaseItem(button.dataset.showcaseToggle)));
 }
