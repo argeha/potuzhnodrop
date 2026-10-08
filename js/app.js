@@ -7079,6 +7079,7 @@ function renderSignalSeasonHub() {
     return;
   }
   const progress = getSignalCampaignProgress();
+  const runtimeSeason = getRuntimeSeason();
   const next = progress.next;
   const claimed = progress.state.claimed.length;
   const phase = progress.completed >= progress.total ? 'ЛЕГЕНДА' : progress.completed >= 4 ? 'РЕЗОНАНС' : progress.completed >= 2 ? 'ПОСИЛЕННЯ' : 'СКАНУВАННЯ';
