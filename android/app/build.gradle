@@ -15,7 +15,9 @@ android {
         applicationId "com.argeha.potuzhnodrop"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 32
+        // Google Play requires a monotonically increasing code for every
+        // upload. The displayed version deliberately matches the web bundle.
+        versionCode 33
         versionName "7.8.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -36,8 +38,6 @@ android {
     }
     buildTypes {
         release {
-            // R8 removes unused native code and resources from the Play
-            // release. Debug builds remain unminified for Android Studio.
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -73,3 +73,12 @@ dependencies {
 }
 
 apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

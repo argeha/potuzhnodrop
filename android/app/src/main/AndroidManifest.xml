@@ -27,9 +27,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Reserved for the verified native sign-in callback. The Worker
-                 will mint a single-use ticket; credentials never travel in
-                 this URL. -->
+            <!-- Steam returns a one-time opaque ticket here after sign-in. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
