@@ -4166,7 +4166,7 @@ const STEAM_ACCOUNT_AUTOSAVE_RETRY_MS = 25_000;
 // Website and Android intentionally use the same Steam-bound save. A quiet
 // periodic revision check lets an already-open client adopt progress made on
 // the other device without ever overwriting unsaved local actions.
-const STEAM_ACCOUNT_REMOTE_REFRESH_MS = 45_000;
+const STEAM_ACCOUNT_REMOTE_REFRESH_MS = 12_000;
 let cloudAutoSyncStarted = false;
 let cloudAutoSyncDirty = false;
 let cloudAutoSyncTimer = null;
@@ -4186,6 +4186,8 @@ let steamAccountAutoSyncVersion = 0;
 let steamAccountAutoSyncLastAt = 0;
 let steamAccountAutoSyncLastError = '';
 let steamAccountRemoteRefreshInFlight = false;
+let steamAccountBootstrapApplyingRemote = false;
+let steamAccountPendingLocalSnapshot = null;
 
 function hasSteamIdentity() {
   return /^\d{17}$/.test(String(currentUser?.steamId || account?.steamId || ''));
@@ -4193,6 +4195,18 @@ function hasSteamIdentity() {
 
 function hasReadySteamAccount() {
   return steamAccountReady && hasSteamIdentity() && isSteamAccount(account?.steamAccount);
+}
+
+// The Android bridge restores its Steam session asynchronously. A player may
+// tap a case before that request returns; keep a snapshot of any progress
+// made in that tiny window so the older server copy cannot erase a fresh drop.
+function captureSteamProgressDuringBootstrap() {
+  if (!steamAccountBootstrapPromise || steamAccountBootstrapApplyingRemote || !hasSteamIdentity()) return;
+  try {
+    steamAccountPendingLocalSnapshot = buildSteamAccountSave();
+  } catch {
+    // The local copy remains available and the next ordinary autosave retries.
+  }
 }
 
 function compactCloudInventoryItem(item, index = 0) {
@@ -4509,10 +4523,36 @@ async function bootstrapSteamAccount(profile, { announce = false } = {}) {
   steamAccountReady = false;
   renderCloudSyncUI();
   steamAccountBootstrapPromise = (async () => {
+    const loadServerProgress = async () => {
+      steamAccountBootstrapApplyingRemote = true;
+      try {
+        return await loadSteamAccount({ silent: true });
+      } finally {
+        steamAccountBootstrapApplyingRemote = false;
+      }
+    };
+    const restoreLocalProgressMadeDuringBootstrap = () => {
+      const pending = steamAccountPendingLocalSnapshot;
+      steamAccountPendingLocalSnapshot = null;
+      if (!pending) return false;
+
+      const serverMeta = account?.steamAccount;
+      const serverProfile = normalizeSteamProfile(currentUser?.steamProfile || account?.steamProfile, steamId) || fallbackSteamProfile(steamId);
+      applyPortableSave(pending, { skipCloudAutoSync: true, skipSteamAutoSync: true });
+      applySteamIdentity(steamId, serverProfile, { skipAutoSync: true });
+      if (serverMeta) setSteamAccountMeta(steamId, serverMeta);
+      return true;
+    };
     try {
-      await loadSteamAccount({ silent: true });
+      await loadServerProgress();
+      const hasPendingLocalProgress = restoreLocalProgressMadeDuringBootstrap();
       steamAccountReady = true;
       startSteamAccountAutoSync();
+      if (hasPendingLocalProgress) {
+        steamAccountAutoSyncDirty = true;
+        steamAccountAutoSyncVersion += 1;
+        scheduleSteamAccountAutoSync({ urgent: true });
+      }
       renderCloudSyncUI();
       if (announce) showToast('Steam-акаунт підключено: прогрес доступний на будь-якому пристрої.', 'success');
       return true;
@@ -4521,9 +4561,15 @@ async function bootstrapSteamAccount(profile, { announce = false } = {}) {
       const created = await createSteamAccount({ silent: true });
       // Two fresh tabs can complete Steam login together. In that case the
       // second create is rejected, then safely adopts the first saved copy.
-      if (!created) await loadSteamAccount({ silent: true });
+      if (!created) await loadServerProgress();
+      const hasPendingLocalProgress = restoreLocalProgressMadeDuringBootstrap();
       steamAccountReady = true;
       startSteamAccountAutoSync();
+      if (hasPendingLocalProgress) {
+        steamAccountAutoSyncDirty = true;
+        steamAccountAutoSyncVersion += 1;
+        scheduleSteamAccountAutoSync({ urgent: true });
+      }
       renderCloudSyncUI();
       if (announce) showToast('Steam-акаунт створено: цей прогрес тепер прив’язаний до Steam.', 'success');
       return true;
@@ -5297,7 +5343,7 @@ function renderCanvas(chancePercent, pointerAngle = 0) {
   }
 }
 
-function saveState({ skipCloudAutoSync = false, skipSteamAutoSync = false } = {}) {
+function saveState({ skipCloudAutoSync = false, skipSteamAutoSync = false, urgentSteamAutoSync = false } = {}) {
   if (currentUser) {
     if (currentUser.steamId) localStorage.setItem(STORAGE.steamId, currentUser.steamId);
     localStorage.setItem(STORAGE.balance, String(currentUser.balance));
@@ -5307,7 +5353,11 @@ function saveState({ skipCloudAutoSync = false, skipSteamAutoSync = false } = {}
   if (gameState) localStorage.setItem(STORAGE.game, JSON.stringify(gameState));
   if (account) localStorage.setItem(STORAGE.account, JSON.stringify(account));
   queuePublicProfilePublish();
-  if (!skipSteamAutoSync) queueSteamAccountAutoSync();
+  if (!skipSteamAutoSync) {
+    captureSteamProgressDuringBootstrap();
+    queueSteamAccountAutoSync();
+    if (urgentSteamAutoSync) scheduleSteamAccountAutoSync({ urgent: true });
+  }
   if (!skipCloudAutoSync) queueCloudAutoSync();
 }
 
@@ -9797,6 +9847,10 @@ function playCaseReels(reels, wrapper, onStart) {
 async function startCaseReel() {
   const btn = document.getElementById('caseReelBtn');
   if (btn?.disabled || isCaseOpening || isFreeCaseOpening || pendingWager) return;
+  if (hasSteamIdentity() && !hasReadySteamAccount()) {
+    showToast('Підключаємо Steam-збереження. Зачекай кілька секунд перед відкриттям кейсу.', 'info');
+    return;
+  }
 
   const isFree = window.__caseType === 'free';
   const mult = isFree ? 1 : caseMultiplier;
@@ -9938,7 +9992,7 @@ async function startCaseReel() {
   renderInventoryGrid();
   renderProfileInventory();
   updateAvatarBadge();
-  saveState();
+  saveState({ urgentSteamAutoSync: true });
   renderGameHub();
   if (halloweenProgress.pumpkins) showToast(`Halloween: +${halloweenProgress.pumpkins} 🎃 і +${halloweenProgress.coins} 🪙 за кейс.`, 'success');
   if (winterShards) showToast(`ICEWIRE: +${winterShards} Frost Shard за контейнер.`, 'success');
