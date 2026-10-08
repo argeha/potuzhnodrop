@@ -7121,15 +7121,21 @@ function showToast(message, type = 'info') {
 let audioCtx = null;
 const CASE_REEL_AUDIO_SRC = '/assets/audio/argeha-deepreceive-case.wav?v=7.9.0';
 const RARE_DROP_AUDIO_SRC = '/assets/audio/argeha-deepreceive-rare.wav?v=7.9.0';
+const VICTORY_AUDIO_SRC = '/assets/audio/argeha-st-victory.wav?v=7.9.0';
 const MUSIC_TRACKS = Object.freeze({
   skyline: { src: '/assets/audio/argeha-skyline-loop.wav?v=7.9.0', volume: 0.15 },
   event: { src: '/assets/audio/argeha-take-me-up-event.wav?v=7.9.0', volume: 0.13 },
   unease: { src: '/assets/audio/argeha-unease-upgrade.wav?v=7.9.0', volume: 0.12 },
   royale: { src: '/assets/audio/argeha-phonk-royale.wav?v=7.9.0', volume: 0.11 },
+  signal: { src: '/assets/audio/argeha-untitled-signal.wav?v=7.9.0', volume: 0.11 },
+  profile: { src: '/assets/audio/argeha-untitled-profile.wav?v=7.9.0', volume: 0.11 },
+  case: { src: '/assets/audio/argeha-kk2-case.wav?v=7.9.0', volume: 0.10 },
 });
 let caseReelAudio = null;
 let caseReelAudioUnlockSerial = 0;
 let rareDropAudio = null;
+let victoryAudio = null;
+let victoryAudioUnlockSerial = 0;
 let backgroundMusic = null;
 let backgroundMusicTrack = '';
 let backgroundMusicPausedForRound = false;
@@ -7138,7 +7144,10 @@ function getBackgroundMusicTrack(page = currentPage) {
   if (page === 'royale') return 'royale';
   if (page === 'battle') return 'event';
   if (page === 'upgrader' || page === 'contract') return 'unease';
-  if (['hub', 'tasks', 'profile', 'stats', 'about'].includes(page)) return 'skyline';
+  if (page === 'case') return 'case';
+  if (page === 'tasks') return 'signal';
+  if (page === 'profile') return 'profile';
+  if (['hub', 'stats', 'about'].includes(page)) return 'skyline';
   return '';
 }
 
@@ -7205,6 +7214,43 @@ function playRareDropMusic(items) {
   audio.pause();
   audio.currentTime = 0;
   audio.play().catch(() => {});
+}
+
+function getVictoryMusic() {
+  if (victoryAudio || typeof Audio !== 'function') return victoryAudio;
+  victoryAudio = new Audio(VICTORY_AUDIO_SRC);
+  victoryAudio.preload = 'auto';
+  victoryAudio.volume = 0.32;
+  return victoryAudio;
+}
+
+function playVictoryMusic() {
+  if (!soundEnabled || document.hidden) return;
+  const audio = getVictoryMusic();
+  if (!audio) return;
+  victoryAudioUnlockSerial += 1;
+  audio.pause();
+  audio.currentTime = 0;
+  audio.muted = false;
+  audio.play().catch(() => {});
+}
+
+function unlockVictoryMusic() {
+  if (!soundEnabled || document.hidden) return;
+  const audio = getVictoryMusic();
+  if (!audio) return;
+  // Unlock the one-shot while the player has just tapped the mode. The actual
+  // result can arrive several seconds later, especially in a live Royale.
+  const unlockSerial = ++victoryAudioUnlockSerial;
+  audio.muted = true;
+  audio.play().then(() => {
+    if (unlockSerial !== victoryAudioUnlockSerial) return;
+    audio.pause();
+    audio.currentTime = 0;
+    audio.muted = false;
+  }).catch(() => {
+    if (unlockSerial === victoryAudioUnlockSerial) audio.muted = false;
+  });
 }
 
 function getCaseReelAudio() {
@@ -7355,6 +7401,10 @@ function toggleSound() {
     if (rareDropAudio) {
       rareDropAudio.pause();
       rareDropAudio.currentTime = 0;
+    }
+    if (victoryAudio) {
+      victoryAudio.pause();
+      victoryAudio.currentTime = 0;
     }
     backgroundMusicPausedForRound = false;
     pauseBackgroundMusic({ reset: true });
@@ -11225,6 +11275,7 @@ function startBattle() {
     showToast('Бій чекає на стабільні ціни обох ставок.', 'warn');
     return;
   }
+  unlockVictoryMusic();
   const playerStake = battlePlayerItem;
   clearBattleAutoStart();
   const wagerId = beginPendingWager({ inventory: [playerStake] });
@@ -11283,6 +11334,7 @@ function startBattle() {
       gameState.stats.battleWins = (gameState.stats.battleWins || 0) + 1;
       gameState.daily.battleWins = (gameState.daily.battleWins || 0) + 1;
       addXp(XP_BATTLE_WIN);
+      playVictoryMusic();
     } else {
       if (outcome) outcome.innerHTML = `<span class="text-red-300 text-lg">🪙 Монетка впала на сторону ${escapeHtml(opponentName)}. Твій віртуальний предмет вибуває з раунду.</span>`;
       bSlot?.classList.add('is-winner');
@@ -11795,6 +11847,7 @@ function legacyRoyaleSettle(winnerIdx, wagerId) {
 
     addXp(XP_ROYALE_WIN);
     soundWin();
+    playVictoryMusic();
     setTimeout(() => soundWin(), 200);
     setTimeout(() => soundWin(), 420);
 
@@ -12441,6 +12494,7 @@ async function joinLiveRoyale() {
     renderRoyaleDeck();
     return showToast('Потрібні стабільні ціни всіх скінів у банку.', 'warn');
   }
+  unlockVictoryMusic();
   const ticketId = makeUuid();
   const wagerId = beginPendingWager({ inventory: skins });
   royaleLiveTicket = { ticketId, wagerId, skins: skins.map((skin, index) => normalizeStoredItem(skin, index)).filter(Boolean), createdAt: Date.now() };
@@ -12477,6 +12531,7 @@ function startRoyale() {
     renderRoyaleDeck();
     return;
   }
+  unlockVictoryMusic();
   const wagerId = beginPendingWager({ inventory: royalePlayerSkins });
   const playerIds = new Set(royalePlayerSkins.map(skin => skin.id));
   userInventory = userInventory.filter(skin => !playerIds.has(skin.id));
@@ -12569,7 +12624,7 @@ function royaleSettle(winnerIndex, wagerId, frozenParticipants = royaleParticipa
     gameState.stats.battleWins = (gameState.stats.battleWins || 0) + 1;
     gameState.daily.battleWins = (gameState.daily.battleWins || 0) + 1;
     gameState.allTime.royaleWins = (gameState.allTime.royaleWins || 0) + 1;
-    addXp(XP_ROYALE_WIN); soundWin(); window.setTimeout(soundWin, 180);
+    addXp(XP_ROYALE_WIN); soundWin(); playVictoryMusic(); window.setTimeout(soundWin, 180);
     if (icon) icon.textContent = '👑';
     if (title) { title.textContent = 'БАНК ТВОЙ!'; title.className = 'font-heading text-3xl font-extrabold uppercase text-emerald-300'; }
     if (sub) sub.textContent = `Ти забираєш ${formatCredits(total)} · ${allPotSkins.length} віртуальних скінів.`;
