@@ -1,4 +1,4 @@
-/* ============ ПОТУЖНО DROP 7.8.0 ============ */
+/* ============ ПОТУЖНО DROP 7.8.1 ============ */
 const STORAGE = {
   consent: 'potuzhno_v5_notice',
   page: 'potuzhno_v5_page',
@@ -1751,7 +1751,7 @@ function loadGameState() {
       achievements: s.achievements || {},
       favorites: Array.isArray(s.favorites) ? s.favorites.map(String) : [],
       performanceMode: s.performanceMode === 'lite' ? 'lite' : 'auto',
-      showcase: Array.isArray(s.showcase) ? s.showcase.map(String).slice(0, 3) : [],
+      showcase: normalizeShowcaseIds(s.showcase),
       dailyStreak: { ...d.dailyStreak, ...(s.dailyStreak || {}) },
       battlePass: { ...createDefaultBattlePass(), ...(s.battlePass || {}) },
       caseTickets: clampNumber(s.caseTickets, 0, 999, 0),
@@ -1993,7 +1993,7 @@ function applyHalloweenSeasonCopy(active) {
     applySeasonCopy(WINTER_PAGE_COPY, false);
   }
   const release = document.getElementById('brandRelease');
-  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.8.0';
+  if (release) release.textContent = active?.kind === 'winter' ? 'ZERO HOUR' : active?.kind === 'halloween' ? 'THE 13TH' : '7.8.1';
   const brand = document.getElementById('brandName');
   if (brand) brand.textContent = active?.kind === 'winter' ? 'ICEWIRE DROP' : active?.kind === 'halloween' ? 'NIGHTFALL DROP' : 'ПОТУЖНО DROP';
   const riskText = active?.kind === 'winter'
@@ -4229,7 +4229,7 @@ function expandCloudInventoryItem(record, index = 0) {
 
 function buildPortableSave() {
   return {
-    version: '7.8.0',
+    version: '7.8.1',
     exportedAt: Date.now(),
     balance: currentUser?.balance ?? 0,
     inventory: userInventory,
@@ -4252,7 +4252,7 @@ function buildCloudSave() {
   const portable = buildPortableSave();
   const cloudSave = {
     ...portable,
-    version: '7.8.0-cloud',
+    version: '7.8.1-cloud',
     inventoryEncoding: CLOUD_INVENTORY_ENCODING,
     inventory: userInventory.map(compactCloudInventoryItem).filter(Boolean)
   };
@@ -4334,7 +4334,7 @@ function buildSteamAccountSave() {
   if (!/^\d{17}$/.test(steamId)) throw new Error('Steam-акаунт не підтверджено.');
   return {
     ...snapshot,
-    version: '7.8.0-steam',
+    version: '7.8.1-steam',
     account: {
       ...snapshot.account,
       steamId,
@@ -4556,7 +4556,12 @@ function applyPortableSave(data, { skipCloudAutoSync = false, skipSteamAutoSync 
     powerRun: { ...createDefaultPowerRun(), ...(portable.gameState.powerRun || {}) },
     halloweenEvent: { ...createDefaultHalloweenEvent(), ...(portable.gameState.halloweenEvent || {}) },
     winterEvent: { ...createDefaultWinterEvent(), ...(portable.gameState.winterEvent || {}) },
+    signalSeason: { ...createDefaultSignalSeason(), ...(portable.gameState.signalSeason || {}) },
     seasonalCosmetics: { ...createDefaultSeasonalCosmetics(), ...(portable.gameState.seasonalCosmetics || {}) },
+    // Cloud saves from earlier releases could preserve numeric or no-longer
+    // existing inventory IDs here. Convert and validate them against the
+    // restored inventory before the profile UI reads the showcase.
+    showcase: normalizeShowcaseIds(portable.gameState.showcase, userInventory),
     pulseCircuit: { ...createDefaultPulseCircuit(), ...(portable.gameState.pulseCircuit || {}) },
     targetArena: { ...createDefaultTargetArena(), ...(portable.gameState.targetArena || {}) },
     allTime: { ...createDefaultAllTime(), ...(portable.gameState.allTime || {}) },
@@ -6254,8 +6259,31 @@ function startCommunitySync() {
   });
 }
 
+function normalizeShowcaseIds(value, inventory = null) {
+  const ids = [...new Set((Array.isArray(value) ? value : [])
+    .map(id => String(id || '').trim())
+    .filter(Boolean))]
+    .slice(0, 3);
+  if (!Array.isArray(inventory)) return ids;
+  const available = new Set(inventory.map(item => String(item?.id || '').trim()).filter(Boolean));
+  return ids.filter(id => available.has(id));
+}
+
+function getShowcaseSelection() {
+  return normalizeShowcaseIds(gameState?.showcase, userInventory);
+}
+
+function reconcileShowcaseSelection() {
+  if (!gameState) return { ids: [], changed: false };
+  const ids = getShowcaseSelection();
+  const stored = Array.isArray(gameState.showcase) ? gameState.showcase.map(id => String(id || '').trim()).filter(Boolean) : [];
+  const changed = stored.length !== ids.length || stored.some((id, index) => id !== ids[index]);
+  if (changed) gameState.showcase = ids;
+  return { ids, changed };
+}
+
 function getShowcaseItems() {
-  const selected = Array.isArray(gameState?.showcase) ? gameState.showcase : [];
+  const selected = getShowcaseSelection();
   return selected
     .map(id => userInventory.find(item => String(item.id) === String(id)))
     .filter(Boolean)
@@ -6264,7 +6292,7 @@ function getShowcaseItems() {
 
 function toggleShowcaseItem(itemId) {
   if (!gameState || !userInventory.some(item => String(item.id) === String(itemId))) return;
-  const showcase = Array.isArray(gameState.showcase) ? gameState.showcase : [];
+  const showcase = reconcileShowcaseSelection().ids;
   const key = String(itemId);
   const index = showcase.indexOf(key);
   if (index >= 0) {
@@ -6289,7 +6317,7 @@ function renderShowcaseManager() {
   const grid = document.getElementById('showcaseManagerGrid');
   const status = document.getElementById('showcaseManagerStatus');
   if (!grid || !status) return;
-  const selected = new Set(Array.isArray(gameState?.showcase) ? gameState.showcase : []);
+  const selected = new Set(getShowcaseSelection());
   status.innerHTML = `<i class="fa-solid fa-star mr-1 text-amber-300"></i> Вибрано ${selected.size} / 3`;
   if (!userInventory.length) {
     grid.innerHTML = '<div class="showcase-manager-empty"><i class="fa-solid fa-box-open"></i><strong>Інвентар ще порожній</strong><span>Відкрий кейс або отримай предмет, щоб додати його до вітрини.</span></div>';
@@ -6298,13 +6326,16 @@ function renderShowcaseManager() {
   const items = [...userInventory].sort((left, right) => verifiedInventoryMarketPrice(right) - verifiedInventoryMarketPrice(left));
   grid.innerHTML = items.map(item => {
     const active = selected.has(String(item.id));
-    return `<button type="button" class="showcase-manager-item ${active ? 'is-selected' : ''}" data-showcase-toggle="${escapeHtml(String(item.id))}" aria-pressed="${active}"><img src="${escapeHtml(getSkinImageSrc(item))}" alt="" data-skin-name="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><span><b>${escapeHtml(item.name)}</b><small>${formatCredits(verifiedInventoryMarketPrice(item))}</small></span><i class="fa-solid ${active ? 'fa-star' : 'fa-plus'}"></i></button>`;
+    const unavailable = !active && selected.size >= 3;
+    return `<button type="button" class="showcase-manager-item ${active ? 'is-selected' : ''}" data-showcase-toggle="${escapeHtml(String(item.id))}" aria-pressed="${active}" ${unavailable ? 'disabled aria-disabled="true" title="Спершу прибери один зі скінів з вітрини"' : ''}><img src="${escapeHtml(getSkinImageSrc(item))}" alt="" data-skin-name="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><span><b>${escapeHtml(item.name)}</b><small>${formatCredits(verifiedInventoryMarketPrice(item))}</small></span><i class="fa-solid ${active ? 'fa-star' : 'fa-plus'}"></i></button>`;
   }).join('');
   grid.querySelectorAll('[data-showcase-toggle]').forEach(button => button.addEventListener('click', () => toggleShowcaseItem(button.dataset.showcaseToggle)));
 }
 
 function openShowcaseManager() {
   if (!gameState) return;
+  const repaired = reconcileShowcaseSelection();
+  if (repaired.changed) saveState();
   renderShowcaseManager();
   openModal('showcaseModal');
 }
@@ -8014,6 +8045,7 @@ function renderProfileInventory() {
   }
   grid.classList.remove('hidden');
   empty.classList.add('hidden');
+  const showcaseSelection = new Set(getShowcaseSelection());
 
   if (!list.length) {
     grid.innerHTML = '<div class="col-span-full rounded-xl border border-dashed border-gray-700 p-10 text-center"><i class="fa-solid fa-magnifying-glass text-2xl text-gray-600"></i><p class="mt-2 text-sm font-bold text-gray-400">Нічого не знайдено</p><p class="text-xs text-gray-500 mt-1">Спробуй інший фільтр</p></div>';
@@ -8025,7 +8057,7 @@ function renderProfileInventory() {
     const marketPrice = verifiedInventoryMarketPrice(s);
     const sellPrice = roundPc(marketPrice * SELL_RATE);
     const isBound = s.accountBound === true;
-    const isShowcased = gameState?.showcase?.includes(String(s.id));
+    const isShowcased = showcaseSelection.has(String(s.id));
     const [weaponPart, ...skinParts] = String(s.name || 'CS2 Skin').split('|');
     const weapon = cleanText(weaponPart, 48) || 'CS2';
     const skinName = cleanText(skinParts.join('|'), 110) || weapon;
