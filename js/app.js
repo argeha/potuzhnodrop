@@ -7124,6 +7124,8 @@ const RARE_DROP_AUDIO_SRC = '/assets/audio/argeha-deepreceive-rare.wav?v=7.9.0';
 const MUSIC_TRACKS = Object.freeze({
   skyline: { src: '/assets/audio/argeha-skyline-loop.wav?v=7.9.0', volume: 0.15 },
   event: { src: '/assets/audio/argeha-take-me-up-event.wav?v=7.9.0', volume: 0.13 },
+  unease: { src: '/assets/audio/argeha-unease-upgrade.wav?v=7.9.0', volume: 0.12 },
+  royale: { src: '/assets/audio/argeha-phonk-royale.wav?v=7.9.0', volume: 0.11 },
 });
 let caseReelAudio = null;
 let caseReelAudioUnlockSerial = 0;
@@ -7133,7 +7135,9 @@ let backgroundMusicTrack = '';
 let backgroundMusicPausedForRound = false;
 
 function getBackgroundMusicTrack(page = currentPage) {
-  if (page === 'battle' || page === 'royale') return 'event';
+  if (page === 'royale') return 'royale';
+  if (page === 'battle') return 'event';
+  if (page === 'upgrader' || page === 'contract') return 'unease';
   if (['hub', 'tasks', 'profile', 'stats', 'about'].includes(page)) return 'skyline';
   return '';
 }
@@ -7375,6 +7379,12 @@ function updateSoundUI() {
     button.setAttribute('aria-pressed', soundEnabled ? 'true' : 'false');
     button.title = soundEnabled ? 'Звук і музика увімкнені' : 'Звук і музика вимкнені';
   }
+  const mobileIcon = document.getElementById('mobileSoundIcon');
+  if (mobileIcon) mobileIcon.className = soundEnabled ? 'fa-solid fa-volume-high mr-2' : 'fa-solid fa-volume-xmark mr-2';
+  const mobileButton = document.getElementById('mobileSoundToggle');
+  if (mobileButton) mobileButton.setAttribute('aria-pressed', soundEnabled ? 'true' : 'false');
+  const mobileLabel = document.getElementById('mobileSoundLabel');
+  if (mobileLabel) mobileLabel.textContent = soundEnabled ? 'Звук і музика' : 'Звук і музика вимкнені';
 }
 
 // Browser and Android WebView both require a real user gesture before music
