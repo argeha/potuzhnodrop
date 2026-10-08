@@ -1,7 +1,7 @@
 (() => {
   'use strict'
 
-  const state = { me: null, members: [], roles: [], assignableRoles: [], audit: [], gameCapabilities: {}, players: [], playersTotal: 0, player: null, catalog: [], selectedSkinId: '' }
+  const state = { me: null, members: [], roles: [], assignableRoles: [], audit: [], gameCapabilities: {}, players: [], playersTotal: 0, player: null, catalog: [], selectedSkinId: '', content: null, contentCatalog: null }
   let inviteCode = new URLSearchParams(window.location.search).get('invite') || ''
   const $ = selector => document.querySelector(selector)
   const headerStatus = $('#headerStatus')
@@ -26,6 +26,12 @@
   const playerInventory = $('#playerInventory')
   const playerDirectoryList = $('#playerDirectoryList')
   const eventPreviewPanel = $('#eventPreviewPanel')
+  const contentPanel = $('#contentPanel')
+  const contentUnavailable = $('#contentUnavailable')
+  const contentWorkspace = $('#contentWorkspace')
+  const featureToggles = $('#featureToggles')
+  const builtInCaseToggles = $('#builtInCaseToggles')
+  const customCaseList = $('#customCaseList')
   let skinSearchTimer = null
   let playerDirectorySearchTimer = null
   const GAME_ACCOUNT_STORAGE = 'potuzhno_v6_account'
@@ -59,6 +65,9 @@
     game_unblock: 'зняв(ла) блокування',
     game_site_hide: 'приховав(ла) профіль із сайту',
     game_site_show: 'повернув(ла) профіль на сайт',
+    content_draft_saved: 'зберіг(ла) чернетку сайту',
+    content_published: 'опублікував(ла) зміни сайту',
+    content_draft_reset: 'скасував(ла) чернетку сайту',
   }
 
   const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[char]))
@@ -406,6 +415,92 @@
     renderCatalog()
   }
 
+  const contentFeatureLabels = {
+    cases: 'Каталог кейсів',
+    upgrader: 'Апгрейдер',
+    battle: 'Бої 1v1',
+    royale: 'Battle Royale',
+    contract: 'Контракти',
+    tasks: 'Завдання',
+    battlePass: 'Battle Pass',
+    seasonalEvents: 'Сезонні події',
+  }
+
+  function copyContent(value) {
+    return JSON.parse(JSON.stringify(value || {}))
+  }
+
+  function splitContentList(value, limit = 8) {
+    return [...new Set(String(value || '').split(',').map(entry => entry.trim()).filter(Boolean))].slice(0, limit)
+  }
+
+  function renderContentSelects(catalog) {
+    const optionList = (values, selected) => values.map(value => ({ value, label: value })).concat(selected && !values.includes(selected) ? [{ value: selected, label: selected }] : [])
+    setOptions($('#customCaseCategory'), optionList(catalog.categories || [], 'hot'), 'hot')
+    setOptions($('#customCaseTheme'), optionList(catalog.themes || [], 'gold'), 'gold')
+    setOptions($('#customCasePoolKind'), optionList(catalog.poolKinds || [], 'weapons'), 'weapons')
+  }
+
+  function renderContent() {
+    const canConfigure = canGame('configure')
+    contentPanel.classList.toggle('hidden', !state.me)
+    contentUnavailable.classList.toggle('hidden', canConfigure)
+    contentWorkspace.classList.toggle('hidden', !canConfigure)
+    if (!state.me || !canConfigure || !state.content || !state.contentCatalog) return
+
+    const draft = state.content.draft || {}
+    const published = state.content.published || {}
+    const catalog = state.contentCatalog
+    $('#contentPublishedRevision').textContent = `v${Number(published.revision || 0)}`
+    $('#contentDraftRevision').textContent = `v${Number(draft.revision || 0)}`
+    renderContentSelects(catalog)
+
+    featureToggles.innerHTML = (catalog.features || []).map(feature => {
+      const enabled = draft.features?.[feature] !== false
+      return `<label class="feature-toggle${enabled ? '' : ' is-off'}"><input type="checkbox" data-content-feature="${escapeHtml(feature)}" ${enabled ? 'checked' : ''}><span>${escapeHtml(contentFeatureLabels[feature] || feature)}</span><i class="fa-solid ${enabled ? 'fa-eye' : 'fa-eye-slash'}"></i></label>`
+    }).join('')
+
+    const hidden = new Set(draft.hiddenCaseIds || [])
+    builtInCaseToggles.innerHTML = (catalog.builtInCases || []).map(caseConfig => {
+      const enabled = !hidden.has(caseConfig.id)
+      return `<label class="built-in-case-toggle${enabled ? '' : ' is-off'}"><input type="checkbox" data-built-in-case="${escapeHtml(caseConfig.id)}" ${enabled ? 'checked' : ''}><span>${escapeHtml(caseConfig.name)}<small>${escapeHtml(caseConfig.category)}</small></span><i class="fa-solid ${enabled ? 'fa-eye' : 'fa-eye-slash'}"></i></label>`
+    }).join('')
+
+    const customCases = Array.isArray(draft.customCases) ? draft.customCases : []
+    $('#customCaseCount').textContent = `${customCases.length} / 24`
+    customCaseList.innerHTML = customCases.length
+      ? customCases.map(caseConfig => `<article class="custom-case-row${caseConfig.enabled === false ? ' is-off' : ''}" data-custom-case="${escapeHtml(caseConfig.id)}"><i class="fa-solid fa-box-open"></i><div><strong>${escapeHtml(caseConfig.name)}</strong><small>${escapeHtml(caseConfig.id)} · ${escapeHtml(caseConfig.poolKind)} · ${caseConfig.enabled === false ? 'приховано' : 'готово до публікації'}</small></div><button class="small-button danger" type="button" data-remove-custom-case title="Прибрати з чернетки"><i class="fa-solid fa-trash"></i></button></article>`).join('')
+      : '<p class="empty-line">Власних кейсів у чернетці ще немає.</p>'
+  }
+
+  function updateDraft(mutator) {
+    if (!state.content?.draft) return
+    const nextDraft = copyContent(state.content.draft)
+    mutator(nextDraft)
+    state.content = { ...state.content, draft: nextDraft }
+    renderContent()
+  }
+
+  async function saveContent(action, successMessage) {
+    if (!state.content?.draft || !canGame('configure')) return
+    const buttons = ['#saveContentDraftButton', '#publishContentButton', '#resetContentDraftButton'].map($)
+    buttons.forEach(button => { if (button) button.disabled = true })
+    try {
+      const payload = { action, revision: state.content.draft.revision }
+      if (action === 'save_draft' || action === 'publish') payload.draft = state.content.draft
+      const data = await api('/api/admin/content', { method: 'POST', body: JSON.stringify(payload) })
+      state.content = data.content || state.content
+      state.audit = data.audit || state.audit
+      renderContent()
+      renderAudit()
+      showToast(successMessage)
+    } catch (error) {
+      showToast(error.message, 'error')
+    } finally {
+      buttons.forEach(button => { if (button) button.disabled = false })
+    }
+  }
+
   function renderAll() {
     renderIdentity()
     renderRoleSelect()
@@ -413,6 +508,7 @@
     renderTeam()
     renderAudit()
     renderGame()
+    renderContent()
   }
 
   function renderInvite(invite) {
@@ -435,6 +531,14 @@
       state.audit = audit.audit || []
       const roleId = me.me?.role?.id || me.me?.roleId || (typeof me.me?.role === 'string' ? me.me.role : '')
       state.gameCapabilities = resolveGameCapabilities(me.gameCapabilities, roleId)
+      if (canGame('configure')) {
+        const content = await api('/api/admin/content')
+        state.content = content.content || null
+        state.contentCatalog = content.catalog || null
+      } else {
+        state.content = null
+        state.contentCatalog = null
+      }
       renderAll()
       showPanel()
       setHeader('Захищена сесія', 'ready')
@@ -445,6 +549,8 @@
       state.roles = []
       state.assignableRoles = []
       state.gameCapabilities = {}
+      state.content = null
+      state.contentCatalog = null
       showGate()
       if (error.status !== 401 && !quiet) showToast(error.message, 'error')
     } finally {
@@ -721,6 +827,86 @@
     showToast('Одноразове посилання скопійовано.')
   })
 
+  featureToggles.addEventListener('change', event => {
+    const input = event.target.closest('[data-content-feature]')
+    if (!input || !canGame('configure')) return
+    updateDraft(draft => {
+      draft.features = { ...(draft.features || {}), [input.dataset.contentFeature]: input.checked }
+    })
+  })
+
+  builtInCaseToggles.addEventListener('change', event => {
+    const input = event.target.closest('[data-built-in-case]')
+    if (!input || !canGame('configure')) return
+    updateDraft(draft => {
+      const hidden = new Set(draft.hiddenCaseIds || [])
+      if (input.checked) hidden.delete(input.dataset.builtInCase)
+      else hidden.add(input.dataset.builtInCase)
+      draft.hiddenCaseIds = [...hidden]
+    })
+  })
+
+  $('#customCaseForm').addEventListener('submit', event => {
+    event.preventDefault()
+    if (!canGame('configure') || !state.content?.draft) return
+    const id = $('#customCaseId').value.trim().toLowerCase()
+    const name = $('#customCaseName').value.trim()
+    if (!/^[a-z0-9][a-z0-9_-]{1,39}$/.test(id) || !name) {
+      showToast('Вкажи ID латиницею, цифрами, _ або - та назву кейса.', 'error')
+      return
+    }
+    const builtIn = new Set((state.contentCatalog?.builtInCases || []).map(entry => entry.id))
+    if (builtIn.has(id) || (state.content.draft.customCases || []).some(entry => entry.id === id)) {
+      showToast('Цей ID кейса вже зайнятий.', 'error')
+      return
+    }
+    if ((state.content.draft.customCases || []).length >= 24) {
+      showToast('У чернетці може бути максимум 24 власні кейси.', 'error')
+      return
+    }
+    updateDraft(draft => {
+      draft.customCases = [...(draft.customCases || []), {
+        id,
+        name,
+        description: $('#customCaseDescription').value.trim(),
+        category: $('#customCaseCategory').value,
+        theme: $('#customCaseTheme').value,
+        badge: $('#customCaseBadge').value.trim(),
+        poolKind: $('#customCasePoolKind').value,
+        weapons: splitContentList($('#customCaseWeapons').value),
+        rarities: splitContentList($('#customCaseRarities').value),
+        terms: splitContentList($('#customCaseTerms').value),
+        artwork: $('#customCaseArtwork').value.trim(),
+        enabled: $('#customCaseEnabled').checked,
+        order: (draft.customCases || []).length,
+      }]
+    })
+    event.currentTarget.reset()
+    $('#customCaseEnabled').checked = true
+    renderContent()
+    showToast('Кейс додано до локальної чернетки. Натисни «Зберегти чернетку».')
+  })
+
+  customCaseList.addEventListener('click', event => {
+    const button = event.target.closest('[data-remove-custom-case]')
+    const row = button?.closest('[data-custom-case]')
+    const id = row?.dataset.customCase || ''
+    if (!id || !canGame('configure')) return
+    updateDraft(draft => {
+      draft.customCases = (draft.customCases || []).filter(entry => entry.id !== id)
+    })
+  })
+
+  $('#saveContentDraftButton').addEventListener('click', () => void saveContent('save_draft', 'Чернетку збережено. Гравці її ще не бачать.'))
+  $('#publishContentButton').addEventListener('click', () => {
+    if (!window.confirm('Опублікувати поточну чернетку на сайті й Android?')) return
+    void saveContent('publish', 'Зміни опубліковано для сайту й Android.')
+  })
+  $('#resetContentDraftButton').addEventListener('click', () => {
+    if (!window.confirm('Скасувати всі незбережені зміни чернетки?')) return
+    void saveContent('reset_draft', 'Чернетку повернено до опублікованої версії.')
+  })
+
   logoutButton.addEventListener('click', async () => {
     try { await api('/api/admin/logout', { method: 'POST', body: '{}' }) } catch {}
     state.me = null
@@ -734,6 +920,8 @@
     state.player = null
     state.catalog = []
     state.selectedSkinId = ''
+    state.content = null
+    state.contentCatalog = null
     showGate()
   })
 

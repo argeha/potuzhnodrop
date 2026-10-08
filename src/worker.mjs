@@ -121,6 +121,33 @@ const ADMIN_GAME_MAX_LEVEL = Math.floor(ADMIN_GAME_MAX_XP / ADMIN_GAME_PLAYER_LE
 const ADMIN_GAME_BLOCK_REASON_MAX = 240
 const ADMIN_PLAYER_DIRECTORY_MAX = 5_000
 const ADMIN_PLAYER_DIRECTORY_PAGE_SIZE = 600
+const ADMIN_CONTENT_CASE_LIMIT = 24
+const ADMIN_CONTENT_CASE_ID = /^[a-z0-9][a-z0-9_-]{1,39}$/
+const ADMIN_CONTENT_FEATURES = Object.freeze(['cases', 'upgrader', 'battle', 'royale', 'contract', 'tasks', 'battlePass', 'seasonalEvents'])
+const ADMIN_CONTENT_CASE_CATEGORIES = new Set(['hot', 'knives', 'gloves', 'weapons', 'budget'])
+const ADMIN_CONTENT_CASE_THEMES = new Set(['gray', 'blue', 'purple', 'gold', 'red', 'pink', 'emerald'])
+const ADMIN_CONTENT_POOL_KINDS = new Set(['all', 'weapons', 'knives', 'gloves'])
+const ADMIN_CONTENT_RARITIES = new Set(['Consumer Grade', 'Industrial Grade', 'Mil-Spec Grade', 'Restricted', 'Classified', 'Covert', 'Contraband', 'Extraordinary'])
+const ADMIN_CONTENT_BUILT_IN_CASES = Object.freeze([
+  { id: 'icewire_cache', name: 'ICEWIRE Cache', category: 'hot' },
+  { id: 'halloween_night', name: 'Нічний кейс', category: 'hot' },
+  { id: 'dragon_lair', name: "Dragon's Lair", category: 'hot' },
+  { id: 'covert_ops', name: 'Covert Ops', category: 'hot' },
+  { id: 'beast_mode', name: 'Beast Mode', category: 'hot' },
+  { id: 'butterfly_fever', name: 'Butterfly Fever', category: 'knives' },
+  { id: 'karambit_rush', name: 'Karambit Rush', category: 'knives' },
+  { id: 'knife_club', name: 'Knife Club', category: 'knives' },
+  { id: 'sport_gloves', name: 'Sport Edition', category: 'gloves' },
+  { id: 'moto_special', name: 'Moto & Specialist', category: 'gloves' },
+  { id: 'awp_king', name: 'AWP King', category: 'weapons' },
+  { id: 'ak47_master', name: 'AK-47 Master', category: 'weapons' },
+  { id: 'm4_storm', name: 'M4A4 / M4A1-S', category: 'weapons' },
+  { id: 'budget_covert', name: 'Budget Covert', category: 'budget' },
+  { id: 'lucky_strike', name: 'Lucky Strike', category: 'budget' },
+  { id: 'farm_rush', name: 'Farm Rush', category: 'budget' },
+])
+const ADMIN_CONTENT_BUILT_IN_CASE_IDS = new Set(ADMIN_CONTENT_BUILT_IN_CASES.map(entry => entry.id))
+const ADMIN_CONTENT_RESERVED_CASE_IDS = new Set([...ADMIN_CONTENT_BUILT_IN_CASE_IDS, 'budget', 'standard', 'premium', 'legendary'])
 // Referral rewards are virtual and server-owned. A link can be shared freely,
 // but only one verified Steam identity can ever become a recruit, and every
 // milestone below has a permanent receipt.
@@ -1348,6 +1375,102 @@ function normalizeAdminState(value, now) {
     .sort((left, right) => right.at - left.at)
     .slice(0, ADMIN_MAX_AUDIT_EVENTS)
   return { version: 2, members: memberMap, sessions: Object.fromEntries(sessions), invites, audit }
+}
+
+function cleanAdminContentArtwork(value) {
+  const source = cleanText(value, 1_024)
+  if (/^\/assets\/[A-Za-z0-9_./-]+$/i.test(source)) return source
+  try {
+    const url = new URL(source)
+    return url.protocol === 'https:' ? url.href : ''
+  } catch {
+    return ''
+  }
+}
+
+function defaultAdminContentConfig() {
+  return {
+    version: 1,
+    revision: 0,
+    updatedAt: 0,
+    features: Object.fromEntries(ADMIN_CONTENT_FEATURES.map(feature => [feature, true])),
+    hiddenCaseIds: [],
+    customCases: [],
+  }
+}
+
+function normalizeAdminContentCase(value, index = 0) {
+  const id = cleanText(value?.id, 40).toLowerCase()
+  if (!ADMIN_CONTENT_CASE_ID.test(id) || ADMIN_CONTENT_RESERVED_CASE_IDS.has(id)) return null
+  const name = cleanText(value?.name, 64)
+  if (!name) return null
+  const category = cleanText(value?.category, 24)
+  const theme = cleanText(value?.theme, 24)
+  const poolKind = cleanText(value?.poolKind, 24)
+  const unique = values => [...new Set(values)].slice(0, 8)
+  const weapons = unique((Array.isArray(value?.weapons) ? value.weapons : [])
+    .map(entry => cleanText(entry, 64)).filter(Boolean))
+  const rarities = unique((Array.isArray(value?.rarities) ? value.rarities : [])
+    .map(entry => cleanText(entry, 48)).filter(entry => ADMIN_CONTENT_RARITIES.has(entry)))
+  const terms = unique((Array.isArray(value?.terms) ? value.terms : [])
+    .map(entry => cleanText(entry, 48)).filter(Boolean))
+  return {
+    id,
+    name,
+    description: cleanText(value?.description, 220) || 'Авторський кейс із віртуальною колекцією.',
+    category: ADMIN_CONTENT_CASE_CATEGORIES.has(category) ? category : 'hot',
+    theme: ADMIN_CONTENT_CASE_THEMES.has(theme) ? theme : 'gold',
+    badge: cleanText(value?.badge, 24) || 'LIMITED',
+    artwork: cleanAdminContentArtwork(value?.artwork),
+    poolKind: ADMIN_CONTENT_POOL_KINDS.has(poolKind) ? poolKind : 'weapons',
+    weapons,
+    rarities,
+    terms,
+    enabled: value?.enabled !== false,
+    order: boundedInteger(value?.order, 0, 9_999, index),
+  }
+}
+
+function normalizeAdminContentConfig(value, now) {
+  const defaults = defaultAdminContentConfig()
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  const rawFeatures = source.features && typeof source.features === 'object' && !Array.isArray(source.features) ? source.features : {}
+  const features = Object.fromEntries(ADMIN_CONTENT_FEATURES.map(feature => [feature, rawFeatures[feature] !== false]))
+  const hiddenCaseIds = [...new Set((Array.isArray(source.hiddenCaseIds) ? source.hiddenCaseIds : [])
+    .map(value => cleanText(value, 40).toLowerCase())
+    .filter(id => ADMIN_CONTENT_BUILT_IN_CASE_IDS.has(id)))].slice(0, ADMIN_CONTENT_BUILT_IN_CASES.length)
+  const customCases = (Array.isArray(source.customCases) ? source.customCases : [])
+    .map((entry, index) => normalizeAdminContentCase(entry, index))
+    .filter(Boolean)
+    .filter((entry, index, all) => all.findIndex(candidate => candidate.id === entry.id) === index)
+    .sort((left, right) => left.order - right.order || left.name.localeCompare(right.name, 'uk'))
+    .slice(0, ADMIN_CONTENT_CASE_LIMIT)
+  return {
+    ...defaults,
+    revision: boundedInteger(source.revision, 0, Number.MAX_SAFE_INTEGER),
+    updatedAt: boundedInteger(source.updatedAt, 0, now),
+    features,
+    hiddenCaseIds,
+    customCases,
+  }
+}
+
+function normalizeAdminContentState(value, now) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  const published = normalizeAdminContentConfig(source.published, now)
+  const draft = normalizeAdminContentConfig(source.draft ?? source.published, now)
+  return { version: 1, published, draft }
+}
+
+function adminContentCatalog() {
+  return {
+    features: ADMIN_CONTENT_FEATURES,
+    builtInCases: ADMIN_CONTENT_BUILT_IN_CASES,
+    categories: [...ADMIN_CONTENT_CASE_CATEGORIES],
+    themes: [...ADMIN_CONTENT_CASE_THEMES],
+    poolKinds: [...ADMIN_CONTENT_POOL_KINDS],
+    rarities: [...ADMIN_CONTENT_RARITIES],
+  }
 }
 
 function adminActorFromState(state, subject) {
@@ -3982,6 +4105,7 @@ export class PotuzhnoAdmin {
 
   async fetch(request) {
     const path = new URL(request.url).pathname
+    if (path === '/api/runtime-config' && request.method === 'GET') return await this.publicContent()
     if (!hasAdminOwnerPassword(this.env)) return json({ error: 'Адмін-панель ще не налаштована: додай секрет ADMIN_OWNER_PASSWORD.' }, 503)
 
     try {
@@ -3995,6 +4119,8 @@ export class PotuzhnoAdmin {
       if (path === '/api/admin/me' && request.method === 'GET') return this.me(actor)
       if (path === '/api/admin/team' && request.method === 'GET') return this.team(state, actor)
       if (path === '/api/admin/audit' && request.method === 'GET') return this.audit(state, actor)
+      if (path === '/api/admin/content' && request.method === 'GET') return await this.content(actor)
+      if (path === '/api/admin/content' && request.method === 'POST') return await this.contentMutation(request, actor)
       if (path === '/api/admin/members' && request.method === 'POST') return await this.members(request)
       if (path === '/api/admin/game/players' && request.method === 'GET') return await this.gamePlayers(request, actor)
       if (path === '/api/admin/game/player' && request.method === 'GET') return await this.gamePlayer(request, actor)
@@ -4060,6 +4186,70 @@ export class PotuzhnoAdmin {
       audit: state.audit.slice(0, 160),
       canView: Boolean(actor),
     })
+  }
+
+  async publicContent() {
+    const content = normalizeAdminContentState(await this.storage.get('admin:content'), Date.now())
+    return json({ config: content.published }, 200, { 'Cache-Control': 'public, max-age=20, s-maxage=20' })
+  }
+
+  async content(actor) {
+    if (!adminGameCapabilities(actor).configure) return adminForbidden('Твоя роль не може керувати вмістом сайту.')
+    const content = normalizeAdminContentState(await this.storage.get('admin:content'), Date.now())
+    return json({ content, catalog: adminContentCatalog() })
+  }
+
+  async contentMutation(request, actor) {
+    if (!adminGameCapabilities(actor).configure) return adminForbidden('Твоя роль не може публікувати зміни сайту.')
+    let body
+    try {
+      body = await this.readBody(request)
+    } catch {
+      return json({ error: 'Некоректні дані конфігурації.' }, 400)
+    }
+    const action = cleanText(body?.action, 32)
+    if (!['save_draft', 'publish', 'reset_draft'].includes(action)) return json({ error: 'Невідома дія конфігурації.' }, 400)
+
+    const result = await this.storage.transaction(async transaction => {
+      const now = Date.now()
+      const content = normalizeAdminContentState(await transaction.get('admin:content'), now)
+      const expectedRevision = Number.parseInt(body?.revision, 10)
+      if (!Number.isInteger(expectedRevision) || expectedRevision !== content.draft.revision) {
+        return { response: json({ error: 'Чернетка вже змінилася в іншій вкладці. Онови дані перед збереженням.' }, 409) }
+      }
+
+      let detail = ''
+      if (action === 'save_draft') {
+        const nextDraft = normalizeAdminContentConfig(body?.draft, now)
+        nextDraft.revision = content.draft.revision + 1
+        nextDraft.updatedAt = now
+        content.draft = nextDraft
+        detail = `чернетка: ${nextDraft.customCases.length} власних кейсів`
+      } else if (action === 'publish') {
+        const publishDraft = body?.draft ? normalizeAdminContentConfig(body.draft, now) : content.draft
+        content.published = { ...publishDraft, revision: content.draft.revision + 1, updatedAt: now }
+        content.draft = { ...content.published }
+        detail = `версія ${content.published.revision} для сайту й Android`
+      } else {
+        content.draft = { ...content.published, revision: content.draft.revision + 1, updatedAt: now }
+        detail = 'чернетку повернено до опублікованої версії'
+      }
+
+      const state = normalizeAdminState(await transaction.get('admin:state'), now)
+      state.audit.unshift({
+        id: randomHex(12),
+        at: now,
+        actor: actor.name,
+        action: action === 'save_draft' ? 'content_draft_saved' : action === 'publish' ? 'content_published' : 'content_draft_reset',
+        target: 'Керування сайтом',
+        detail,
+      })
+      state.audit = state.audit.slice(0, ADMIN_MAX_AUDIT_EVENTS)
+      await transaction.put('admin:content', content)
+      await transaction.put('admin:state', state)
+      return { response: json({ content, audit: state.audit.slice(0, 160) }) }
+    })
+    return result.response
   }
 
   async profileAdminRequest(accountId, payload) {
@@ -4515,6 +4705,7 @@ export default {
       }
       const limited = await rateLimitResponse(request, env, path)
       if (limited) return mobileCorsResponse(request, limited)
+      if (path === '/api/runtime-config') return mobileCorsResponse(request, await adminResponse(request, env))
       if (path.startsWith('/api/admin/')) return mobileCorsResponse(request, await adminResponse(request, env))
       return mobileCorsResponse(request, await (await stateForRequest(request, env, path)).fetch(request))
     }

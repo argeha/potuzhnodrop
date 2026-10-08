@@ -9,10 +9,10 @@
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="/css/tailwind.css?v=6.9.5">
+<link rel="stylesheet" href="/css/tailwind.css?v=6.9.6">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/css/admin.css?v=6.9.5">
+<link rel="stylesheet" href="/css/admin.css?v=6.9.6">
 </head>
 <body>
 <div class="admin-shell">
@@ -70,6 +70,50 @@
         <div class="protection-state"><i class="fa-solid fa-lock"></i><strong>Увімкнено</strong></div>
         <p>Власника не можна понизити, призупинити, видалити або змінити через API — навіть повному адміну.</p>
       </article>
+    </section>
+
+    <section class="panel content-panel hidden" id="contentPanel" aria-labelledby="contentTitle">
+      <div class="section-head content-head">
+        <div><p class="eyebrow">КОНТЕНТ І РЕЖИМИ</p><h2 id="contentTitle">Керування продуктом</h2><p>Спершу збережи чернетку, перевір її, а потім опублікуй одну версію для сайту й Android.</p></div>
+        <div class="content-version"><span>Опубліковано <b id="contentPublishedRevision">—</b></span><span>Чернетка <b id="contentDraftRevision">—</b></span></div>
+      </div>
+      <div id="contentUnavailable" class="game-unavailable hidden"><i class="fa-solid fa-lock"></i> Твоя роль не має доступу до керування вмістом.</div>
+      <div id="contentWorkspace" class="content-workspace hidden">
+        <section class="content-card">
+          <div class="form-heading"><i class="fa-solid fa-sliders"></i><span>Режими сайту</span></div>
+          <p class="form-hint"><i class="fa-solid fa-circle-info"></i> Вимкнений режим не показується в меню, на головній і за прямим посиланням.</p>
+          <div id="featureToggles" class="feature-toggles" aria-label="Перемикачі режимів"></div>
+        </section>
+        <section class="content-card case-visibility-card">
+          <div class="form-heading"><i class="fa-solid fa-box-open"></i><span>Вбудовані кейси</span></div>
+          <p class="form-hint"><i class="fa-solid fa-eye-slash"></i> Прихований кейс лишається в коді, але не доступний гравцям.</p>
+          <div id="builtInCaseToggles" class="built-in-case-toggles"></div>
+        </section>
+        <section class="content-card custom-case-card">
+          <div class="section-head"><div><p class="eyebrow">КОНСТРУКТОР</p><h3>Новий кейс</h3></div><span class="count-pill" id="customCaseCount">0 / 24</span></div>
+          <form id="customCaseForm" class="custom-case-form">
+            <label>Технічний ID<input id="customCaseId" maxlength="40" pattern="[a-z0-9][a-z0-9_-]{1,39}" placeholder="streamer-argeha" required></label>
+            <label>Назва<input id="customCaseName" maxlength="64" placeholder="ARGEHA Stream Case" required></label>
+            <label class="wide">Опис<input id="customCaseDescription" maxlength="220" placeholder="Лімітований кейс для стріму"></label>
+            <label>Категорія<select id="customCaseCategory"></select></label>
+            <label>Тема<select id="customCaseTheme"></select></label>
+            <label>Бейдж<input id="customCaseBadge" maxlength="24" placeholder="STREAMER"></label>
+            <label>Пул скінів<select id="customCasePoolKind"></select></label>
+            <label>Зброя через кому<input id="customCaseWeapons" maxlength="300" placeholder="AK-47, AWP"></label>
+            <label>Рідкості через кому<input id="customCaseRarities" maxlength="300" placeholder="Restricted, Classified, Covert"></label>
+            <label class="wide">Слова в назві скіну через кому<input id="customCaseTerms" maxlength="480" placeholder="Doppler, Fade, Neon"></label>
+            <label class="wide">Обкладинка (необов’язково)<input id="customCaseArtwork" type="url" maxlength="1024" placeholder="https://… або /assets/cases/my-case.png"></label>
+            <label class="case-enabled"><input id="customCaseEnabled" type="checkbox" checked> Показувати після публікації</label>
+            <button class="primary-button" id="addCustomCaseButton" type="submit"><i class="fa-solid fa-plus"></i> Додати до чернетки</button>
+          </form>
+          <div id="customCaseList" class="custom-case-list" aria-live="polite"></div>
+        </section>
+      </div>
+      <div class="content-actions">
+        <button id="saveContentDraftButton" class="small-button" type="button"><i class="fa-solid fa-floppy-disk"></i> Зберегти чернетку</button>
+        <button id="resetContentDraftButton" class="small-button danger" type="button"><i class="fa-solid fa-rotate-left"></i> Скасувати чернетку</button>
+        <button id="publishContentButton" class="primary-button" type="button"><i class="fa-solid fa-tower-broadcast"></i> Опублікувати всюди</button>
+      </div>
     </section>
 
     <section class="panel event-preview-panel hidden" id="eventPreviewPanel" aria-labelledby="eventPreviewTitle">
@@ -174,6 +218,6 @@
   </main>
 </div>
 <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
-<script src="/js/admin.js?v=6.9.5" defer></script>
+<script src="/js/admin.js?v=6.9.6" defer></script>
 </body>
 </html>

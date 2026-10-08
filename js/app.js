@@ -28,11 +28,37 @@ const STORAGE = {
 };
 
 const PAGES = ['hub', 'upgrader', 'case', 'battle', 'royale', 'contract', 'tasks', 'profile', 'stats', 'about'];
+const RUNTIME_PAGE_FEATURES = Object.freeze({
+  upgrader: 'upgrader',
+  case: 'cases',
+  battle: 'battle',
+  royale: 'royale',
+  contract: 'contract',
+  tasks: 'tasks'
+});
+const RUNTIME_CONTENT_FEATURES = Object.freeze(['cases', 'upgrader', 'battle', 'royale', 'contract', 'tasks', 'battlePass', 'seasonalEvents']);
+const RUNTIME_CASE_CATEGORIES = new Set(['hot', 'knives', 'gloves', 'weapons', 'budget']);
+const RUNTIME_CASE_THEMES = new Set(['gray', 'blue', 'purple', 'gold', 'red', 'pink', 'emerald']);
+const RUNTIME_CASE_POOL_KINDS = new Set(['all', 'weapons', 'knives', 'gloves']);
+const RUNTIME_CASE_RARITIES = new Set(['Consumer Grade', 'Industrial Grade', 'Mil-Spec Grade', 'Restricted', 'Classified', 'Covert', 'Contraband', 'Extraordinary']);
+const DEFAULT_RUNTIME_CONTENT = Object.freeze({
+  revision: 0,
+  features: Object.freeze(Object.fromEntries(RUNTIME_CONTENT_FEATURES.map(feature => [feature, true]))),
+  hiddenCaseIds: Object.freeze([]),
+  customCases: Object.freeze([])
+});
+let runtimeContent = DEFAULT_RUNTIME_CONTENT;
+let runtimeContentLoaded = false;
 
 let currentPage = null;
 function showPage(id) {
   renderHalloweenSeasonShell();
   if (!PAGES.includes(id)) id = 'hub';
+  const requestedId = id;
+  if (!isRuntimePageEnabled(id)) {
+    id = 'hub';
+    if (requestedId !== 'hub') showToast('Цей режим зараз приховано адміністрацією.', 'info');
+  }
   if (currentPage === id && document.querySelector(`[data-page="${id}"]:not(.hidden)`)) {
     return;
   }
@@ -1052,8 +1078,8 @@ const CASE_ARTWORK = Object.freeze({
   farm_rush:        '/assets/cases/farm-rush-v3.png'
 });
 
-function createCaseArtwork(caseId, caseName, theme) {
-  const artwork = CASE_ARTWORK[caseId];
+function createCaseArtwork(caseId, caseName, theme, customArtwork = '') {
+  const artwork = customArtwork || CASE_ARTWORK[caseId];
   if (!artwork) return createCaseSVG(theme || 'gold');
   return `<img src="${artwork}" alt="${escapeHtml(caseName)}" class="case-art" loading="lazy" onerror="handleCaseArtworkError(this, '${escapeHtml(theme || 'gold')}')">`;
 }
@@ -1065,6 +1091,127 @@ function handleCaseArtworkError(image, theme = 'gold') {
   template.innerHTML = createCaseSVG(theme);
   const fallback = template.content.firstElementChild;
   if (fallback) image.replaceWith(fallback);
+}
+
+function normalizeRuntimeContent(value) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const rawFeatures = source.features && typeof source.features === 'object' && !Array.isArray(source.features) ? source.features : {};
+  const features = Object.fromEntries(RUNTIME_CONTENT_FEATURES.map(feature => [feature, rawFeatures[feature] !== false]));
+  const hiddenCaseIds = [...new Set((Array.isArray(source.hiddenCaseIds) ? source.hiddenCaseIds : [])
+    .map(id => cleanText(id, 40).toLowerCase())
+    .filter(id => /^[a-z0-9_]{2,40}$/.test(id)))].slice(0, 32);
+  const customCases = (Array.isArray(source.customCases) ? source.customCases : [])
+    .map((entry, index) => {
+      const id = cleanText(entry?.id, 40).toLowerCase();
+      const name = cleanText(entry?.name, 64);
+      if (!/^[a-z0-9_]{2,40}$/.test(id) || !name || CASE_TYPES[id]) return null;
+      const unique = (values, limit = 8) => [...new Set(values)].slice(0, limit);
+      const artworkSource = cleanText(entry?.artwork, 1024);
+      let artwork = '';
+      if (/^\/assets\/[A-Za-z0-9_./-]+$/i.test(artworkSource)) artwork = artworkSource;
+      else {
+        try {
+          const url = new URL(artworkSource);
+          if (url.protocol === 'https:') artwork = url.href;
+        } catch {}
+      }
+      const category = cleanText(entry?.category, 24);
+      const theme = cleanText(entry?.theme, 24);
+      const poolKind = cleanText(entry?.poolKind, 24);
+      return {
+        id,
+        name,
+        desc: cleanText(entry?.description, 220) || 'Авторський кейс із віртуальною колекцією.',
+        category: RUNTIME_CASE_CATEGORIES.has(category) ? category : 'hot',
+        theme: RUNTIME_CASE_THEMES.has(theme) ? theme : 'gold',
+        badge: cleanText(entry?.badge, 24) || 'LIMITED',
+        badgeClass: 'badge-exclusive',
+        artwork,
+        poolKind: RUNTIME_CASE_POOL_KINDS.has(poolKind) ? poolKind : 'weapons',
+        weapons: unique((Array.isArray(entry?.weapons) ? entry.weapons : []).map(value => cleanText(value, 64)).filter(Boolean)),
+        rarities: unique((Array.isArray(entry?.rarities) ? entry.rarities : []).map(value => cleanText(value, 48)).filter(value => RUNTIME_CASE_RARITIES.has(value))),
+        terms: unique((Array.isArray(entry?.terms) ? entry.terms : []).map(value => cleanText(value, 48)).filter(Boolean)),
+        enabled: entry?.enabled !== false,
+        order: clampNumber(entry?.order, 0, 9_999, index),
+      };
+    })
+    .filter(Boolean)
+    .filter((entry, index, all) => all.findIndex(candidate => candidate.id === entry.id) === index)
+    .sort((left, right) => left.order - right.order || left.name.localeCompare(right.name, 'uk'))
+    .slice(0, 24);
+  return { revision: clampNumber(source.revision, 0, Number.MAX_SAFE_INTEGER, 0), features, hiddenCaseIds, customCases };
+}
+
+function isRuntimeFeatureEnabled(feature) {
+  return runtimeContent?.features?.[feature] !== false;
+}
+
+function isRuntimePageEnabled(page) {
+  const feature = RUNTIME_PAGE_FEATURES[page];
+  return !feature || isRuntimeFeatureEnabled(feature);
+}
+
+function runtimeCustomCaseConfig(caseType) {
+  return runtimeContent.customCases.find(config => config.id === caseType) || null;
+}
+
+function runtimeCaseFilter(config) {
+  return skin => {
+    if (config.poolKind === 'weapons' && !isWeaponSkin(skin)) return false;
+    if (config.poolKind === 'knives' && !isKnifeSkin(skin)) return false;
+    if (config.poolKind === 'gloves' && !isGloveSkin(skin)) return false;
+    if (config.weapons.length && !config.weapons.some(weapon => cleanText(skin?.weapon, 64).toLowerCase() === weapon.toLowerCase())) return false;
+    if (config.rarities.length && !config.rarities.includes(cleanText(skin?.rarity, 48))) return false;
+    if (config.terms.length && !config.terms.some(term => skinNameIncludes(skin, term))) return false;
+    return true;
+  };
+}
+
+function getRuntimeCaseConfig(caseType) {
+  const config = runtimeCustomCaseConfig(caseType);
+  return config ? { ...config, filter: runtimeCaseFilter(config) } : null;
+}
+
+function isRuntimeCaseVisible(caseType) {
+  const custom = runtimeCustomCaseConfig(caseType);
+  if (custom) return custom.enabled !== false && isRuntimeFeatureEnabled('cases');
+  return isRuntimeFeatureEnabled('cases') && !runtimeContent.hiddenCaseIds.includes(caseType);
+}
+
+function getVisibleCaseEntries() {
+  const builtIn = Object.entries(CASE_TYPES)
+    .filter(([id, config]) => !config.aliasTo && isRuntimeCaseVisible(id) && (!config.seasonal || getSeasonalEventStatus(config.seasonal).active));
+  const custom = runtimeContent.customCases
+    .filter(config => isRuntimeCaseVisible(config.id))
+    .map(config => [config.id, getRuntimeCaseConfig(config.id)]);
+  return [...builtIn, ...custom];
+}
+
+function applyRuntimeContent() {
+  Object.entries(RUNTIME_PAGE_FEATURES).forEach(([page, feature]) => {
+    const hidden = !isRuntimeFeatureEnabled(feature);
+    document.querySelectorAll(`[data-nav="${page}"], [data-mobile-nav="${page}"]`).forEach(element => element.classList.toggle('hidden', hidden));
+    document.querySelectorAll(`[onclick*="showPage('${page}')"]`).forEach(element => element.classList.toggle('hidden', hidden));
+  });
+  if (!isRuntimeFeatureEnabled('battlePass')) document.getElementById('battlePass')?.replaceChildren();
+  if (currentPage && !isRuntimePageEnabled(currentPage)) showPage('hub');
+  renderCaseCatalog();
+  renderBattlePass();
+  renderGameHub();
+}
+
+async function loadRuntimeContent() {
+  try {
+    const response = await fetch(gameApiUrl('/api/runtime-config'), { headers: { Accept: 'application/json' } });
+    if (!response.ok) return;
+    const data = await response.json();
+    runtimeContent = normalizeRuntimeContent(data?.config);
+    runtimeContentLoaded = true;
+    applyRuntimeContent();
+  } catch {
+    // Built-in content remains available while an offline Android session or a
+    // temporary Worker issue prevents the latest published configuration.
+  }
 }
 
 const TASK_POOL = [
@@ -2015,6 +2162,14 @@ function applyHalloweenSeasonCopy(active) {
 }
 
 function renderHalloweenSeasonShell() {
+  if (!isRuntimeFeatureEnabled('seasonalEvents')) {
+    document.body.classList.remove('halloween-season', 'winter-season');
+    document.body.dataset.nightfallPhase = '';
+    document.body.dataset.icewirePhase = '';
+    document.getElementById('seasonSignal')?.classList.add('hidden');
+    applyHalloweenSeasonCopy(null);
+    return;
+  }
   const season = getActiveSeason();
   const status = season?.status;
   document.body.classList.toggle('halloween-season', season?.kind === 'halloween');
@@ -2562,6 +2717,11 @@ function finishIcewireRoute(run) {
 }
 
 function renderSeasonalEvent() {
+  if (!isRuntimeFeatureEnabled('seasonalEvents')) {
+    document.getElementById('halloweenEvent')?.replaceChildren();
+    document.getElementById('winterEvent')?.replaceChildren();
+    return;
+  }
   const season = getActiveSeason();
   if (season?.kind === 'winter') return renderWinterEvent();
   if (season?.kind === 'halloween') return renderHalloweenEvent();
@@ -3337,6 +3497,12 @@ function battlePassRewardCopy(reward) {
 function renderBattlePass() {
   const root = document.getElementById('battlePass');
   if (!root || !gameState) return;
+  if (!isRuntimeFeatureEnabled('battlePass')) {
+    root.replaceChildren();
+    root.classList.add('hidden');
+    return;
+  }
+  root.classList.remove('hidden');
   const progress = getBattlePassProgress();
   const { pass, unlocked, currentTier, inTier } = progress;
   const rewardCell = (lane, entry) => {
@@ -5697,6 +5863,10 @@ function renderDailyTasks() {
   ensureDailyState();
   const h = document.getElementById('dailyTasks');
   if (!h) return;
+  if (!isRuntimeFeatureEnabled('tasks')) {
+    h.replaceChildren();
+    return;
+  }
   const tasks = getDailyTasks();
   const doneCount = tasks.filter(t => gameState.daily.claimed.includes(t.id)).length;
   h.innerHTML = tasks.map(t => {
@@ -5783,6 +5953,10 @@ function renderWeeklyTasks() {
   ensureWeeklyState();
   const h = document.getElementById('weeklyTasks');
   if (!h) return;
+  if (!isRuntimeFeatureEnabled('tasks')) {
+    h.replaceChildren();
+    return;
+  }
   const now = new Date();
   const day = now.getDay() || 7;
   const daysLeft = 8 - day;
@@ -6626,11 +6800,12 @@ function getCollectionForInventoryItem(item) {
 function renderCommandHub() {
   if (!gameState) return;
   ensureDailyState();
+  const tasksEnabled = isRuntimeFeatureEnabled('tasks');
   const level = getPlayerLevel();
   const progress = getLevelProgress();
   const name = cleanText(account?.nick || currentUser?.name || 'Гравець', 28) || 'Гравець';
   const collectionValue = userInventory.reduce((sum, item) => sum + verifiedInventoryMarketPrice(item), 0);
-  const taskList = getDailyTasks();
+  const taskList = tasksEnabled ? getDailyTasks() : [];
   const claimed = new Set(gameState.daily?.claimed || []);
   const openTasks = taskList.map(task => {
     const raw = Math.max(0, Number(task.value(gameState.daily)) || 0);
@@ -6664,7 +6839,9 @@ function renderCommandHub() {
 
   const focus = document.getElementById('hubDailyFocus');
   if (focus) {
-    focus.innerHTML = openTasks.length
+    focus.innerHTML = !tasksEnabled
+      ? '<div class="command-hub-empty"><i class="fa-solid fa-eye-slash"></i><strong>Завдання тимчасово приховано</strong><span>Адміністрація готує наступну добірку цілей.</span></div>'
+      : openTasks.length
       ? openTasks.map(entry => {
         const goalLabel = entry.task.goal >= 1000 ? formatCredits(entry.task.goal) : String(entry.task.goal);
         const currentLabel = entry.task.goal >= 1000 ? formatCredits(entry.current) : String(entry.current);
@@ -6768,6 +6945,10 @@ function getSignalJournal(progress) {
 function renderSignalSeasonHub() {
   const root = document.getElementById('hubSignalSeason');
   if (!root || !gameState) return;
+  if (!isRuntimeFeatureEnabled('seasonalEvents')) {
+    root.replaceChildren();
+    return;
+  }
   const progress = getSignalCampaignProgress();
   const next = progress.next;
   const claimed = progress.state.claimed.length;
@@ -6780,6 +6961,10 @@ function renderSignalSeasonHub() {
 function renderSignalSeason() {
   const root = document.getElementById('signalSeason');
   if (!root || !gameState) return;
+  if (!isRuntimeFeatureEnabled('seasonalEvents')) {
+    root.replaceChildren();
+    return;
+  }
   const progress = getSignalCampaignProgress();
   const journal = getSignalJournal(progress);
   const phase = progress.completed >= progress.total ? 'ЛЕГЕНДА' : progress.completed >= 4 ? 'РЕЗОНАНС' : progress.completed >= 2 ? 'ПОСИЛЕННЯ' : 'СКАНУВАННЯ';
@@ -9191,7 +9376,7 @@ const CASE_MARKET_SAMPLE_SIZE = 160;
 const caseMarketSyncPromises = new Map();
 
 function resolveCaseConfig(caseType) {
-  let cfg = CASE_TYPES[caseType] || CASE_TYPES.budget_covert;
+  let cfg = getRuntimeCaseConfig(caseType) || CASE_TYPES[caseType] || CASE_TYPES.budget_covert;
   if (cfg.aliasTo) cfg = CASE_TYPES[cfg.aliasTo] || cfg;
   return cfg;
 }
@@ -9636,7 +9821,12 @@ function renderCaseCatalog() {
     return;
   }
 
-  const validEntries = Object.entries(CASE_TYPES).filter(([id, c]) => !c.aliasTo && (!c.seasonal || getSeasonalEventStatus(c.seasonal).active));
+  if (!isRuntimeFeatureEnabled('cases')) {
+    grid.innerHTML = '<div class="col-span-full rounded-2xl border border-slate-700 bg-slate-900/40 px-5 py-10 text-center"><i class="fa-solid fa-eye-slash mb-3 text-3xl text-slate-400"></i><p class="font-heading text-xl font-extrabold uppercase tracking-wide text-white">Каталог тимчасово приховано</p><p class="mt-2 text-sm text-slate-400">Повернися пізніше — команда готує новий контент.</p></div>';
+    return;
+  }
+
+  const validEntries = getVisibleCaseEntries();
   const isCollectionView = currentCaseCategory === 'collections';
   const filtered = validEntries.filter(([id, c]) => {
     if (currentCaseCategory === 'all' || isCollectionView) return true;
@@ -9681,7 +9871,7 @@ function renderCaseCatalog() {
         <!-- 3D Case Preview -->
         <div class="p-5 flex flex-col items-center justify-center text-center cursor-pointer" onclick="openPowerCase('${id}')">
           <div class="w-28 h-28 sm:w-32 sm:h-32 case-preview-svg group-hover:scale-105 transition-transform duration-300">
-            ${createCaseArtwork(id, c.name, c.theme)}
+            ${createCaseArtwork(id, c.name, c.theme, c.artwork)}
           </div>
           <h3 class="font-heading mt-3 text-2xl font-black uppercase text-white tracking-wider truncate w-full group-hover:text-amber-300 transition-colors">${c.name}</h3>
           <p class="text-[11px] text-gray-400 truncate w-full mt-0.5">${c.desc}</p>
@@ -9765,6 +9955,10 @@ function updateCaseCostDisplay() {
 }
 
 async function openPowerCase(caseType = 'budget_covert') {
+  if (caseType !== 'free' && !isRuntimeCaseVisible(caseType)) {
+    showToast('Цей кейс зараз приховано адміністрацією.', 'info');
+    return;
+  }
   const cfg = resolveCaseConfig(caseType);
 
   const seasonalStatus = cfg.seasonal ? getSeasonalEventStatus(cfg.seasonal) : null;
@@ -10350,6 +10544,10 @@ function repeatDropAction() {
 }
 
 async function showCaseDetails(caseType) {
+  if (!isRuntimeCaseVisible(caseType)) {
+    showToast('Цей кейс зараз недоступний.', 'info');
+    return;
+  }
   const cfg = resolveCaseConfig(caseType);
 
   if (getCaseSkinPool(cfg.id).length < 8) {
@@ -13248,6 +13446,7 @@ function renderShopGrid(skins) {
 window.addEventListener('DOMContentLoaded', () => {
   initCanvas();
   loadState();
+  void loadRuntimeContent();
   captureReferralFromUrl();
   void enableHalloweenAdminPreview();
 
