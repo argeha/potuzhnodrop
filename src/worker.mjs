@@ -3288,30 +3288,55 @@ export class PotuzhnoState {
       player.steamVerifiedAt = 0
       player.avatar = ''
     }
+    // `communityId` is intentionally unique per browser/WebView.  It cannot
+    // identify one person across the site and Android, though.  Public live
+    // activity must therefore use a stable, server-authenticated identity.
+    // The namespaced digest keeps the raw Steam ID out of the community state keys
+    // and still makes both signed-in clients address the same player record.
+    const communityPlayerId = sessionSteamId && sessionSteamId === claimedSteamId
+      ? await sha256(`potuzhno-community-steam:${sessionSteamId}`)
+      : visitorHash
+    player.id = communityPlayerId
     const rawEvent = body?.event && typeof body.event === 'object'
-      ? { ...body.event, playerId: visitorHash, name: player.name, profileId: player.profileId, level: player.level, prestige: player.prestige, at: now }
+      ? { ...body.event, playerId: communityPlayerId, name: player.name, profileId: player.profileId, level: player.level, prestige: player.prestige, at: now }
       : null
     const event = rawEvent ? normalizeCommunityEvent(rawEvent, now) : null
     const circuitPulse = body?.circuitPulse && typeof body.circuitPulse === 'object' ? body.circuitPulse : null
     const riftPulse = body?.riftPulse && typeof body.riftPulse === 'object' ? body.riftPulse : null
     const result = await this.storage.transaction(async transaction => {
       const state = normalizeCommunityState(await transaction.get('community:season'), now)
-      state.players[visitorHash] = player
-      // Normalisation cleans old duplicate heartbeats when the state is read.
-      // Do the same after writing this heartbeat so a player switching between
-      // Android and the website is never rendered twice in this response.
+      state.players[communityPlayerId] = player
+      // Older builds stored public activity under a device hash.  Re-key the
+      // currently known legacy record while this player is online, so its
+      // latest drops do not disappear during the web/Android migration.
+      const legacyPlayerIds = []
       if (player.cloudProfileId || player.profileId) {
         for (const [id, entry] of Object.entries(state.players)) {
           const sameAccount = player.cloudProfileId && entry?.cloudProfileId === player.cloudProfileId
           const samePublicProfile = player.profileId && entry?.profileId === player.profileId
-          if (id !== visitorHash && (sameAccount || samePublicProfile)) delete state.players[id]
+          if (id !== communityPlayerId && (sameAccount || samePublicProfile)) {
+            legacyPlayerIds.push(id)
+            delete state.players[id]
+          }
         }
       }
+      if (legacyPlayerIds.length) {
+        const legacyIds = new Set(legacyPlayerIds)
+        state.events = state.events.map(entry => legacyIds.has(entry.playerId) ? { ...entry, playerId: communityPlayerId } : entry)
+        state.circuit.recent = state.circuit.recent.map(entry => legacyIds.has(entry.playerId) ? { ...entry, playerId: communityPlayerId } : entry)
+        state.rift.recent = state.rift.recent.map(entry => legacyIds.has(entry.playerId) ? { ...entry, playerId: communityPlayerId } : entry)
+        const circuitCount = legacyPlayerIds.reduce((total, id) => total + Number(state.circuit.daily[id]?.count || 0), Number(state.circuit.daily[communityPlayerId]?.count || 0))
+        legacyPlayerIds.forEach(id => delete state.circuit.daily[id])
+        if (circuitCount) state.circuit.daily[communityPlayerId] = { date: communityCircuitDayKey(), count: Math.min(COMMUNITY_CIRCUIT_DAILY_LIMIT, circuitCount) }
+        const riftCount = legacyPlayerIds.reduce((total, id) => total + Number(state.rift.daily[id]?.count || 0), Number(state.rift.daily[communityPlayerId]?.count || 0))
+        legacyPlayerIds.forEach(id => delete state.rift.daily[id])
+        if (riftCount) state.rift.daily[communityPlayerId] = { count: Math.min(COMMUNITY_RIFT_DAILY_LIMIT, riftCount) }
+      }
       if (event) state.events = [event, ...state.events.filter(entry => entry.id !== event.id)].slice(0, COMMUNITY_MAX_EVENTS)
-      if (circuitPulse && player.hidden !== true && isVerifiedSteamCommunityPlayer(player)) applyCommunityCircuitPulse(state.circuit, visitorHash, player, circuitPulse, now)
-      if (riftPulse && player.hidden !== true && isVerifiedSteamCommunityPlayer(player)) applyCommunityRiftPulse(state.rift, visitorHash, player, riftPulse, now)
+      if (circuitPulse && player.hidden !== true && isVerifiedSteamCommunityPlayer(player)) applyCommunityCircuitPulse(state.circuit, communityPlayerId, player, circuitPulse, now)
+      if (riftPulse && player.hidden !== true && isVerifiedSteamCommunityPlayer(player)) applyCommunityRiftPulse(state.rift, communityPlayerId, player, riftPulse, now)
       await transaction.put('community:season', state)
-      return communityResponse(state, visitorHash)
+      return communityResponse(state, communityPlayerId)
     })
     return json(result)
   }
