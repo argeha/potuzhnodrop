@@ -713,6 +713,9 @@ const REFERRAL_WEEKLY_OWNER_LIMIT = 40;
 // Return rates keep the virtual economy progressing without creating an
 // endless PC farm. They are applied consistently in every economy mode.
 const CASE_TARGET_RETURN_RATE = 0.88;
+// The solver aims for 88%, but the final price is also capped at 90% after
+// rounding and chance-band changes. A paid case must never settle at 100%.
+const CASE_MAX_RETURN_RATE = 0.90;
 // A paid case must always contain a genuine losing outcome. This ceiling is
 // applied after the RTP calculation so sparse themed pools cannot accidentally
 // turn into a 100% break-even case through rounding or empty probability tiers.
@@ -6710,7 +6713,10 @@ function renderSignalSeasonHub() {
   const progress = getSignalCampaignProgress();
   const next = progress.next;
   const claimed = progress.state.claimed.length;
-  root.innerHTML = `<article class="signal-season-hub-card"><div><p><i class="fa-solid fa-satellite-dish"></i> ${SIGNAL_SEASON.title}</p><h2>${progress.completed} <small>/ ${progress.total}</small> вузлів активовано</h2><span>${next ? `Наступний: ${escapeHtml(next.title)} · ${escapeHtml(next.note)}` : 'Маршрут завершено — твоя рамка вже в профілі.'}</span></div><div class="signal-season-hub-meter"><i><b style="width:${progress.percent}%"></b></i><small>${claimed}/${progress.rewards.length} нагород забрано</small></div><button type="button" onclick="showPage('tasks')">Карта Сигналу <i class="fa-solid fa-arrow-right"></i></button></article>`;
+  const phase = progress.completed >= progress.total ? 'ЛЕГЕНДА' : progress.completed >= 4 ? 'РЕЗОНАНС' : progress.completed >= 2 ? 'ПОСИЛЕННЯ' : 'СКАНУВАННЯ';
+  const nodes = progress.nodes.map(node => `<i class="${node.done ? 'is-done' : next?.id === node.id ? 'is-next' : ''}" title="${escapeHtml(node.title)}"></i>`).join('');
+  root.innerHTML = `<article class="signal-season-hub-card"><div class="signal-season-hub-beacon" aria-hidden="true"><i class="fa-solid fa-satellite-dish"></i><span>01</span></div><div class="signal-season-hub-copy"><p><i class="fa-solid fa-tower-broadcast"></i> ${SIGNAL_SEASON.title} · ФАЗА ${phase}</p><h2>${progress.completed} <small>/ ${progress.total}</small> вузлів у мережі</h2><span>${next ? `Наступний сигнал: ${escapeHtml(next.title)} · ${escapeHtml(next.note)}` : 'Маршрут завершено — стиль і рамка вже працюють у твоєму профілі.'}</span></div><div class="signal-season-hub-meter"><div class="signal-season-hub-meter-top"><strong>${progress.percent}%</strong><small>${claimed}/${progress.rewards.length} нагород</small></div><i aria-label="Прогрес сезону ${progress.percent}%"><b style="width:${progress.percent}%"></b></i><div class="signal-season-hub-nodes" aria-hidden="true">${nodes}</div></div><button type="button" data-signal-open>Відкрити Сигнал <i class="fa-solid fa-arrow-right"></i></button></article>`;
+  root.querySelector('[data-signal-open]')?.addEventListener('click', () => showPage('tasks'));
 }
 
 function renderSignalSeason() {
@@ -6718,7 +6724,14 @@ function renderSignalSeason() {
   if (!root || !gameState) return;
   const progress = getSignalCampaignProgress();
   const journal = getSignalJournal(progress);
-  const nodeMarkup = progress.nodes.map((node, index) => `<button type="button" class="signal-season-node ${node.done ? 'is-done' : progress.next?.id === node.id ? 'is-next' : ''}" data-signal-page="${escapeHtml(node.page)}"><span><i class="fa-solid ${node.done ? 'fa-check' : node.icon}"></i></span><div><em>ВУЗОЛ 0${index + 1}</em><b>${escapeHtml(node.title)}</b><small>${escapeHtml(node.done ? 'Сигнал зафіксовано' : node.note)}</small></div><i class="fa-solid ${node.done ? 'fa-circle-check' : 'fa-arrow-up-right-from-square'}"></i></button>`).join('');
+  const phase = progress.completed >= progress.total ? 'ЛЕГЕНДА' : progress.completed >= 4 ? 'РЕЗОНАНС' : progress.completed >= 2 ? 'ПОСИЛЕННЯ' : 'СКАНУВАННЯ';
+  const remainingNodes = progress.total - progress.completed;
+  const remainingNodesLabel = remainingNodes === 1 ? 'вузол' : remainingNodes < 5 ? 'вузли' : 'вузлів';
+  const nodeMarkup = progress.nodes.map((node, index) => {
+    const isNext = progress.next?.id === node.id;
+    const status = node.done ? 'Сигнал зафіксовано' : isNext ? 'Наступний сигнал' : 'Очікує маршруту';
+    return `<button type="button" class="signal-season-node ${node.done ? 'is-done' : isNext ? 'is-next' : ''}" data-signal-page="${escapeHtml(node.page)}"><span><i class="fa-solid ${node.done ? 'fa-check' : node.icon}"></i></span><div><em>ВУЗОЛ 0${index + 1}</em><b>${escapeHtml(node.title)}</b><small>${escapeHtml(node.done ? node.note : isNext ? node.note : 'Виконай попередній вузол, щоб відкрити сигнал.')}</small><strong>${status}</strong></div><i class="fa-solid ${node.done ? 'fa-circle-check' : isNext ? 'fa-satellite-dish' : 'fa-lock'}"></i></button>`;
+  }).join('');
   const rewardMarkup = progress.rewards.map(reward => {
     const claimed = progress.state.claimed.includes(reward.step);
     const ready = progress.completed >= reward.step && !claimed;
@@ -6731,8 +6744,13 @@ function renderSignalSeason() {
   const hallMarkup = hallRows.length
     ? hallRows.map((row, index) => `<button type="button" class="signal-hall-row ${row.isMe ? 'is-me' : ''}" data-signal-hall="${index}"><span>#${Number(row.rank) || index + 1}</span><b>${escapeHtml(cleanText(row.name, 24) || 'Гравець')}</b><em>LVL ${clampNumber(row.level, 1, 9999, 1)}</em></button>`).join('')
     : '<p class="signal-hall-empty"><i class="fa-solid fa-satellite-dish"></i> Перший Steam-гравець запалить Зал резонансу.</p>';
-  root.innerHTML = `<article class="signal-season-card" aria-label="Сезон Сигнал"><header class="signal-season-head"><div><p><i class="fa-solid fa-satellite-dish"></i> ПОСТІЙНА КАМПАНІЯ · ЛИШЕ КОСМЕТИКА</p><h2>СЕЗОН: <em>СИГНАЛ</em></h2><span>${progress.next ? `Твоя наступна точка — «${escapeHtml(progress.next.title)}».` : 'Усі шість вузлів зафіксовано. Легенда завершена.'}</span></div><div class="signal-season-progress"><strong>${progress.completed}<small>/${progress.total}</small></strong><span>вузлів</span><i><b style="width:${progress.percent}%"></b></i></div></header><div class="signal-season-grid"><section class="signal-season-route"><div class="signal-season-route-line" aria-hidden="true"><i style="width:${progress.percent}%"></i></div>${nodeMarkup}</section><aside class="signal-season-side"><section><header><span><i class="fa-solid fa-gift"></i> НАГОРОДИ</span><small>Стиль, не сила</small></header><div class="signal-season-rewards">${rewardMarkup}</div></section><section class="signal-season-journal"><header><span><i class="fa-solid fa-book-open"></i> ЖУРНАЛ ЛЕГЕНДИ</span><button type="button" onclick="showPage('profile')">Профіль</button></header><ul>${journalMarkup}</ul></section><section class="signal-season-hall"><header><span><i class="fa-solid fa-ranking-star"></i> ЗАЛ РЕЗОНАНСУ</span><small>спільнота</small></header><div>${hallMarkup}</div></section></aside></div><footer><i class="fa-solid fa-shield-heart"></i> Кампанія не дає PC, шансів або переваги. Вона зберігає твій стиль і прогрес у профілі.</footer></article>`;
+  const routeAction = progress.next
+    ? `<button type="button" class="signal-season-route-action" data-signal-next="${escapeHtml(progress.next.page)}"><i class="fa-solid fa-satellite-dish"></i><span><small>НАСТУПНА КООРДИНАТА</small><b>${escapeHtml(progress.next.title)}</b></span><em>${escapeHtml(progress.next.note)}</em><i class="fa-solid fa-arrow-right"></i></button>`
+    : '<div class="signal-season-route-action is-complete"><i class="fa-solid fa-star"></i><span><small>МАРШРУТ ЗАВЕРШЕНО</small><b>Твій Сигнал увійшов у легенду</b></span><em>Покажи рамку та відзнаки у своєму профілі.</em></div>';
+  root.innerHTML = `<article class="signal-season-card" aria-label="Сезон Сигнал"><header class="signal-season-head"><div class="signal-season-head-copy"><p><i class="fa-solid fa-tower-broadcast"></i> ПОСТІЙНА КАМПАНІЯ · ЛИШЕ КОСМЕТИКА</p><h2>СЕЗОН: <em>СИГНАЛ</em></h2><span>${progress.next ? `Твоя наступна точка — «${escapeHtml(progress.next.title)}». Залишай свій слід у мережі.` : 'Усі шість вузлів зафіксовано. Легенда завершена — твій стиль видно всій спільноті.'}</span><div class="signal-season-phase"><i class="fa-solid fa-satellite-dish"></i><b>ФАЗА: ${phase}</b><small>${progress.next ? `Координата ${progress.completed + 1} з ${progress.total}` : 'Усі частоти синхронізовано'}</small></div></div><div class="signal-season-orbit" aria-hidden="true"><i></i><i></i><i></i><b><i class="fa-solid fa-tower-broadcast"></i></b></div><div class="signal-season-progress" aria-label="Прогрес: ${progress.completed} з ${progress.total} вузлів"><strong>${progress.completed}<small>/${progress.total}</small></strong><span>вузлів онлайн</span><i><b style="width:${progress.percent}%"></b></i><small>${progress.percent}% сигналу</small></div></header><div class="signal-season-command-bar"><span><i class="fa-solid fa-circle-dot"></i> КАНАЛ «СИГНАЛ» АКТИВНИЙ</span><b>${progress.completed === progress.total ? 'Мережа повністю синхронізована' : `${remainingNodes} ${remainingNodesLabel} до повного резонансу`}</b><small>Нагороди косметичні · без впливу на PC та шанси</small></div><div class="signal-season-grid"><section class="signal-season-route"><header><span><i class="fa-solid fa-route"></i> МАРШРУТ СИГНАЛУ</span><small>Виконуй вузли послідовно — кожен залишає слід у профілі.</small></header><div class="signal-season-route-line" aria-hidden="true"><i style="width:${progress.percent}%"></i></div>${nodeMarkup}${routeAction}</section><aside class="signal-season-side"><section><header><span><i class="fa-solid fa-gift"></i> НАГОРОДИ</span><small>Стиль, не сила</small></header><div class="signal-season-rewards">${rewardMarkup}</div></section><section class="signal-season-journal"><header><span><i class="fa-solid fa-book-open"></i> ЖУРНАЛ ЛЕГЕНДИ</span><button type="button" onclick="showPage('profile')">Профіль</button></header><ul>${journalMarkup}</ul></section><section class="signal-season-hall"><header><span><i class="fa-solid fa-ranking-star"></i> ЗАЛ РЕЗОНАНСУ</span><small>спільнота</small></header><div>${hallMarkup}</div></section></aside></div><footer><i class="fa-solid fa-shield-heart"></i> Кампанія не дає PC, шансів або переваги. Вона зберігає твій стиль і прогрес у профілі.</footer></article>`;
   root.querySelectorAll('[data-signal-page]').forEach(button => button.addEventListener('click', () => showPage(button.dataset.signalPage)));
+  const nextAction = root.querySelector('[data-signal-next]');
+  nextAction?.addEventListener('click', () => showPage(nextAction.dataset.signalNext));
   root.querySelectorAll('[data-signal-claim]').forEach(button => button.addEventListener('click', () => claimSignalSeasonReward(Number(button.dataset.signalClaim))));
   root.querySelectorAll('[data-signal-hall]').forEach(button => button.addEventListener('click', () => {
     const row = communitySnapshot?.leaderboard?.[Number(button.dataset.signalHall)];
@@ -9003,16 +9021,20 @@ function getCaseCost(caseType) {
   // required because the visible probability bands are defined relative to
   // the case price. The result keeps every case near one shared 88% return
   // rate instead of making a knife case or a budget case secretly better.
+  const getExpectedValue = price => {
+    const chances = buildCaseDropChanceMap(pool, price);
+    return pool.reduce((sum, skin) => sum + (Number(skin.price) || 0) * (chances.get(getSkinKey(skin)) || 0) / 100, 0);
+  };
+  const minimumRiskPrice = roundPc(values[0] / CASE_MIN_LOSS_PRICE_RATIO + 0.01);
   let cost = Math.max(0.25, roundPc(values[Math.floor((values.length - 1) * 0.5)] * 0.7));
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const chances = buildCaseDropChanceMap(pool, cost);
-    const expectedValue = pool.reduce((sum, skin) => sum + (Number(skin.price) || 0) * (chances.get(getSkinKey(skin)) || 0) / 100, 0);
-    const targetCost = Math.max(0.25, roundPc(expectedValue / CASE_TARGET_RETURN_RATE));
+  for (let attempt = 0; attempt < 36; attempt++) {
+    const expectedValue = getExpectedValue(cost);
+    const targetCost = Math.max(minimumRiskPrice, 0.25, roundPc(expectedValue / CASE_TARGET_RETURN_RATE));
     if (Math.abs(targetCost - cost) < 0.01) {
       cost = targetCost;
       break;
     }
-    cost = roundPc(cost * 0.4 + targetCost * 0.6);
+    cost = roundPc(cost * 0.25 + targetCost * 0.75);
   }
 
   // Keep the least expensive entry meaningfully below the ticket price. This
@@ -9020,8 +9042,16 @@ function getCaseCost(caseType) {
   // all catalogue prices are very close to one another. RTP can therefore be
   // slightly below 88% for such a pool, but it can never become a guaranteed
   // break-even / profit case.
-  const minimumRiskPrice = roundPc(values[0] / CASE_MIN_LOSS_PRICE_RATIO + 0.01);
   cost = Math.max(cost, minimumRiskPrice);
+
+  // The chance table changes in steps, so the 88% target can drift after
+  // cent rounding. Close the loop against the actual final probabilities and
+  // require a visible house edge even in sparse themed pools.
+  for (let attempt = 0; attempt < 16; attempt++) {
+    const expectedValue = getExpectedValue(cost);
+    if (expectedValue / cost <= CASE_MAX_RETURN_RATE) break;
+    cost = Math.max(minimumRiskPrice, roundPc(Math.max(cost + 0.01, expectedValue / CASE_MAX_RETURN_RATE)));
+  }
 
   if (_caseCostCache.size >= 30) _caseCostCache.clear();
   _caseCostCache.set(cacheKey, cost);

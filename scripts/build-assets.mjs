@@ -1,4 +1,4 @@
-import { copyFile, cp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { copyFile, cp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 
 const projectRoot = resolve(process.cwd())
@@ -9,10 +9,31 @@ if (dirname(outputDir) !== projectRoot || basename(outputDir) !== 'dist') {
   throw new Error('Refusing to clear an unexpected asset output directory.')
 }
 
-// OneDrive and a just-stopped local Worker can briefly hold a generated file
-// on Windows. Node retries only this verified dist/ deletion; source files are
-// never touched.
-await rm(outputDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 250 })
+// OneDrive and a just-stopped local Worker can briefly hold the dist/ root on
+// Windows. Removing its children instead of the root itself prevents an EBUSY
+// failure, while every generated file below is still refreshed from source.
+async function resetOutputDirectory() {
+  await mkdir(outputDir, { recursive: true })
+  const entries = await readdir(outputDir, { withFileTypes: true })
+  await Promise.all(entries.map(async entry => {
+    const target = join(outputDir, entry.name)
+    try {
+      await rm(target, {
+        recursive: entry.isDirectory(),
+        force: true,
+        maxRetries: 12,
+        retryDelay: 300
+      })
+    } catch (error) {
+      // A locked stale generated file is harmless: the matching copy operation
+      // below overwrites it. Fail only for unexpected errors.
+      if (!['EBUSY', 'ENOTEMPTY', 'EPERM'].includes(error?.code)) throw error
+      console.warn(`Kept locked generated entry "${entry.name}"; refreshing matching assets in place.`)
+    }
+  }))
+}
+
+await resetOutputDirectory()
 await mkdir(join(outputDir, 'css'), { recursive: true })
 await mkdir(join(outputDir, 'js'), { recursive: true })
 
