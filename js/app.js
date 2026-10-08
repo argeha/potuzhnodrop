@@ -7123,19 +7123,18 @@ function showToast(message, type = 'info') {
 
 let audioCtx = null;
 const CASE_REEL_AUDIO_SRC = '/assets/audio/metallic-tension.mp3?v=5.8.5';
-// A single playlist continues between pages. Every excerpt comes from an
-// original ARGEHA track supplied for this project; the small fades are baked
-// into each file so the hand-off stays calm on desktop and Android WebView.
+// A single playlist continues between pages. Every complete track comes from
+// the original ARGEHA music supplied for this project.
 const MUSIC_PLAYLIST = Object.freeze([
-  { id: 'skyline', src: '/assets/audio/argeha-skyline-loop.wav?v=7.9.0', volume: 0.08 },
-  { id: 'deepreceive', src: '/assets/audio/argeha-deepreceive-loop.wav?v=7.9.0', volume: 0.07 },
-  { id: 'take-me-up', src: '/assets/audio/argeha-take-me-up-loop.wav?v=7.9.0', volume: 0.068 },
-  { id: 'unease', src: '/assets/audio/argeha-unease-loop.wav?v=7.9.0', volume: 0.06 },
-  { id: 'st', src: '/assets/audio/argeha-st-loop.wav?v=7.9.0', volume: 0.06 },
-  { id: 'phonk', src: '/assets/audio/argeha-phonk-loop.wav?v=7.9.0', volume: 0.054 },
-  { id: 'untitled-one', src: '/assets/audio/argeha-untitled-one-loop.wav?v=7.9.0', volume: 0.06 },
-  { id: 'untitled', src: '/assets/audio/argeha-untitled-loop.wav?v=7.9.0', volume: 0.06 },
-  { id: 'kk2', src: '/assets/audio/argeha-kk2-loop.wav?v=7.9.0', volume: 0.065 },
+  { id: 'skyline', src: '/assets/audio/argeha-skyline.mp3?v=7.9.0-full', volume: 0.08 },
+  { id: 'deepreceive', src: '/assets/audio/argeha-deepreceive.mp3?v=7.9.0-full', volume: 0.07 },
+  { id: 'take-me-up', src: '/assets/audio/argeha-take-me-up.mp3?v=7.9.0-full', volume: 0.068 },
+  { id: 'unease', src: '/assets/audio/argeha-unease.mp3?v=7.9.0-full', volume: 0.06 },
+  { id: 'st', src: '/assets/audio/argeha-st.mp3?v=7.9.0-full', volume: 0.06 },
+  { id: 'phonk', src: '/assets/audio/argeha-phonk.mp3?v=7.9.0-full', volume: 0.054 },
+  { id: 'untitled-one', src: '/assets/audio/argeha-untitled-one.mp3?v=7.9.0-full', volume: 0.06 },
+  { id: 'untitled', src: '/assets/audio/argeha-untitled.mp3?v=7.9.0-full', volume: 0.06 },
+  { id: 'kk2', src: '/assets/audio/argeha-kk2.mp3?v=7.9.0-full', volume: 0.065 },
 ]);
 let caseReelAudio = null;
 let caseReelAudioUnlockSerial = 0;
@@ -7190,7 +7189,7 @@ function advanceBackgroundMusic(source = null) {
 
 function createBackgroundMusic(track) {
   const audio = new Audio(track.src);
-  audio.preload = 'auto';
+  audio.preload = 'metadata';
   audio.loop = false;
   audio.onended = () => advanceBackgroundMusic(audio);
   // If one cached file is unavailable, skip it instead of leaving the player
