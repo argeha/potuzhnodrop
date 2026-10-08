@@ -6021,8 +6021,6 @@ function doRevealCollectionReward(collId) {
       `;
     }
     soundWin();
-    setTimeout(() => soundWin(), 200);
-    setTimeout(() => soundWin(), 400);
     checkAchievements();
     saveState();
   }, 800);
@@ -7123,27 +7121,20 @@ function showToast(message, type = 'info') {
 
 const CASE_REEL_AUDIO_SRC = '/assets/audio/argeha-deepreceive-case.wav?v=7.9.0';
 const RARE_DROP_AUDIO_SRC = '/assets/audio/argeha-deepreceive-rare.wav?v=7.9.0';
-const VICTORY_AUDIO_SRC = '/assets/audio/argeha-st-victory.wav?v=7.9.0';
 const UI_SFX_TRACKS = Object.freeze({
-  tick: { src: '/assets/audio/argeha-ui-tick.wav?v=7.9.0', volume: 0.20, cooldown: 70 },
-  confirm: { src: '/assets/audio/argeha-ui-confirm.wav?v=7.9.0', volume: 0.28, cooldown: 130 },
-  warning: { src: '/assets/audio/argeha-ui-warning.wav?v=7.9.0', volume: 0.30, cooldown: 170 },
-  win: { src: '/assets/audio/argeha-ui-win.wav?v=7.9.0', volume: 0.34, cooldown: 260 },
+  tick: { src: '/assets/audio/argeha-ui-tick.wav?v=7.9.0', volume: 0.10, cooldown: 180 },
+  confirm: { src: '/assets/audio/argeha-ui-confirm.wav?v=7.9.0', volume: 0.18, cooldown: 220 },
+  warning: { src: '/assets/audio/argeha-ui-warning.wav?v=7.9.0', volume: 0.22, cooldown: 300 },
+  win: { src: '/assets/audio/argeha-ui-win.wav?v=7.9.0', volume: 0.28, cooldown: 550 },
 });
 const MUSIC_TRACKS = Object.freeze({
-  skyline: { src: '/assets/audio/argeha-skyline-loop.wav?v=7.9.0', volume: 0.15 },
-  event: { src: '/assets/audio/argeha-take-me-up-event.wav?v=7.9.0', volume: 0.13 },
-  unease: { src: '/assets/audio/argeha-unease-upgrade.wav?v=7.9.0', volume: 0.12 },
-  royale: { src: '/assets/audio/argeha-phonk-royale.wav?v=7.9.0', volume: 0.11 },
-  signal: { src: '/assets/audio/argeha-untitled-signal.wav?v=7.9.0', volume: 0.11 },
-  profile: { src: '/assets/audio/argeha-untitled-profile.wav?v=7.9.0', volume: 0.11 },
-  case: { src: '/assets/audio/argeha-kk2-case.wav?v=7.9.0', volume: 0.10 },
+  skyline: { src: '/assets/audio/argeha-skyline-loop.wav?v=7.9.0', volume: 0.08 },
+  event: { src: '/assets/audio/argeha-take-me-up-event.wav?v=7.9.0', volume: 0.075 },
+  royale: { src: '/assets/audio/argeha-phonk-royale.wav?v=7.9.0', volume: 0.07 },
 });
 let caseReelAudio = null;
 let caseReelAudioUnlockSerial = 0;
 let rareDropAudio = null;
-let victoryAudio = null;
-let victoryAudioUnlockSerial = 0;
 const uiSfxPlayers = new Map();
 const uiSfxLastPlayedAt = new Map();
 let backgroundMusic = null;
@@ -7153,11 +7144,7 @@ let backgroundMusicPausedForRound = false;
 function getBackgroundMusicTrack(page = currentPage) {
   if (page === 'royale') return 'royale';
   if (page === 'battle') return 'event';
-  if (page === 'upgrader' || page === 'contract') return 'unease';
-  if (page === 'case') return 'case';
-  if (page === 'tasks') return 'signal';
-  if (page === 'profile') return 'profile';
-  if (['hub', 'stats', 'about'].includes(page)) return 'skyline';
+  if (page === 'hub') return 'skyline';
   return '';
 }
 
@@ -7238,7 +7225,7 @@ function getRareDropAudio() {
   if (rareDropAudio || typeof Audio !== 'function') return rareDropAudio;
   rareDropAudio = new Audio(RARE_DROP_AUDIO_SRC);
   rareDropAudio.preload = 'auto';
-  rareDropAudio.volume = 0.48;
+  rareDropAudio.volume = 0.28;
   return rareDropAudio;
 }
 
@@ -7259,49 +7246,12 @@ function playRareDropMusic(items) {
   audio.play().catch(() => {});
 }
 
-function getVictoryMusic() {
-  if (victoryAudio || typeof Audio !== 'function') return victoryAudio;
-  victoryAudio = new Audio(VICTORY_AUDIO_SRC);
-  victoryAudio.preload = 'auto';
-  victoryAudio.volume = 0.32;
-  return victoryAudio;
-}
-
-function playVictoryMusic() {
-  if (!soundEnabled || document.hidden) return;
-  const audio = getVictoryMusic();
-  if (!audio) return;
-  victoryAudioUnlockSerial += 1;
-  audio.pause();
-  audio.currentTime = 0;
-  audio.muted = false;
-  audio.play().catch(() => {});
-}
-
-function unlockVictoryMusic() {
-  if (!soundEnabled || document.hidden) return;
-  const audio = getVictoryMusic();
-  if (!audio) return;
-  // Unlock the one-shot while the player has just tapped the mode. The actual
-  // result can arrive several seconds later, especially in a live Royale.
-  const unlockSerial = ++victoryAudioUnlockSerial;
-  audio.muted = true;
-  audio.play().then(() => {
-    if (unlockSerial !== victoryAudioUnlockSerial) return;
-    audio.pause();
-    audio.currentTime = 0;
-    audio.muted = false;
-  }).catch(() => {
-    if (unlockSerial === victoryAudioUnlockSerial) audio.muted = false;
-  });
-}
-
 function getCaseReelAudio() {
   if (caseReelAudio || typeof Audio !== 'function') return caseReelAudio;
   caseReelAudio = new Audio(CASE_REEL_AUDIO_SRC);
   caseReelAudio.preload = 'auto';
   caseReelAudio.loop = false;
-  caseReelAudio.volume = 0.38;
+  caseReelAudio.volume = 0.25;
   return caseReelAudio;
 }
 
@@ -7429,10 +7379,6 @@ function toggleSound() {
     if (rareDropAudio) {
       rareDropAudio.pause();
       rareDropAudio.currentTime = 0;
-    }
-    if (victoryAudio) {
-      victoryAudio.pause();
-      victoryAudio.currentTime = 0;
     }
     stopUiSfx();
   } else {
@@ -11275,7 +11221,6 @@ function spinCoin(isPlayerWin) {
       clearInterval(tick);
       stage.classList.remove('is-spinning');
       stage.classList.add('burst');
-      soundWin();
       setTimeout(() => stage.classList.remove('burst'), 400);
       resolve();
     };
@@ -11323,7 +11268,6 @@ function startBattle() {
     showToast('Бій чекає на стабільні ціни обох ставок.', 'warn');
     return;
   }
-  unlockVictoryMusic();
   const playerStake = battlePlayerItem;
   clearBattleAutoStart();
   const wagerId = beginPendingWager({ inventory: [playerStake] });
@@ -11382,7 +11326,7 @@ function startBattle() {
       gameState.stats.battleWins = (gameState.stats.battleWins || 0) + 1;
       gameState.daily.battleWins = (gameState.daily.battleWins || 0) + 1;
       addXp(XP_BATTLE_WIN);
-      playVictoryMusic();
+      soundWin();
     } else {
       if (outcome) outcome.innerHTML = `<span class="text-red-300 text-lg">🪙 Монетка впала на сторону ${escapeHtml(opponentName)}. Твій віртуальний предмет вибуває з раунду.</span>`;
       bSlot?.classList.add('is-winner');
@@ -11895,9 +11839,6 @@ function legacyRoyaleSettle(winnerIdx, wagerId) {
 
     addXp(XP_ROYALE_WIN);
     soundWin();
-    playVictoryMusic();
-    setTimeout(() => soundWin(), 200);
-    setTimeout(() => soundWin(), 420);
 
     if (banner)   banner.classList.remove('hidden');
     if (winIcon)  winIcon.textContent = '👑';
@@ -12542,7 +12483,6 @@ async function joinLiveRoyale() {
     renderRoyaleDeck();
     return showToast('Потрібні стабільні ціни всіх скінів у банку.', 'warn');
   }
-  unlockVictoryMusic();
   const ticketId = makeUuid();
   const wagerId = beginPendingWager({ inventory: skins });
   royaleLiveTicket = { ticketId, wagerId, skins: skins.map((skin, index) => normalizeStoredItem(skin, index)).filter(Boolean), createdAt: Date.now() };
@@ -12579,7 +12519,6 @@ function startRoyale() {
     renderRoyaleDeck();
     return;
   }
-  unlockVictoryMusic();
   const wagerId = beginPendingWager({ inventory: royalePlayerSkins });
   const playerIds = new Set(royalePlayerSkins.map(skin => skin.id));
   userInventory = userInventory.filter(skin => !playerIds.has(skin.id));
@@ -12672,7 +12611,7 @@ function royaleSettle(winnerIndex, wagerId, frozenParticipants = royaleParticipa
     gameState.stats.battleWins = (gameState.stats.battleWins || 0) + 1;
     gameState.daily.battleWins = (gameState.daily.battleWins || 0) + 1;
     gameState.allTime.royaleWins = (gameState.allTime.royaleWins || 0) + 1;
-    addXp(XP_ROYALE_WIN); soundWin(); playVictoryMusic(); window.setTimeout(soundWin, 180);
+    addXp(XP_ROYALE_WIN); soundWin();
     if (icon) icon.textContent = '👑';
     if (title) { title.textContent = 'БАНК ТВОЙ!'; title.className = 'font-heading text-3xl font-extrabold uppercase text-emerald-300'; }
     if (sub) sub.textContent = `Ти забираєш ${formatCredits(total)} · ${allPotSkins.length} віртуальних скінів.`;
