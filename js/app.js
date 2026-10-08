@@ -82,6 +82,7 @@ function showPage(id) {
     if (royaleMode === 'bots' && !royaleInProgress) resetRoyale();
     setTimeout(initRoyalePage, 30);
   }
+  syncBackgroundMusic();
 }
 
 window.addEventListener('hashchange', () => {
@@ -534,6 +535,7 @@ function stableInventoryPrice(item) {
 let currentUser = null;
 let userInventory = [];
 let soundEnabled = true;
+let musicInteractionUnlocked = false;
 let hapticsEnabled = true;
 let filteredSkins = CS2_SKINS;
 let visibleSkinCount = 80;
@@ -7117,9 +7119,89 @@ function showToast(message, type = 'info') {
 }
 
 let audioCtx = null;
-const CASE_REEL_AUDIO_SRC = '/assets/audio/metallic-tension.mp3?v=5.8.5';
+const CASE_REEL_AUDIO_SRC = '/assets/audio/argeha-deepreceive-case.wav?v=7.9.0';
+const RARE_DROP_AUDIO_SRC = '/assets/audio/argeha-deepreceive-rare.wav?v=7.9.0';
+const MUSIC_TRACKS = Object.freeze({
+  skyline: { src: '/assets/audio/argeha-skyline-loop.wav?v=7.9.0', volume: 0.15 },
+  event: { src: '/assets/audio/argeha-take-me-up-event.wav?v=7.9.0', volume: 0.13 },
+});
 let caseReelAudio = null;
 let caseReelAudioUnlockSerial = 0;
+let rareDropAudio = null;
+let backgroundMusic = null;
+let backgroundMusicTrack = '';
+let backgroundMusicPausedForRound = false;
+
+function getBackgroundMusicTrack(page = currentPage) {
+  if (page === 'battle' || page === 'royale') return 'event';
+  if (['hub', 'tasks', 'profile', 'stats', 'about'].includes(page)) return 'skyline';
+  return '';
+}
+
+function canPlayBackgroundMusic() {
+  return soundEnabled
+    && musicInteractionUnlocked
+    && !backgroundMusicPausedForRound
+    && !document.hidden
+    && localStorage.getItem(STORAGE.consent) === 'accepted';
+}
+
+function pauseBackgroundMusic({ reset = false } = {}) {
+  if (!backgroundMusic) return;
+  backgroundMusic.pause();
+  if (reset) backgroundMusic.currentTime = 0;
+}
+
+function syncBackgroundMusic() {
+  const trackId = getBackgroundMusicTrack();
+  if (!trackId || !canPlayBackgroundMusic()) {
+    pauseBackgroundMusic();
+    return;
+  }
+  const track = MUSIC_TRACKS[trackId];
+  if (!track) return;
+  if (!backgroundMusic || backgroundMusicTrack !== trackId) {
+    pauseBackgroundMusic({ reset: true });
+    backgroundMusic = new Audio(track.src);
+    backgroundMusic.preload = 'metadata';
+    // The clips have a tiny baked-in fade at both ends, so this loop is
+    // unobtrusive even on Android WebView.
+    backgroundMusic.loop = true;
+    backgroundMusicTrack = trackId;
+  }
+  backgroundMusic.volume = track.volume;
+  backgroundMusic.play().catch(() => {});
+}
+
+function unlockGameMusic() {
+  musicInteractionUnlocked = true;
+  syncBackgroundMusic();
+}
+
+function getRareDropAudio() {
+  if (rareDropAudio || typeof Audio !== 'function') return rareDropAudio;
+  rareDropAudio = new Audio(RARE_DROP_AUDIO_SRC);
+  rareDropAudio.preload = 'auto';
+  rareDropAudio.volume = 0.48;
+  return rareDropAudio;
+}
+
+function shouldPlayRareDropMusic(items) {
+  return (Array.isArray(items) ? items : []).some(item => {
+    const rarity = String(item?.rarity?.name || item?.rarity || '').toLowerCase();
+    const value = Number(verifiedInventoryMarketPrice(item) || item?.price || 0);
+    return /covert|classified|contraband|extraordinary|засекреч|таємн/.test(rarity) || value >= 5_000;
+  });
+}
+
+function playRareDropMusic(items) {
+  if (!soundEnabled || document.hidden || !shouldPlayRareDropMusic(items)) return;
+  const audio = getRareDropAudio();
+  if (!audio) return;
+  audio.pause();
+  audio.currentTime = 0;
+  audio.play().catch(() => {});
+}
 
 function getCaseReelAudio() {
   if (caseReelAudio || typeof Audio !== 'function') return caseReelAudio;
@@ -7182,6 +7264,8 @@ function unlockCaseReelSound() {
 
 function startCaseReelSound() {
   if (!soundEnabled || document.hidden) return;
+  backgroundMusicPausedForRound = true;
+  pauseBackgroundMusic();
   const audio = primeCaseReelSound();
   if (!audio) return;
   caseReelAudioUnlockSerial += 1;
@@ -7192,10 +7276,13 @@ function startCaseReelSound() {
 }
 
 function stopCaseReelSound() {
-  if (!caseReelAudio) return;
-  caseReelAudioUnlockSerial += 1;
-  caseReelAudio.pause();
-  caseReelAudio.currentTime = 0;
+  if (caseReelAudio) {
+    caseReelAudioUnlockSerial += 1;
+    caseReelAudio.pause();
+    caseReelAudio.currentTime = 0;
+  }
+  backgroundMusicPausedForRound = false;
+  syncBackgroundMusic();
 }
 
 function beep(freq = 440, dur = 0.08, type = 'sine') {
@@ -7256,7 +7343,20 @@ function haptic(kind = 'light') {
 function toggleSound() {
   soundEnabled = !soundEnabled;
   localStorage.setItem(STORAGE.sound, soundEnabled ? 'on' : 'off');
-  if (!soundEnabled) stopCaseReelSound();
+  if (!soundEnabled) {
+    if (caseReelAudio) {
+      caseReelAudio.pause();
+      caseReelAudio.currentTime = 0;
+    }
+    if (rareDropAudio) {
+      rareDropAudio.pause();
+      rareDropAudio.currentTime = 0;
+    }
+    backgroundMusicPausedForRound = false;
+    pauseBackgroundMusic({ reset: true });
+  } else {
+    unlockGameMusic();
+  }
   updateSoundUI();
 }
 
@@ -7270,7 +7370,22 @@ function toggleHaptics() {
 function updateSoundUI() {
   const i = document.getElementById('soundIcon');
   if (i) i.className = soundEnabled ? 'fa-solid fa-volume-high text-sm' : 'fa-solid fa-volume-xmark text-sm';
+  const button = document.getElementById('soundToggle');
+  if (button) {
+    button.setAttribute('aria-pressed', soundEnabled ? 'true' : 'false');
+    button.title = soundEnabled ? 'Звук і музика увімкнені' : 'Звук і музика вимкнені';
+  }
 }
+
+// Browser and Android WebView both require a real user gesture before music
+// may start. The first tap/key press unlocks playback without forcing sound on.
+document.addEventListener('pointerdown', unlockGameMusic, { once: true, capture: true, passive: true });
+document.addEventListener('keydown', unlockGameMusic, { once: true, capture: true });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) pauseBackgroundMusic();
+  else syncBackgroundMusic();
+});
+window.addEventListener('pagehide', () => pauseBackgroundMusic());
 
 function updateHapticsUI() {
   const button = document.getElementById('profileHapticsButton');
@@ -7295,6 +7410,7 @@ function acceptRiskNotice() {
   const el = document.getElementById('riskNotice');
   el?.classList.add('hidden');
   el?.classList.remove('flex');
+  unlockGameMusic();
   // Steam-login suggestions appear only after the safety notice is acknowledged.
   setTimeout(() => {
     renderSteamNudge();
@@ -10102,6 +10218,7 @@ function displayCaseDropResult(items, isFree, caseName, resultKind = 'case') {
   }
 
   openModal('caseModal');
+  playRareDropMusic(items);
 }
 
 function quickSellCaseResult() {
