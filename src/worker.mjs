@@ -123,11 +123,17 @@ const ADMIN_PLAYER_DIRECTORY_MAX = 5_000
 const ADMIN_PLAYER_DIRECTORY_PAGE_SIZE = 600
 const ADMIN_CONTENT_CASE_LIMIT = 24
 const ADMIN_CONTENT_CASE_ID = /^[a-z0-9][a-z0-9_-]{1,39}$/
+const ADMIN_CONTENT_PROMO_LIMIT = 6
+const ADMIN_CONTENT_HISTORY_LIMIT = 12
+const ADMIN_CONTENT_MAX_FUTURE_MS = 370 * 24 * 60 * 60_000
+const ADMIN_CONTENT_SCHEDULE_MAX_MS = 90 * 24 * 60 * 60_000
 const ADMIN_CONTENT_FEATURES = Object.freeze(['cases', 'upgrader', 'battle', 'royale', 'contract', 'tasks', 'battlePass', 'seasonalEvents'])
 const ADMIN_CONTENT_CASE_CATEGORIES = new Set(['hot', 'knives', 'gloves', 'weapons', 'budget'])
 const ADMIN_CONTENT_CASE_THEMES = new Set(['gray', 'blue', 'purple', 'gold', 'red', 'pink', 'emerald'])
 const ADMIN_CONTENT_POOL_KINDS = new Set(['all', 'weapons', 'knives', 'gloves'])
 const ADMIN_CONTENT_RARITIES = new Set(['Consumer Grade', 'Industrial Grade', 'Mil-Spec Grade', 'Restricted', 'Classified', 'Covert', 'Contraband', 'Extraordinary'])
+const ADMIN_CONTENT_TONES = new Set(['cyan', 'amber', 'violet', 'rose', 'emerald'])
+const ADMIN_CONTENT_PAGES = new Set(['hub', 'case', 'upgrader', 'battle', 'royale', 'contract', 'tasks', 'profile', 'stats'])
 const ADMIN_CONTENT_BUILT_IN_CASES = Object.freeze([
   { id: 'icewire_cache', name: 'ICEWIRE Cache', category: 'hot' },
   { id: 'halloween_night', name: 'Нічний кейс', category: 'hot' },
@@ -1390,16 +1396,77 @@ function cleanAdminContentArtwork(value) {
 
 function defaultAdminContentConfig() {
   return {
-    version: 1,
+    version: 2,
     revision: 0,
     updatedAt: 0,
     features: Object.fromEntries(ADMIN_CONTENT_FEATURES.map(feature => [feature, true])),
     hiddenCaseIds: [],
     customCases: [],
+    announcement: { enabled: false, tone: 'cyan', title: '', body: '', ctaLabel: '', ctaPage: 'hub', startsAt: 0, endsAt: 0 },
+    promos: [],
+    battlePass: { title: 'POTUZHNO PASS', subtitle: 'Грай, заробляй XP і забирай сезонні нагороди.', startsAt: 0, endsAt: 0 },
+    season: { title: 'Сезон: Сигнал', subtitle: 'Збирай вузли та залишай слід у своєму профілі.', startsAt: 0, endsAt: 0 },
+    economy: { casePriceMultiplier: 1, taskRewardMultiplier: 1 },
   }
 }
 
-function normalizeAdminContentCase(value, index = 0) {
+function normalizeAdminContentWindow(value, now, futureLimit = ADMIN_CONTENT_MAX_FUTURE_MS) {
+  const clean = candidate => {
+    const timestamp = Number(candidate)
+    if (!Number.isFinite(timestamp) || timestamp <= 0) return 0
+    return boundedInteger(timestamp, now - ADMIN_CONTENT_MAX_FUTURE_MS, now + futureLimit, 0)
+  }
+  const startsAt = clean(value?.startsAt)
+  const rawEndsAt = clean(value?.endsAt)
+  return { startsAt, endsAt: rawEndsAt && (!startsAt || rawEndsAt > startsAt) ? rawEndsAt : 0 }
+}
+
+function normalizeAdminContentCampaign(value, fallback, now) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  return {
+    title: cleanText(source.title, 72) || fallback.title,
+    subtitle: cleanText(source.subtitle, 180) || fallback.subtitle,
+    ...normalizeAdminContentWindow(source, now),
+  }
+}
+
+function normalizeAdminContentAnnouncement(value, now) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  const tone = cleanText(source.tone, 16)
+  const ctaPage = cleanText(source.ctaPage, 24)
+  return {
+    enabled: source.enabled === true,
+    tone: ADMIN_CONTENT_TONES.has(tone) ? tone : 'cyan',
+    title: cleanText(source.title, 72),
+    body: cleanText(source.body, 280),
+    ctaLabel: cleanText(source.ctaLabel, 32),
+    ctaPage: ADMIN_CONTENT_PAGES.has(ctaPage) ? ctaPage : 'hub',
+    ...normalizeAdminContentWindow(source, now),
+  }
+}
+
+function normalizeAdminContentPromo(value, index, now) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  const id = cleanText(source.id, 40).toLowerCase()
+  const title = cleanText(source.title, 72)
+  if (!ADMIN_CONTENT_CASE_ID.test(id) || !title) return null
+  const tone = cleanText(source.tone, 16)
+  const ctaPage = cleanText(source.ctaPage, 24)
+  return {
+    id,
+    title,
+    body: cleanText(source.body, 280) || 'Спеціальна подія вже доступна у грі.',
+    label: cleanText(source.label, 32) || 'LIVE',
+    ctaLabel: cleanText(source.ctaLabel, 32) || 'Відкрити',
+    ctaPage: ADMIN_CONTENT_PAGES.has(ctaPage) ? ctaPage : 'hub',
+    tone: ADMIN_CONTENT_TONES.has(tone) ? tone : 'cyan',
+    enabled: source.enabled !== false,
+    order: boundedInteger(source.order, 0, 9_999, index),
+    ...normalizeAdminContentWindow(source, now),
+  }
+}
+
+function normalizeAdminContentCase(value, index = 0, now = Date.now()) {
   const id = cleanText(value?.id, 40).toLowerCase()
   if (!ADMIN_CONTENT_CASE_ID.test(id) || ADMIN_CONTENT_RESERVED_CASE_IDS.has(id)) return null
   const name = cleanText(value?.name, 64)
@@ -1428,6 +1495,7 @@ function normalizeAdminContentCase(value, index = 0) {
     terms,
     enabled: value?.enabled !== false,
     order: boundedInteger(value?.order, 0, 9_999, index),
+    ...normalizeAdminContentWindow(value, now),
   }
 }
 
@@ -1440,11 +1508,18 @@ function normalizeAdminContentConfig(value, now) {
     .map(value => cleanText(value, 40).toLowerCase())
     .filter(id => ADMIN_CONTENT_BUILT_IN_CASE_IDS.has(id)))].slice(0, ADMIN_CONTENT_BUILT_IN_CASES.length)
   const customCases = (Array.isArray(source.customCases) ? source.customCases : [])
-    .map((entry, index) => normalizeAdminContentCase(entry, index))
+    .map((entry, index) => normalizeAdminContentCase(entry, index, now))
     .filter(Boolean)
     .filter((entry, index, all) => all.findIndex(candidate => candidate.id === entry.id) === index)
     .sort((left, right) => left.order - right.order || left.name.localeCompare(right.name, 'uk'))
     .slice(0, ADMIN_CONTENT_CASE_LIMIT)
+  const promos = (Array.isArray(source.promos) ? source.promos : [])
+    .map((entry, index) => normalizeAdminContentPromo(entry, index, now))
+    .filter(Boolean)
+    .filter((entry, index, all) => all.findIndex(candidate => candidate.id === entry.id) === index)
+    .sort((left, right) => left.order - right.order || left.title.localeCompare(right.title, 'uk'))
+    .slice(0, ADMIN_CONTENT_PROMO_LIMIT)
+  const economySource = source.economy && typeof source.economy === 'object' && !Array.isArray(source.economy) ? source.economy : {}
   return {
     ...defaults,
     revision: boundedInteger(source.revision, 0, Number.MAX_SAFE_INTEGER),
@@ -1452,6 +1527,47 @@ function normalizeAdminContentConfig(value, now) {
     features,
     hiddenCaseIds,
     customCases,
+    announcement: normalizeAdminContentAnnouncement(source.announcement, now),
+    promos,
+    battlePass: normalizeAdminContentCampaign(source.battlePass, defaults.battlePass, now),
+    season: normalizeAdminContentCampaign(source.season, defaults.season, now),
+    economy: {
+      casePriceMultiplier: boundedMoney(economySource.casePriceMultiplier, 0.5, 2, 1),
+      taskRewardMultiplier: boundedMoney(economySource.taskRewardMultiplier, 0.5, 2, 1),
+    },
+  }
+}
+
+function normalizeAdminContentHistory(value, now) {
+  return (Array.isArray(value) ? value : [])
+    .map(entry => {
+      const revision = boundedInteger(entry?.revision, 1, Number.MAX_SAFE_INTEGER, 0)
+      if (!revision) return null
+      return {
+        revision,
+        publishedAt: boundedInteger(entry?.publishedAt, now - ADMIN_CONTENT_MAX_FUTURE_MS, now, 0),
+        publishedBy: cleanText(entry?.publishedBy, 48) || 'Адміністратор',
+        config: normalizeAdminContentConfig(entry?.config, now),
+      }
+    })
+    .filter(Boolean)
+    .filter((entry, index, all) => all.findIndex(candidate => candidate.revision === entry.revision) === index)
+    .sort((left, right) => right.revision - left.revision)
+    .slice(0, ADMIN_CONTENT_HISTORY_LIMIT)
+}
+
+function normalizeAdminContentSchedule(value, now) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const publishAt = boundedInteger(value.publishAt, now - ADMIN_CONTENT_SCHEDULE_MAX_MS, now + ADMIN_CONTENT_SCHEDULE_MAX_MS, 0)
+  if (!publishAt) return null
+  const config = normalizeAdminContentConfig(value.config, now)
+  if (!config.revision) return null
+  return {
+    id: cleanText(value.id, 48) || `release-${config.revision}`,
+    publishAt,
+    createdAt: boundedInteger(value.createdAt, now - ADMIN_CONTENT_SCHEDULE_MAX_MS, now, now),
+    createdBy: cleanText(value.createdBy, 48) || 'Адміністратор',
+    config,
   }
 }
 
@@ -1459,7 +1575,61 @@ function normalizeAdminContentState(value, now) {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {}
   const published = normalizeAdminContentConfig(source.published, now)
   const draft = normalizeAdminContentConfig(source.draft ?? source.published, now)
-  return { version: 1, published, draft }
+  return {
+    version: 2,
+    published,
+    draft,
+    scheduled: normalizeAdminContentSchedule(source.scheduled, now),
+    history: normalizeAdminContentHistory(source.history, now),
+  }
+}
+
+function activeAdminContentConfig(content, now) {
+  const scheduled = content?.scheduled
+  if (scheduled?.publishAt && scheduled.publishAt <= now) return scheduled.config
+  return content?.published || defaultAdminContentConfig()
+}
+
+function isAdminContentWindowOpen(value, now) {
+  return (!value?.startsAt || now >= value.startsAt) && (!value?.endsAt || now < value.endsAt)
+}
+
+function adminContentRevision(content) {
+  return Math.max(
+    Number(content?.published?.revision) || 0,
+    Number(content?.draft?.revision) || 0,
+    Number(content?.scheduled?.config?.revision) || 0,
+    ...(Array.isArray(content?.history) ? content.history.map(entry => Number(entry?.revision) || 0) : []),
+  ) + 1
+}
+
+function archiveAdminContentVersion(content, actor, now, sourceConfig = content?.published) {
+  if (!sourceConfig?.revision) return
+  const snapshot = {
+    revision: sourceConfig.revision,
+    publishedAt: sourceConfig.updatedAt || now,
+    publishedBy: actor?.name || 'Адміністратор',
+    config: sourceConfig,
+  }
+  content.history = [snapshot, ...(Array.isArray(content.history) ? content.history : [])]
+    .filter((entry, index, all) => all.findIndex(candidate => candidate.revision === entry.revision) === index)
+    .slice(0, ADMIN_CONTENT_HISTORY_LIMIT)
+}
+
+function adminContentSummary(content, now) {
+  const active = activeAdminContentConfig(content, now)
+  const activePromos = (active.promos || []).filter(promo => promo.enabled && isAdminContentWindowOpen(promo, now)).length
+  return {
+    activeRevision: active.revision,
+    publishedRevision: content?.published?.revision || 0,
+    draftRevision: content?.draft?.revision || 0,
+    modesOnline: Object.values(active.features || {}).filter(Boolean).length,
+    visibleCustomCases: (active.customCases || []).filter(entry => entry.enabled && isAdminContentWindowOpen(entry, now)).length,
+    hiddenBuiltInCases: (active.hiddenCaseIds || []).length,
+    activePromos,
+    scheduledAt: content?.scheduled?.publishAt || 0,
+    scheduledIsLive: Boolean(content?.scheduled?.publishAt && content.scheduled.publishAt <= now),
+  }
 }
 
 function adminContentCatalog() {
@@ -1470,6 +1640,8 @@ function adminContentCatalog() {
     themes: [...ADMIN_CONTENT_CASE_THEMES],
     poolKinds: [...ADMIN_CONTENT_POOL_KINDS],
     rarities: [...ADMIN_CONTENT_RARITIES],
+    tones: [...ADMIN_CONTENT_TONES],
+    pages: [...ADMIN_CONTENT_PAGES],
   }
 }
 
@@ -4133,9 +4305,9 @@ export class PotuzhnoAdmin {
     }
   }
 
-  async readBody(request) {
+  async readBody(request, maxBytes = 12_288) {
     const raw = await request.text()
-    if (encoder.encode(raw).byteLength > 12_288) throw new RangeError('Запит завеликий.')
+    if (encoder.encode(raw).byteLength > maxBytes) throw new RangeError('Запит завеликий.')
     return JSON.parse(raw)
   }
 
@@ -4189,26 +4361,35 @@ export class PotuzhnoAdmin {
   }
 
   async publicContent() {
-    const content = normalizeAdminContentState(await this.storage.get('admin:content'), Date.now())
-    return json({ config: content.published }, 200, { 'Cache-Control': 'public, max-age=20, s-maxage=20' })
+    const now = Date.now()
+    const content = normalizeAdminContentState(await this.storage.get('admin:content'), now)
+    const config = activeAdminContentConfig(content, now)
+    return json({
+      config,
+      release: {
+        source: content.scheduled?.publishAt && content.scheduled.publishAt <= now ? 'scheduled' : 'published',
+        revision: config.revision,
+      },
+    }, 200, { 'Cache-Control': 'public, max-age=20, s-maxage=20' })
   }
 
   async content(actor) {
     if (!adminGameCapabilities(actor).configure) return adminForbidden('Твоя роль не може керувати вмістом сайту.')
-    const content = normalizeAdminContentState(await this.storage.get('admin:content'), Date.now())
-    return json({ content, catalog: adminContentCatalog() })
+    const now = Date.now()
+    const content = normalizeAdminContentState(await this.storage.get('admin:content'), now)
+    return json({ content, catalog: adminContentCatalog(), summary: adminContentSummary(content, now) })
   }
 
   async contentMutation(request, actor) {
     if (!adminGameCapabilities(actor).configure) return adminForbidden('Твоя роль не може публікувати зміни сайту.')
     let body
     try {
-      body = await this.readBody(request)
+      body = await this.readBody(request, 65_536)
     } catch {
       return json({ error: 'Некоректні дані конфігурації.' }, 400)
     }
     const action = cleanText(body?.action, 32)
-    if (!['save_draft', 'publish', 'reset_draft'].includes(action)) return json({ error: 'Невідома дія конфігурації.' }, 400)
+    if (!['save_draft', 'publish', 'schedule_publish', 'cancel_schedule', 'reset_draft', 'rollback'].includes(action)) return json({ error: 'Невідома дія конфігурації.' }, 400)
 
     const result = await this.storage.transaction(async transaction => {
       const now = Date.now()
@@ -4219,6 +4400,7 @@ export class PotuzhnoAdmin {
       }
 
       let detail = ''
+      let auditAction = 'content_draft_saved'
       if (action === 'save_draft') {
         const nextDraft = normalizeAdminContentConfig(body?.draft, now)
         nextDraft.revision = content.draft.revision + 1
@@ -4227,12 +4409,42 @@ export class PotuzhnoAdmin {
         detail = `чернетка: ${nextDraft.customCases.length} власних кейсів`
       } else if (action === 'publish') {
         const publishDraft = body?.draft ? normalizeAdminContentConfig(body.draft, now) : content.draft
-        content.published = { ...publishDraft, revision: content.draft.revision + 1, updatedAt: now }
+        archiveAdminContentVersion(content, actor, now, activeAdminContentConfig(content, now))
+        content.published = { ...publishDraft, revision: adminContentRevision(content), updatedAt: now }
         content.draft = { ...content.published }
+        content.scheduled = null
         detail = `версія ${content.published.revision} для сайту й Android`
+        auditAction = 'content_published'
+      } else if (action === 'schedule_publish') {
+        const publishAt = boundedInteger(body?.publishAt, now + 60_000, now + ADMIN_CONTENT_SCHEDULE_MAX_MS, 0)
+        if (!publishAt) return { response: json({ error: 'Вкажи час публікації від 1 хвилини до 90 днів уперед.' }, 400) }
+        const scheduledDraft = body?.draft ? normalizeAdminContentConfig(body.draft, now) : content.draft
+        const revision = adminContentRevision(content)
+        const config = { ...scheduledDraft, revision, updatedAt: publishAt }
+        content.scheduled = { id: randomHex(10), publishAt, createdAt: now, createdBy: actor.name, config }
+        content.draft = { ...scheduledDraft, revision: content.draft.revision + 1, updatedAt: now }
+        detail = `публікація v${revision} запланована`
+        auditAction = 'content_scheduled'
+      } else if (action === 'cancel_schedule') {
+        if (!content.scheduled) return { response: json({ error: 'Запланованої публікації немає.' }, 404) }
+        content.scheduled = null
+        content.draft = { ...content.draft, revision: content.draft.revision + 1, updatedAt: now }
+        detail = 'заплановану публікацію скасовано'
+        auditAction = 'content_schedule_cancelled'
+      } else if (action === 'rollback') {
+        const rollbackRevision = boundedInteger(body?.rollbackRevision, 1, Number.MAX_SAFE_INTEGER, 0)
+        const snapshot = content.history.find(entry => entry.revision === rollbackRevision)
+        if (!snapshot) return { response: json({ error: 'Версію для відкату не знайдено.' }, 404) }
+        archiveAdminContentVersion(content, actor, now, activeAdminContentConfig(content, now))
+        content.published = { ...normalizeAdminContentConfig(snapshot.config, now), revision: adminContentRevision(content), updatedAt: now }
+        content.draft = { ...content.published }
+        content.scheduled = null
+        detail = `відкат до вмісту версії ${rollbackRevision}`
+        auditAction = 'content_rolled_back'
       } else {
         content.draft = { ...content.published, revision: content.draft.revision + 1, updatedAt: now }
         detail = 'чернетку повернено до опублікованої версії'
+        auditAction = 'content_draft_reset'
       }
 
       const state = normalizeAdminState(await transaction.get('admin:state'), now)
@@ -4240,14 +4452,14 @@ export class PotuzhnoAdmin {
         id: randomHex(12),
         at: now,
         actor: actor.name,
-        action: action === 'save_draft' ? 'content_draft_saved' : action === 'publish' ? 'content_published' : 'content_draft_reset',
+        action: auditAction,
         target: 'Керування сайтом',
         detail,
       })
       state.audit = state.audit.slice(0, ADMIN_MAX_AUDIT_EVENTS)
       await transaction.put('admin:content', content)
       await transaction.put('admin:state', state)
-      return { response: json({ content, audit: state.audit.slice(0, 160) }) }
+      return { response: json({ content, audit: state.audit.slice(0, 160), summary: adminContentSummary(content, now) }) }
     })
     return result.response
   }

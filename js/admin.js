@@ -1,7 +1,7 @@
 (() => {
   'use strict'
 
-  const state = { me: null, members: [], roles: [], assignableRoles: [], audit: [], gameCapabilities: {}, players: [], playersTotal: 0, player: null, catalog: [], selectedSkinId: '', content: null, contentCatalog: null }
+  const state = { me: null, members: [], roles: [], assignableRoles: [], audit: [], gameCapabilities: {}, players: [], playersTotal: 0, player: null, catalog: [], selectedSkinId: '', content: null, contentCatalog: null, contentSummary: null }
   let inviteCode = new URLSearchParams(window.location.search).get('invite') || ''
   const $ = selector => document.querySelector(selector)
   const headerStatus = $('#headerStatus')
@@ -32,8 +32,13 @@
   const featureToggles = $('#featureToggles')
   const builtInCaseToggles = $('#builtInCaseToggles')
   const customCaseList = $('#customCaseList')
+  const promoList = $('#promoList')
+  const contentSummary = $('#contentSummary')
+  const contentHistory = $('#contentHistory')
   let skinSearchTimer = null
   let playerDirectorySearchTimer = null
+  let editingCustomCaseId = ''
+  let editingPromoId = ''
   const GAME_ACCOUNT_STORAGE = 'potuzhno_v6_account'
   const GAME_REFRESH_STORAGE = 'potuzhno_v6_admin_game_refresh'
   const CLOUD_PROFILE_ID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i
@@ -68,6 +73,9 @@
     content_draft_saved: 'зберіг(ла) чернетку сайту',
     content_published: 'опублікував(ла) зміни сайту',
     content_draft_reset: 'скасував(ла) чернетку сайту',
+    content_scheduled: 'запланував(ла) публікацію',
+    content_schedule_cancelled: 'скасував(ла) заплановану публікацію',
+    content_rolled_back: 'відкотив(ла) версію сайту',
   }
 
   const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[char]))
@@ -434,11 +442,137 @@
     return [...new Set(String(value || '').split(',').map(entry => entry.trim()).filter(Boolean))].slice(0, limit)
   }
 
-  function renderContentSelects(catalog) {
-    const optionList = (values, selected) => values.map(value => ({ value, label: value })).concat(selected && !values.includes(selected) ? [{ value: selected, label: selected }] : [])
-    setOptions($('#customCaseCategory'), optionList(catalog.categories || [], 'hot'), 'hot')
-    setOptions($('#customCaseTheme'), optionList(catalog.themes || [], 'gold'), 'gold')
-    setOptions($('#customCasePoolKind'), optionList(catalog.poolKinds || [], 'weapons'), 'weapons')
+  const optionList = (values, selected) => values.map(value => ({ value, label: value })).concat(selected && !values.includes(selected) ? [{ value: selected, label: selected }] : [])
+  const inputDateTime = value => {
+    const date = new Date(Number(value) || 0)
+    if (!Number.isFinite(date.getTime()) || date.getTime() < 1) return ''
+    const offset = date.getTimezoneOffset() * 60_000
+    return new Date(date.getTime() - offset).toISOString().slice(0, 16)
+  }
+  const readDateTime = value => {
+    const timestamp = new Date(String(value || '')).getTime()
+    return Number.isFinite(timestamp) ? timestamp : 0
+  }
+  const readWindow = (startSelector, endSelector) => ({ startsAt: readDateTime($(startSelector).value), endsAt: readDateTime($(endSelector).value) })
+  const writeWindow = (value, startSelector, endSelector) => {
+    $(startSelector).value = inputDateTime(value?.startsAt)
+    $(endSelector).value = inputDateTime(value?.endsAt)
+  }
+  const contentWindowLabel = value => {
+    if (!value?.startsAt && !value?.endsAt) return 'без розкладу'
+    const start = value?.startsAt ? `з ${formatTime(value.startsAt)}` : 'вже активно'
+    return value?.endsAt ? `${start} · до ${formatTime(value.endsAt)}` : start
+  }
+
+  function renderContentSelects(catalog, draft) {
+    setOptions($('#customCaseCategory'), optionList(catalog.categories || [], 'hot'), editingCustomCaseId ? (draft.customCases || []).find(entry => entry.id === editingCustomCaseId)?.category : 'hot')
+    setOptions($('#customCaseTheme'), optionList(catalog.themes || [], 'gold'), editingCustomCaseId ? (draft.customCases || []).find(entry => entry.id === editingCustomCaseId)?.theme : 'gold')
+    setOptions($('#customCasePoolKind'), optionList(catalog.poolKinds || [], 'weapons'), editingCustomCaseId ? (draft.customCases || []).find(entry => entry.id === editingCustomCaseId)?.poolKind : 'weapons')
+    const tones = catalog.tones || ['cyan']
+    const pages = catalog.pages || ['hub']
+    setOptions($('#announcementTone'), optionList(tones, draft.announcement?.tone || 'cyan'), draft.announcement?.tone || 'cyan')
+    setOptions($('#announcementCtaPage'), optionList(pages, draft.announcement?.ctaPage || 'hub'), draft.announcement?.ctaPage || 'hub')
+    const promo = (draft.promos || []).find(entry => entry.id === editingPromoId)
+    setOptions($('#promoTone'), optionList(tones, promo?.tone || 'cyan'), promo?.tone || 'cyan')
+    setOptions($('#promoCtaPage'), optionList(pages, promo?.ctaPage || 'hub'), promo?.ctaPage || 'hub')
+  }
+
+  function populateCustomCaseEditor(draft) {
+    const form = $('#customCaseForm')
+    const editing = (draft.customCases || []).find(entry => entry.id === editingCustomCaseId)
+    const cancel = $('#cancelCustomCaseEditButton')
+    $('#addCustomCaseButton').innerHTML = editing ? '<i class="fa-solid fa-floppy-disk"></i> Зберегти кейс' : '<i class="fa-solid fa-plus"></i> Додати до чернетки'
+    cancel.classList.toggle('hidden', !editing)
+    if (!editing) return
+    $('#customCaseId').value = editing.id
+    $('#customCaseId').readOnly = true
+    $('#customCaseName').value = editing.name || ''
+    $('#customCaseDescription').value = editing.description || ''
+    $('#customCaseCategory').value = editing.category || 'hot'
+    $('#customCaseTheme').value = editing.theme || 'gold'
+    $('#customCaseBadge').value = editing.badge || ''
+    $('#customCasePoolKind').value = editing.poolKind || 'weapons'
+    $('#customCaseWeapons').value = (editing.weapons || []).join(', ')
+    $('#customCaseRarities').value = (editing.rarities || []).join(', ')
+    $('#customCaseTerms').value = (editing.terms || []).join(', ')
+    $('#customCaseArtwork').value = editing.artwork || ''
+    $('#customCaseEnabled').checked = editing.enabled !== false
+    writeWindow(editing, '#customCaseStartsAt', '#customCaseEndsAt')
+  }
+
+  function resetCustomCaseEditor() {
+    editingCustomCaseId = ''
+    const form = $('#customCaseForm')
+    form.reset()
+    $('#customCaseId').readOnly = false
+    $('#customCaseEnabled').checked = true
+    $('#cancelCustomCaseEditButton').classList.add('hidden')
+    $('#addCustomCaseButton').innerHTML = '<i class="fa-solid fa-plus"></i> Додати до чернетки'
+  }
+
+  function populateOperationalForms(draft) {
+    const announcement = draft.announcement || {}
+    $('#announcementEnabled').checked = announcement.enabled === true
+    $('#announcementTitle').value = announcement.title || ''
+    $('#announcementBody').value = announcement.body || ''
+    $('#announcementCtaLabel').value = announcement.ctaLabel || ''
+    $('#announcementTone').value = announcement.tone || 'cyan'
+    $('#announcementCtaPage').value = announcement.ctaPage || 'hub'
+    writeWindow(announcement, '#announcementStartsAt', '#announcementEndsAt')
+
+    const season = draft.season || {}
+    const battlePass = draft.battlePass || {}
+    const economy = draft.economy || {}
+    $('#seasonTitle').value = season.title || ''
+    $('#seasonSubtitle').value = season.subtitle || ''
+    writeWindow(season, '#seasonStartsAt', '#seasonEndsAt')
+    $('#battlePassTitle').value = battlePass.title || ''
+    $('#battlePassSubtitle').value = battlePass.subtitle || ''
+    writeWindow(battlePass, '#battlePassStartsAt', '#battlePassEndsAt')
+    $('#economyCasePriceMultiplier').value = Number(economy.casePriceMultiplier || 1).toFixed(2)
+    $('#economyTaskRewardMultiplier').value = Number(economy.taskRewardMultiplier || 1).toFixed(2)
+
+    const promo = (draft.promos || []).find(entry => entry.id === editingPromoId)
+    $('#addPromoButton').innerHTML = promo ? '<i class="fa-solid fa-floppy-disk"></i> Зберегти кампанію' : '<i class="fa-solid fa-plus"></i> Додати кампанію'
+    $('#cancelPromoEditButton').classList.toggle('hidden', !promo)
+    if (!promo) return
+    $('#promoId').value = promo.id
+    $('#promoId').readOnly = true
+    $('#promoLabel').value = promo.label || ''
+    $('#promoTitle').value = promo.title || ''
+    $('#promoBody').value = promo.body || ''
+    $('#promoTone').value = promo.tone || 'cyan'
+    $('#promoCtaLabel').value = promo.ctaLabel || ''
+    $('#promoCtaPage').value = promo.ctaPage || 'hub'
+    $('#promoEnabled').checked = promo.enabled !== false
+    writeWindow(promo, '#promoStartsAt', '#promoEndsAt')
+  }
+
+  function resetPromoEditor() {
+    editingPromoId = ''
+    $('#promoForm').reset()
+    $('#promoId').readOnly = false
+    $('#promoEnabled').checked = true
+    $('#cancelPromoEditButton').classList.add('hidden')
+    $('#addPromoButton').innerHTML = '<i class="fa-solid fa-plus"></i> Додати кампанію'
+  }
+
+  function renderContentRelease(draft) {
+    const summary = state.contentSummary || {}
+    contentSummary.innerHTML = [
+      ['Активна версія', `v${Number(summary.activeRevision || 0)}`],
+      ['Режимів онлайн', String(Number(summary.modesOnline || 0))],
+      ['Авторських кейсів', String(Number(summary.visibleCustomCases || 0))],
+      ['Приховано кейсів', String(Number(summary.hiddenBuiltInCases || 0))],
+      ['Промо активні', String(Number(summary.activePromos || 0))],
+      ['Чернетка', `v${Number(draft.revision || 0)}`],
+    ].map(([label, value]) => `<span>${label}<strong>${escapeHtml(value)}</strong></span>`).join('')
+    const scheduled = state.content?.scheduled
+    $('#contentScheduleState').textContent = scheduled ? (scheduled.publishAt <= Date.now() ? 'Розклад уже активний' : `Заплановано: ${formatTime(scheduled.publishAt)}`) : 'Без розкладу'
+    $('#cancelScheduleButton').classList.toggle('hidden', !scheduled)
+    contentHistory.innerHTML = (state.content?.history || []).length
+      ? state.content.history.map(entry => `<article class="content-history-row"><i class="fa-solid fa-clock-rotate-left"></i><div><strong>Версія ${escapeHtml(entry.revision)} · ${escapeHtml(entry.config?.customCases?.length || 0)} кейсів</strong><small>${escapeHtml(formatTime(entry.publishedAt))} · ${escapeHtml(entry.publishedBy || 'Адміністратор')}</small></div><button type="button" class="small-button" data-content-rollback="${escapeHtml(entry.revision)}">Відкотити</button></article>`).join('')
+      : '<p class="empty-line">Історія з’явиться після першої публікації.</p>'
   }
 
   function renderContent() {
@@ -453,7 +587,7 @@
     const catalog = state.contentCatalog
     $('#contentPublishedRevision').textContent = `v${Number(published.revision || 0)}`
     $('#contentDraftRevision').textContent = `v${Number(draft.revision || 0)}`
-    renderContentSelects(catalog)
+    renderContentSelects(catalog, draft)
 
     featureToggles.innerHTML = (catalog.features || []).map(feature => {
       const enabled = draft.features?.[feature] !== false
@@ -469,8 +603,17 @@
     const customCases = Array.isArray(draft.customCases) ? draft.customCases : []
     $('#customCaseCount').textContent = `${customCases.length} / 24`
     customCaseList.innerHTML = customCases.length
-      ? customCases.map(caseConfig => `<article class="custom-case-row${caseConfig.enabled === false ? ' is-off' : ''}" data-custom-case="${escapeHtml(caseConfig.id)}"><i class="fa-solid fa-box-open"></i><div><strong>${escapeHtml(caseConfig.name)}</strong><small>${escapeHtml(caseConfig.id)} · ${escapeHtml(caseConfig.poolKind)} · ${caseConfig.enabled === false ? 'приховано' : 'готово до публікації'}</small></div><button class="small-button danger" type="button" data-remove-custom-case title="Прибрати з чернетки"><i class="fa-solid fa-trash"></i></button></article>`).join('')
+      ? customCases.map(caseConfig => `<article class="custom-case-row${caseConfig.enabled === false ? ' is-off' : ''}" data-custom-case="${escapeHtml(caseConfig.id)}"><i class="fa-solid fa-box-open"></i><div><strong>${escapeHtml(caseConfig.name)}</strong><small>${escapeHtml(caseConfig.id)} · ${escapeHtml(caseConfig.poolKind)} · ${escapeHtml(contentWindowLabel(caseConfig))}</small></div><div class="row-actions"><button class="small-button" type="button" data-toggle-custom-case title="${caseConfig.enabled === false ? 'Показати' : 'Архівувати'}"><i class="fa-solid ${caseConfig.enabled === false ? 'fa-eye' : 'fa-box-archive'}"></i></button><button class="small-button" type="button" data-edit-custom-case>Змінити</button><button class="small-button" type="button" data-duplicate-custom-case>Копія</button><button class="small-button danger" type="button" data-remove-custom-case title="Прибрати з чернетки"><i class="fa-solid fa-trash"></i></button></div></article>`).join('')
       : '<p class="empty-line">Власних кейсів у чернетці ще немає.</p>'
+
+    const promos = Array.isArray(draft.promos) ? draft.promos : []
+    $('#promoCount').textContent = `${promos.length} / 6`
+    promoList.innerHTML = promos.length
+      ? promos.map(promo => `<article class="custom-case-row${promo.enabled === false ? ' is-off' : ''}" data-promo="${escapeHtml(promo.id)}"><i class="fa-solid fa-bullhorn"></i><div><strong>${escapeHtml(promo.title)}</strong><small>${escapeHtml(promo.label)} · ${escapeHtml(contentWindowLabel(promo))}</small></div><div class="row-actions"><button class="small-button" type="button" data-toggle-promo title="${promo.enabled === false ? 'Показати' : 'Приховати'}"><i class="fa-solid ${promo.enabled === false ? 'fa-eye' : 'fa-eye-slash'}"></i></button><button class="small-button" type="button" data-edit-promo>Змінити</button><button class="small-button danger" type="button" data-remove-promo><i class="fa-solid fa-trash"></i></button></div></article>`).join('')
+      : '<p class="empty-line">Промо-кампаній у чернетці ще немає.</p>'
+    populateCustomCaseEditor(draft)
+    populateOperationalForms(draft)
+    renderContentRelease(draft)
   }
 
   function updateDraft(mutator) {
@@ -481,16 +624,17 @@
     renderContent()
   }
 
-  async function saveContent(action, successMessage) {
+  async function saveContent(action, successMessage, extra = {}) {
     if (!state.content?.draft || !canGame('configure')) return
-    const buttons = ['#saveContentDraftButton', '#publishContentButton', '#resetContentDraftButton'].map($)
+    const buttons = ['#saveContentDraftButton', '#publishContentButton', '#resetContentDraftButton', '#scheduleContentButton', '#cancelScheduleButton'].map($)
     buttons.forEach(button => { if (button) button.disabled = true })
     try {
-      const payload = { action, revision: state.content.draft.revision }
-      if (action === 'save_draft' || action === 'publish') payload.draft = state.content.draft
+      const payload = { action, revision: state.content.draft.revision, ...extra }
+      if (action === 'save_draft' || action === 'publish' || action === 'schedule_publish') payload.draft = state.content.draft
       const data = await api('/api/admin/content', { method: 'POST', body: JSON.stringify(payload) })
       state.content = data.content || state.content
       state.audit = data.audit || state.audit
+      state.contentSummary = data.summary || state.contentSummary
       renderContent()
       renderAudit()
       showToast(successMessage)
@@ -535,9 +679,11 @@
         const content = await api('/api/admin/content')
         state.content = content.content || null
         state.contentCatalog = content.catalog || null
+        state.contentSummary = content.summary || null
       } else {
         state.content = null
         state.contentCatalog = null
+        state.contentSummary = null
       }
       renderAll()
       showPanel()
@@ -551,6 +697,7 @@
       state.gameCapabilities = {}
       state.content = null
       state.contentCatalog = null
+      state.contentSummary = null
       showGate()
       if (error.status !== 401 && !quiet) showToast(error.message, 'error')
     } finally {
@@ -856,46 +1003,164 @@
       return
     }
     const builtIn = new Set((state.contentCatalog?.builtInCases || []).map(entry => entry.id))
-    if (builtIn.has(id) || (state.content.draft.customCases || []).some(entry => entry.id === id)) {
+    const isEditing = Boolean(editingCustomCaseId)
+    if (builtIn.has(id) || (state.content.draft.customCases || []).some(entry => entry.id === id && entry.id !== editingCustomCaseId)) {
       showToast('Цей ID кейса вже зайнятий.', 'error')
       return
     }
-    if ((state.content.draft.customCases || []).length >= 24) {
+    if (!isEditing && (state.content.draft.customCases || []).length >= 24) {
       showToast('У чернетці може бути максимум 24 власні кейси.', 'error')
       return
     }
+    const existing = (state.content.draft.customCases || []).find(entry => entry.id === editingCustomCaseId)
+    const record = {
+      id,
+      name,
+      description: $('#customCaseDescription').value.trim(),
+      category: $('#customCaseCategory').value,
+      theme: $('#customCaseTheme').value,
+      badge: $('#customCaseBadge').value.trim(),
+      poolKind: $('#customCasePoolKind').value,
+      weapons: splitContentList($('#customCaseWeapons').value),
+      rarities: splitContentList($('#customCaseRarities').value),
+      terms: splitContentList($('#customCaseTerms').value),
+      artwork: $('#customCaseArtwork').value.trim(),
+      enabled: $('#customCaseEnabled').checked,
+      order: Number(existing?.order ?? (state.content.draft.customCases || []).length),
+      ...readWindow('#customCaseStartsAt', '#customCaseEndsAt'),
+    }
+    editingCustomCaseId = ''
     updateDraft(draft => {
-      draft.customCases = [...(draft.customCases || []), {
-        id,
-        name,
-        description: $('#customCaseDescription').value.trim(),
-        category: $('#customCaseCategory').value,
-        theme: $('#customCaseTheme').value,
-        badge: $('#customCaseBadge').value.trim(),
-        poolKind: $('#customCasePoolKind').value,
-        weapons: splitContentList($('#customCaseWeapons').value),
-        rarities: splitContentList($('#customCaseRarities').value),
-        terms: splitContentList($('#customCaseTerms').value),
-        artwork: $('#customCaseArtwork').value.trim(),
-        enabled: $('#customCaseEnabled').checked,
-        order: (draft.customCases || []).length,
-      }]
+      draft.customCases = isEditing
+        ? (draft.customCases || []).map(entry => entry.id === existing?.id ? record : entry)
+        : [...(draft.customCases || []), record]
     })
-    event.currentTarget.reset()
-    $('#customCaseEnabled').checked = true
-    renderContent()
-    showToast('Кейс додано до локальної чернетки. Натисни «Зберегти чернетку».')
+    resetCustomCaseEditor()
+    showToast(isEditing ? 'Кейс оновлено в локальній чернетці.' : 'Кейс додано до локальної чернетки. Натисни «Зберегти чернетку».')
   })
 
   customCaseList.addEventListener('click', event => {
-    const button = event.target.closest('[data-remove-custom-case]')
+    const button = event.target.closest('[data-remove-custom-case], [data-toggle-custom-case], [data-edit-custom-case], [data-duplicate-custom-case]')
     const row = button?.closest('[data-custom-case]')
     const id = row?.dataset.customCase || ''
     if (!id || !canGame('configure')) return
+    if (button.hasAttribute('data-edit-custom-case')) {
+      editingCustomCaseId = id
+      renderContent()
+      $('#customCaseName').focus()
+      return
+    }
     updateDraft(draft => {
-      draft.customCases = (draft.customCases || []).filter(entry => entry.id !== id)
+      const list = draft.customCases || []
+      if (button.hasAttribute('data-remove-custom-case')) {
+        draft.customCases = list.filter(entry => entry.id !== id)
+        if (editingCustomCaseId === id) resetCustomCaseEditor()
+      } else if (button.hasAttribute('data-toggle-custom-case')) {
+        draft.customCases = list.map(entry => entry.id === id ? { ...entry, enabled: entry.enabled === false } : entry)
+      } else {
+        if (list.length >= 24) return
+        const source = list.find(entry => entry.id === id)
+        if (!source) return
+        const copyBase = id.slice(0, 35)
+        let copyId = `${copyBase}-copy`
+        let serial = 2
+        while (list.some(entry => entry.id === copyId)) copyId = `${copyBase.slice(0, Math.max(1, 34 - String(serial).length))}-copy-${serial++}`
+        draft.customCases = [...list, { ...source, id: copyId, name: `${source.name} Copy`, enabled: false, order: list.length }]
+      }
     })
   })
+
+  $('#cancelCustomCaseEditButton').addEventListener('click', () => resetCustomCaseEditor())
+
+  $('#announcementForm').addEventListener('submit', event => {
+    event.preventDefault()
+    updateDraft(draft => {
+      draft.announcement = {
+        enabled: $('#announcementEnabled').checked,
+        title: $('#announcementTitle').value.trim(),
+        body: $('#announcementBody').value.trim(),
+        tone: $('#announcementTone').value,
+        ctaLabel: $('#announcementCtaLabel').value.trim(),
+        ctaPage: $('#announcementCtaPage').value,
+        ...readWindow('#announcementStartsAt', '#announcementEndsAt'),
+      }
+    })
+    showToast('Оголошення оновлено в локальній чернетці.')
+  })
+
+  $('#campaignForm').addEventListener('submit', event => {
+    event.preventDefault()
+    updateDraft(draft => {
+      draft.season = { title: $('#seasonTitle').value.trim(), subtitle: $('#seasonSubtitle').value.trim(), ...readWindow('#seasonStartsAt', '#seasonEndsAt') }
+      draft.battlePass = { title: $('#battlePassTitle').value.trim(), subtitle: $('#battlePassSubtitle').value.trim(), ...readWindow('#battlePassStartsAt', '#battlePassEndsAt') }
+      draft.economy = { casePriceMultiplier: Number($('#economyCasePriceMultiplier').value), taskRewardMultiplier: Number($('#economyTaskRewardMultiplier').value) }
+    })
+    showToast('Сезон, Battle Pass і віртуальна економіка оновлені в чернетці.')
+  })
+
+  $('#promoForm').addEventListener('submit', event => {
+    event.preventDefault()
+    if (!state.content?.draft) return
+    const id = $('#promoId').value.trim().toLowerCase()
+    const title = $('#promoTitle').value.trim()
+    if (!/^[a-z0-9][a-z0-9_-]{1,39}$/.test(id) || !title) {
+      showToast('Для кампанії вкажи коректний ID і заголовок.', 'error')
+      return
+    }
+    const isEditing = Boolean(editingPromoId)
+    if ((state.content.draft.promos || []).some(entry => entry.id === id && entry.id !== editingPromoId)) {
+      showToast('Такий ID кампанії вже існує.', 'error')
+      return
+    }
+    if (!isEditing && (state.content.draft.promos || []).length >= 6) {
+      showToast('У чернетці може бути максимум 6 кампаній.', 'error')
+      return
+    }
+    const existing = (state.content.draft.promos || []).find(entry => entry.id === editingPromoId)
+    const record = {
+      id,
+      title,
+      label: $('#promoLabel').value.trim(),
+      body: $('#promoBody').value.trim(),
+      tone: $('#promoTone').value,
+      ctaLabel: $('#promoCtaLabel').value.trim(),
+      ctaPage: $('#promoCtaPage').value,
+      enabled: $('#promoEnabled').checked,
+      order: Number(existing?.order ?? (state.content.draft.promos || []).length),
+      ...readWindow('#promoStartsAt', '#promoEndsAt'),
+    }
+    editingPromoId = ''
+    updateDraft(draft => {
+      draft.promos = isEditing
+        ? (draft.promos || []).map(entry => entry.id === existing?.id ? record : entry)
+        : [...(draft.promos || []), record]
+    })
+    resetPromoEditor()
+    showToast(isEditing ? 'Кампанію оновлено в локальній чернетці.' : 'Кампанію додано до локальної чернетки.')
+  })
+
+  promoList.addEventListener('click', event => {
+    const button = event.target.closest('[data-remove-promo], [data-toggle-promo], [data-edit-promo]')
+    const row = button?.closest('[data-promo]')
+    const id = row?.dataset.promo || ''
+    if (!id || !canGame('configure')) return
+    if (button.hasAttribute('data-edit-promo')) {
+      editingPromoId = id
+      renderContent()
+      $('#promoTitle').focus()
+      return
+    }
+    updateDraft(draft => {
+      if (button.hasAttribute('data-remove-promo')) {
+        draft.promos = (draft.promos || []).filter(entry => entry.id !== id)
+        if (editingPromoId === id) resetPromoEditor()
+      } else {
+        draft.promos = (draft.promos || []).map(entry => entry.id === id ? { ...entry, enabled: entry.enabled === false } : entry)
+      }
+    })
+  })
+
+  $('#cancelPromoEditButton').addEventListener('click', () => resetPromoEditor())
 
   $('#saveContentDraftButton').addEventListener('click', () => void saveContent('save_draft', 'Чернетку збережено. Гравці її ще не бачать.'))
   $('#publishContentButton').addEventListener('click', () => {
@@ -905,6 +1170,23 @@
   $('#resetContentDraftButton').addEventListener('click', () => {
     if (!window.confirm('Скасувати всі незбережені зміни чернетки?')) return
     void saveContent('reset_draft', 'Чернетку повернено до опублікованої версії.')
+  })
+  $('#scheduleContentButton').addEventListener('click', () => {
+    const publishAt = readDateTime($('#contentPublishAt').value)
+    if (publishAt < Date.now() + 60_000) return showToast('Вкажи час щонайменше на 1 хвилину в майбутньому.', 'error')
+    if (!window.confirm(`Запланувати публікацію на ${formatTime(publishAt)}?`)) return
+    void saveContent('schedule_publish', 'Публікацію заплановано для сайту й Android.', { publishAt })
+  })
+  $('#cancelScheduleButton').addEventListener('click', () => {
+    if (!window.confirm('Скасувати заплановану публікацію?')) return
+    void saveContent('cancel_schedule', 'Заплановану публікацію скасовано.')
+  })
+  contentHistory.addEventListener('click', event => {
+    const button = event.target.closest('[data-content-rollback]')
+    const revision = Number(button?.dataset.contentRollback)
+    if (!Number.isFinite(revision)) return
+    if (!window.confirm(`Відкотити сайт і Android до вмісту версії ${revision}?`)) return
+    void saveContent('rollback', `Вміст відкачено до версії ${revision}.`, { rollbackRevision: revision })
   })
 
   logoutButton.addEventListener('click', async () => {
@@ -922,6 +1204,9 @@
     state.selectedSkinId = ''
     state.content = null
     state.contentCatalog = null
+    state.contentSummary = null
+    editingCustomCaseId = ''
+    editingPromoId = ''
     showGate()
   })
 

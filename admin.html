@@ -9,10 +9,10 @@
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="/css/tailwind.css?v=6.9.6">
+<link rel="stylesheet" href="/css/tailwind.css?v=6.9.7">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/css/admin.css?v=6.9.6">
+<link rel="stylesheet" href="/css/admin.css?v=6.9.7">
 </head>
 <body>
 <div class="admin-shell">
@@ -103,10 +103,69 @@
             <label>Рідкості через кому<input id="customCaseRarities" maxlength="300" placeholder="Restricted, Classified, Covert"></label>
             <label class="wide">Слова в назві скіну через кому<input id="customCaseTerms" maxlength="480" placeholder="Doppler, Fade, Neon"></label>
             <label class="wide">Обкладинка (необов’язково)<input id="customCaseArtwork" type="url" maxlength="1024" placeholder="https://… або /assets/cases/my-case.png"></label>
+            <label>Старт (необов’язково)<input id="customCaseStartsAt" type="datetime-local"></label>
+            <label>Завершення (необов’язково)<input id="customCaseEndsAt" type="datetime-local"></label>
             <label class="case-enabled"><input id="customCaseEnabled" type="checkbox" checked> Показувати після публікації</label>
             <button class="primary-button" id="addCustomCaseButton" type="submit"><i class="fa-solid fa-plus"></i> Додати до чернетки</button>
+            <button class="small-button hidden" id="cancelCustomCaseEditButton" type="button">Скасувати редагування</button>
           </form>
           <div id="customCaseList" class="custom-case-list" aria-live="polite"></div>
+        </section>
+        <section class="content-card campaign-card">
+          <div class="form-heading"><i class="fa-solid fa-bullhorn"></i><span>Оголошення для всіх</span></div>
+          <p class="form-hint"><i class="fa-solid fa-tower-broadcast"></i> Показується вгорі сайту й у застосунку без оновлення збірки.</p>
+          <form id="announcementForm" class="content-form">
+            <label class="wide"><input id="announcementEnabled" type="checkbox"> Увімкнути оголошення</label>
+            <label>Заголовок<input id="announcementTitle" maxlength="72" placeholder="Оновлення вже онлайн"></label>
+            <label>Колір<select id="announcementTone"></select></label>
+            <label class="wide">Текст<input id="announcementBody" maxlength="280" placeholder="Розкажи гравцям, що змінилося."></label>
+            <label>Кнопка<input id="announcementCtaLabel" maxlength="32" placeholder="Відкрити"></label>
+            <label>Сторінка<select id="announcementCtaPage"></select></label>
+            <label>Початок<input id="announcementStartsAt" type="datetime-local"></label>
+            <label>Кінець<input id="announcementEndsAt" type="datetime-local"></label>
+            <button class="small-button content-form-submit" type="submit"><i class="fa-solid fa-check"></i> Застосувати до чернетки</button>
+          </form>
+        </section>
+        <section class="content-card campaign-card">
+          <div class="form-heading"><i class="fa-solid fa-calendar-days"></i><span>Сезон, Battle Pass і економіка</span></div>
+          <p class="form-hint"><i class="fa-solid fa-shield-halved"></i> Коефіцієнти працюють лише з віртуальними PC. Діапазон: від 0.50× до 2.00×.</p>
+          <form id="campaignForm" class="content-form">
+            <label>Назва сезону<input id="seasonTitle" maxlength="72" placeholder="Сезон: Сигнал"></label>
+            <label>Підзаголовок сезону<input id="seasonSubtitle" maxlength="180" placeholder="Опис сезону"></label>
+            <label>Старт сезону<input id="seasonStartsAt" type="datetime-local"></label>
+            <label>Кінець сезону<input id="seasonEndsAt" type="datetime-local"></label>
+            <label>Назва Battle Pass<input id="battlePassTitle" maxlength="72" placeholder="POTUZHNO PASS"></label>
+            <label>Підзаголовок Pass<input id="battlePassSubtitle" maxlength="180" placeholder="Опис Battle Pass"></label>
+            <label>Старт Pass<input id="battlePassStartsAt" type="datetime-local"></label>
+            <label>Кінець Pass<input id="battlePassEndsAt" type="datetime-local"></label>
+            <label>Ціна кейсів, ×<input id="economyCasePriceMultiplier" type="number" min="0.5" max="2" step="0.05" value="1"></label>
+            <label>Нагороди завдань, ×<input id="economyTaskRewardMultiplier" type="number" min="0.5" max="2" step="0.05" value="1"></label>
+            <button class="small-button content-form-submit" type="submit"><i class="fa-solid fa-sliders"></i> Застосувати до чернетки</button>
+          </form>
+        </section>
+        <section class="content-card promo-card">
+          <div class="section-head"><div><p class="eyebrow">ПРОМО-ЦЕНТР</p><h3>Картки кампаній</h3></div><span class="count-pill" id="promoCount">0 / 6</span></div>
+          <form id="promoForm" class="content-form">
+            <label>ID кампанії<input id="promoId" maxlength="40" pattern="[a-z0-9][a-z0-9_-]{1,39}" placeholder="streamer-week" required></label>
+            <label>Мітка<input id="promoLabel" maxlength="32" placeholder="LIVE"></label>
+            <label class="wide">Заголовок<input id="promoTitle" maxlength="72" placeholder="Streamer Case вже у грі" required></label>
+            <label class="wide">Текст<input id="promoBody" maxlength="280" placeholder="Поясни гравцям подію або пропозицію."></label>
+            <label>Колір<select id="promoTone"></select></label>
+            <label>Кнопка<input id="promoCtaLabel" maxlength="32" placeholder="Відкрити"></label>
+            <label>Сторінка<select id="promoCtaPage"></select></label>
+            <label>Початок<input id="promoStartsAt" type="datetime-local"></label>
+            <label>Кінець<input id="promoEndsAt" type="datetime-local"></label>
+            <label class="case-enabled"><input id="promoEnabled" type="checkbox" checked> Показувати після публікації</label>
+            <button class="primary-button" id="addPromoButton" type="submit"><i class="fa-solid fa-plus"></i> Додати кампанію</button>
+            <button class="small-button hidden" id="cancelPromoEditButton" type="button">Скасувати редагування</button>
+          </form>
+          <div id="promoList" class="custom-case-list" aria-live="polite"></div>
+        </section>
+        <section class="content-card release-card">
+          <div class="section-head"><div><p class="eyebrow">РЕЛІЗ-ЦЕНТР</p><h3>Стан і відкат</h3></div><span id="contentScheduleState" class="count-pill">Без розкладу</span></div>
+          <div id="contentSummary" class="content-summary" aria-live="polite"></div>
+          <div class="release-schedule"><label>Опублікувати пізніше<input id="contentPublishAt" type="datetime-local"></label><button id="scheduleContentButton" class="small-button" type="button"><i class="fa-solid fa-clock"></i> Запланувати</button><button id="cancelScheduleButton" class="small-button danger hidden" type="button"><i class="fa-solid fa-ban"></i> Скасувати</button></div>
+          <div id="contentHistory" class="content-history" aria-live="polite"></div>
         </section>
       </div>
       <div class="content-actions">
@@ -218,6 +277,6 @@
   </main>
 </div>
 <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
-<script src="/js/admin.js?v=6.9.6" defer></script>
+<script src="/js/admin.js?v=6.9.7" defer></script>
 </body>
 </html>

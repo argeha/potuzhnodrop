@@ -35,7 +35,7 @@
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-<link rel="stylesheet" href="/css/style.css?v=7.9.0">
+<link rel="stylesheet" href="/css/style.css?v=7.9.0-ops.1">
 </head>
 <body class="min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -144,6 +144,7 @@
 <div class="flex shrink-0 gap-2"><button onclick="startSteamLogin()" class="rounded-xl bg-cyan-300 px-4 py-2.5 text-xs font-extrabold text-slate-950 transition hover:bg-cyan-200"><i class="fa-brands fa-steam mr-1.5"></i>Увійти через Steam</button><button onclick="dismissSteamNudge()" class="rounded-xl border border-white/15 px-3 py-2.5 text-xs font-bold text-gray-300 hover:bg-white/5" title="Не показувати">Пізніше</button></div>
 </div>
 </section>
+<section id="runtimeAnnouncement" class="runtime-announcement hidden" aria-live="polite"></section>
 
 <!-- COMMAND HUB -->
 <section data-page="hub" class="page-view command-hub-page hidden space-y-5">
@@ -161,6 +162,7 @@
 </article>
 
 <section id="hubPulseStats" class="command-hub-pulse" aria-label="Стан профілю"></section>
+<section id="hubPromos" class="runtime-promo-grid" aria-live="polite"></section>
 
 <section class="command-hub-section-head"><div><p>ОБЕРИ РЕЖИМ</p><h2>Наступний хід</h2></div><button type="button" onclick="showPage('stats')"><i class="fa-solid fa-chart-simple"></i> Вся статистика</button></section>
 <section class="command-hub-mode-grid" aria-label="Ігрові режими">
@@ -788,6 +790,6 @@
 
 <script src="/js/mobile-config.js" defer></script>
 <script src="/js/mobile.js?v=1" defer></script>
-<script src="/js/app.js?v=7.9.0-content.1" defer></script>
+<script src="/js/app.js?v=7.9.0-ops.1" defer></script>
 </body>
 </html>

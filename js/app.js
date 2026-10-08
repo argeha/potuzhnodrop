@@ -41,11 +41,18 @@ const RUNTIME_CASE_CATEGORIES = new Set(['hot', 'knives', 'gloves', 'weapons', '
 const RUNTIME_CASE_THEMES = new Set(['gray', 'blue', 'purple', 'gold', 'red', 'pink', 'emerald']);
 const RUNTIME_CASE_POOL_KINDS = new Set(['all', 'weapons', 'knives', 'gloves']);
 const RUNTIME_CASE_RARITIES = new Set(['Consumer Grade', 'Industrial Grade', 'Mil-Spec Grade', 'Restricted', 'Classified', 'Covert', 'Contraband', 'Extraordinary']);
+const RUNTIME_CONTENT_TONES = new Set(['cyan', 'amber', 'violet', 'rose', 'emerald']);
+const RUNTIME_CONTENT_PAGES = new Set(['hub', 'case', 'upgrader', 'battle', 'royale', 'contract', 'tasks', 'profile', 'stats']);
 const DEFAULT_RUNTIME_CONTENT = Object.freeze({
   revision: 0,
   features: Object.freeze(Object.fromEntries(RUNTIME_CONTENT_FEATURES.map(feature => [feature, true]))),
   hiddenCaseIds: Object.freeze([]),
-  customCases: Object.freeze([])
+  customCases: Object.freeze([]),
+  announcement: Object.freeze({ enabled: false, tone: 'cyan', title: '', body: '', ctaLabel: '', ctaPage: 'hub', startsAt: 0, endsAt: 0 }),
+  promos: Object.freeze([]),
+  battlePass: Object.freeze({ title: 'POTUZHNO PASS', subtitle: 'Грай, заробляй XP і забирай сезонні нагороди.', startsAt: 0, endsAt: 0 }),
+  season: Object.freeze({ title: 'Сезон: Сигнал', subtitle: 'Збирай вузли та залишай слід у своєму профілі.', startsAt: 0, endsAt: 0 }),
+  economy: Object.freeze({ casePriceMultiplier: 1, taskRewardMultiplier: 1 })
 });
 let runtimeContent = DEFAULT_RUNTIME_CONTENT;
 let runtimeContentLoaded = false;
@@ -771,7 +778,8 @@ const DAILY_CALENDAR_COLLECTIBLES = Object.freeze([
 const DAILY_STREAK_REWARDS = Object.freeze(DAILY_CALENDAR_REWARDS.map(reward => reward.credits));
 
 function economyReward(amount, minimum = DAILY_TASK_MIN_REWARD) {
-  return Math.max(minimum, roundPc((Math.max(0, Number(amount) || 0) * ECONOMY_TASK_REWARD_MULTIPLIER)));
+  const base = Math.max(minimum, roundPc((Math.max(0, Number(amount) || 0) * ECONOMY_TASK_REWARD_MULTIPLIER)));
+  return roundPc(base * getRuntimeEconomy().taskRewardMultiplier);
 }
 const FREE_CASE_COOLDOWN = 24 * 60 * 60 * 1000;
 // Progression is intentionally long-term: levels and the seasonal pass should
@@ -1093,18 +1101,41 @@ function handleCaseArtworkError(image, theme = 'gold') {
   if (fallback) image.replaceWith(fallback);
 }
 
+function normalizeRuntimeWindow(value) {
+  const clean = candidate => {
+    const timestamp = Number(candidate);
+    return Number.isFinite(timestamp) && timestamp > 0 ? Math.round(timestamp) : 0;
+  };
+  const startsAt = clean(value?.startsAt);
+  const rawEndsAt = clean(value?.endsAt);
+  return { startsAt, endsAt: rawEndsAt && (!startsAt || rawEndsAt > startsAt) ? rawEndsAt : 0 };
+}
+
+function isRuntimeWindowOpen(value, now = Date.now()) {
+  return (!value?.startsAt || now >= value.startsAt) && (!value?.endsAt || now < value.endsAt);
+}
+
+function normalizeRuntimeCampaign(value, fallback) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  return {
+    title: cleanText(source.title, 72) || fallback.title,
+    subtitle: cleanText(source.subtitle, 180) || fallback.subtitle,
+    ...normalizeRuntimeWindow(source)
+  };
+}
+
 function normalizeRuntimeContent(value) {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const rawFeatures = source.features && typeof source.features === 'object' && !Array.isArray(source.features) ? source.features : {};
   const features = Object.fromEntries(RUNTIME_CONTENT_FEATURES.map(feature => [feature, rawFeatures[feature] !== false]));
   const hiddenCaseIds = [...new Set((Array.isArray(source.hiddenCaseIds) ? source.hiddenCaseIds : [])
     .map(id => cleanText(id, 40).toLowerCase())
-    .filter(id => /^[a-z0-9_]{2,40}$/.test(id)))].slice(0, 32);
+    .filter(id => /^[a-z0-9][a-z0-9_-]{1,39}$/.test(id)))].slice(0, 32);
   const customCases = (Array.isArray(source.customCases) ? source.customCases : [])
     .map((entry, index) => {
       const id = cleanText(entry?.id, 40).toLowerCase();
       const name = cleanText(entry?.name, 64);
-      if (!/^[a-z0-9_]{2,40}$/.test(id) || !name || CASE_TYPES[id]) return null;
+      if (!/^[a-z0-9][a-z0-9_-]{1,39}$/.test(id) || !name || CASE_TYPES[id]) return null;
       const unique = (values, limit = 8) => [...new Set(values)].slice(0, limit);
       const artworkSource = cleanText(entry?.artwork, 1024);
       let artwork = '';
@@ -1133,17 +1164,83 @@ function normalizeRuntimeContent(value) {
         terms: unique((Array.isArray(entry?.terms) ? entry.terms : []).map(value => cleanText(value, 48)).filter(Boolean)),
         enabled: entry?.enabled !== false,
         order: clampNumber(entry?.order, 0, 9_999, index),
+        ...normalizeRuntimeWindow(entry)
       };
     })
     .filter(Boolean)
     .filter((entry, index, all) => all.findIndex(candidate => candidate.id === entry.id) === index)
     .sort((left, right) => left.order - right.order || left.name.localeCompare(right.name, 'uk'))
     .slice(0, 24);
-  return { revision: clampNumber(source.revision, 0, Number.MAX_SAFE_INTEGER, 0), features, hiddenCaseIds, customCases };
+  const announcementSource = source.announcement && typeof source.announcement === 'object' && !Array.isArray(source.announcement) ? source.announcement : {};
+  const announcementTone = cleanText(announcementSource.tone, 16);
+  const announcementPage = cleanText(announcementSource.ctaPage, 24);
+  const announcement = {
+    enabled: announcementSource.enabled === true,
+    tone: RUNTIME_CONTENT_TONES.has(announcementTone) ? announcementTone : 'cyan',
+    title: cleanText(announcementSource.title, 72),
+    body: cleanText(announcementSource.body, 280),
+    ctaLabel: cleanText(announcementSource.ctaLabel, 32),
+    ctaPage: RUNTIME_CONTENT_PAGES.has(announcementPage) ? announcementPage : 'hub',
+    ...normalizeRuntimeWindow(announcementSource)
+  };
+  const promos = (Array.isArray(source.promos) ? source.promos : [])
+    .map((entry, index) => {
+      const id = cleanText(entry?.id, 40).toLowerCase();
+      const title = cleanText(entry?.title, 72);
+      if (!/^[a-z0-9][a-z0-9_-]{1,39}$/.test(id) || !title) return null;
+      const tone = cleanText(entry?.tone, 16);
+      const ctaPage = cleanText(entry?.ctaPage, 24);
+      return {
+        id,
+        title,
+        body: cleanText(entry?.body, 280) || 'Спеціальна подія вже доступна у грі.',
+        label: cleanText(entry?.label, 32) || 'LIVE',
+        ctaLabel: cleanText(entry?.ctaLabel, 32) || 'Відкрити',
+        ctaPage: RUNTIME_CONTENT_PAGES.has(ctaPage) ? ctaPage : 'hub',
+        tone: RUNTIME_CONTENT_TONES.has(tone) ? tone : 'cyan',
+        enabled: entry?.enabled !== false,
+        order: clampNumber(entry?.order, 0, 9_999, index),
+        ...normalizeRuntimeWindow(entry)
+      };
+    })
+    .filter(Boolean)
+    .filter((entry, index, all) => all.findIndex(candidate => candidate.id === entry.id) === index)
+    .sort((left, right) => left.order - right.order || left.title.localeCompare(right.title, 'uk'))
+    .slice(0, 6);
+  const economySource = source.economy && typeof source.economy === 'object' && !Array.isArray(source.economy) ? source.economy : {};
+  return {
+    revision: clampNumber(source.revision, 0, Number.MAX_SAFE_INTEGER, 0),
+    features,
+    hiddenCaseIds,
+    customCases,
+    announcement,
+    promos,
+    battlePass: normalizeRuntimeCampaign(source.battlePass, DEFAULT_RUNTIME_CONTENT.battlePass),
+    season: normalizeRuntimeCampaign(source.season, DEFAULT_RUNTIME_CONTENT.season),
+    economy: {
+      casePriceMultiplier: clampNumber(economySource.casePriceMultiplier, .5, 2, 1),
+      taskRewardMultiplier: clampNumber(economySource.taskRewardMultiplier, .5, 2, 1)
+    }
+  };
 }
 
 function isRuntimeFeatureEnabled(feature) {
-  return runtimeContent?.features?.[feature] !== false;
+  if (runtimeContent?.features?.[feature] === false) return false;
+  if (feature === 'battlePass') return isRuntimeWindowOpen(runtimeContent?.battlePass);
+  if (feature === 'seasonalEvents') return isRuntimeWindowOpen(runtimeContent?.season);
+  return true;
+}
+
+function getRuntimeEconomy() {
+  return runtimeContent?.economy || DEFAULT_RUNTIME_CONTENT.economy;
+}
+
+function getRuntimeBattlePass() {
+  return runtimeContent?.battlePass || DEFAULT_RUNTIME_CONTENT.battlePass;
+}
+
+function getRuntimeSeason() {
+  return runtimeContent?.season || DEFAULT_RUNTIME_CONTENT.season;
 }
 
 function isRuntimePageEnabled(page) {
@@ -1174,7 +1271,7 @@ function getRuntimeCaseConfig(caseType) {
 
 function isRuntimeCaseVisible(caseType) {
   const custom = runtimeCustomCaseConfig(caseType);
-  if (custom) return custom.enabled !== false && isRuntimeFeatureEnabled('cases');
+  if (custom) return custom.enabled !== false && isRuntimeWindowOpen(custom) && isRuntimeFeatureEnabled('cases');
   return isRuntimeFeatureEnabled('cases') && !runtimeContent.hiddenCaseIds.includes(caseType);
 }
 
@@ -1187,6 +1284,33 @@ function getVisibleCaseEntries() {
   return [...builtIn, ...custom];
 }
 
+function renderRuntimeAnnouncement() {
+  const root = document.getElementById('runtimeAnnouncement');
+  if (!root) return;
+  const announcement = runtimeContent?.announcement;
+  const visible = Boolean(announcement?.enabled && announcement.title && isRuntimeWindowOpen(announcement));
+  root.classList.toggle('hidden', !visible);
+  root.replaceChildren();
+  if (!visible) return;
+  root.dataset.tone = announcement.tone || 'cyan';
+  root.innerHTML = `<div class="runtime-announcement-copy"><span><i class="fa-solid fa-tower-broadcast"></i> ОГОЛОШЕННЯ</span><strong>${escapeHtml(announcement.title)}</strong>${announcement.body ? `<p>${escapeHtml(announcement.body)}</p>` : ''}</div>${announcement.ctaLabel ? `<button type="button" data-runtime-announcement-open>${escapeHtml(announcement.ctaLabel)} <i class="fa-solid fa-arrow-right"></i></button>` : ''}`;
+  root.querySelector('[data-runtime-announcement-open]')?.addEventListener('click', () => showPage(announcement.ctaPage || 'hub'));
+}
+
+function renderRuntimePromos() {
+  const root = document.getElementById('hubPromos');
+  if (!root) return;
+  const promos = (runtimeContent?.promos || []).filter(promo => promo.enabled && isRuntimeWindowOpen(promo));
+  root.replaceChildren();
+  root.classList.toggle('hidden', !promos.length);
+  if (!promos.length) return;
+  root.innerHTML = promos.map(promo => `<article class="runtime-promo-card" data-tone="${escapeHtml(promo.tone)}"><div><span>${escapeHtml(promo.label)}</span><strong>${escapeHtml(promo.title)}</strong><p>${escapeHtml(promo.body)}</p></div><button type="button" data-runtime-promo="${escapeHtml(promo.id)}">${escapeHtml(promo.ctaLabel)} <i class="fa-solid fa-arrow-right"></i></button></article>`).join('');
+  root.querySelectorAll('[data-runtime-promo]').forEach(button => button.addEventListener('click', () => {
+    const promo = promos.find(entry => entry.id === button.dataset.runtimePromo);
+    if (promo) showPage(promo.ctaPage || 'hub');
+  }));
+}
+
 function applyRuntimeContent() {
   Object.entries(RUNTIME_PAGE_FEATURES).forEach(([page, feature]) => {
     const hidden = !isRuntimeFeatureEnabled(feature);
@@ -1195,6 +1319,8 @@ function applyRuntimeContent() {
   });
   if (!isRuntimeFeatureEnabled('battlePass')) document.getElementById('battlePass')?.replaceChildren();
   if (currentPage && !isRuntimePageEnabled(currentPage)) showPage('hub');
+  renderRuntimeAnnouncement();
+  renderRuntimePromos();
   renderCaseCatalog();
   renderBattlePass();
   renderGameHub();
@@ -3505,6 +3631,7 @@ function renderBattlePass() {
   root.classList.remove('hidden');
   const progress = getBattlePassProgress();
   const { pass, unlocked, currentTier, inTier } = progress;
+  const runtimePass = getRuntimeBattlePass();
   const rewardCell = (lane, entry) => {
     const reward = entry[lane];
     const copy = battlePassRewardCopy(reward);
@@ -3537,10 +3664,10 @@ function renderBattlePass() {
     </button>`;
   };
   const tierNumbers = BATTLE_PASS_REWARDS.map(entry => `<span class="bp-tier-number ${entry.tier === currentTier ? 'is-current' : entry.tier <= unlocked ? 'is-open' : ''}">${entry.tier}</span>`).join('');
-  root.innerHTML = `<article class="battle-pass-card ${battlePassExpanded ? 'is-expanded' : 'is-compact'}" aria-label="Бойовий пропуск ${BATTLE_PASS_SEASON.name}">
+  root.innerHTML = `<article class="battle-pass-card ${battlePassExpanded ? 'is-expanded' : 'is-compact'}" aria-label="Бойовий пропуск ${escapeHtml(runtimePass.title)}">
     <div class="battle-pass-hero">
       <div class="bp-coin-mark"><i class="fa-solid fa-coins"></i><b>PC</b></div>
-      <div class="bp-hero-copy"><p>${BATTLE_PASS_SEASON.name} · БЕЗ РЕАЛЬНИХ ОПЛАТ</p><h2>${BATTLE_PASS_SEASON.title}</h2><span>Грай, заробляй XP і забирай сезонні нагороди.</span><button type="button" class="bp-expand-btn" data-bp-toggle><i class="fa-solid fa-layer-group"></i>${battlePassExpanded ? 'Сховати нагороди' : 'Показати 30 рівнів'}</button></div>
+      <div class="bp-hero-copy"><p>${escapeHtml(BATTLE_PASS_SEASON.name)} · БЕЗ РЕАЛЬНИХ ОПЛАТ</p><h2>${escapeHtml(runtimePass.title)}</h2><span>${escapeHtml(runtimePass.subtitle)}</span><button type="button" class="bp-expand-btn" data-bp-toggle><i class="fa-solid fa-layer-group"></i>${battlePassExpanded ? 'Сховати нагороди' : 'Показати 30 рівнів'}</button></div>
       <div class="bp-progress-box"><div class="bp-progress-label"><span>LVL ${currentTier} / ${BATTLE_PASS_SEASON.tiers}</span><b>${pass.xp.toLocaleString('uk-UA')} XP</b></div><div class="bp-progress-track"><span style="width:${progress.percent}%"></span></div><small>${inTier.toLocaleString('uk-UA')} / ${BATTLE_PASS_SEASON.tierXp.toLocaleString('uk-UA')} XP до наступного рівня</small></div>
       <button type="button" id="battlePassBuyBtn" class="bp-buy-btn ${pass.premium ? 'is-owned' : ''}"><i class="fa-solid ${pass.premium ? 'fa-circle-check' : 'fa-crown'}"></i>${pass.premium ? 'POTUZHNO PASS АКТИВНИЙ' : `ВІДКРИТИ ЗА ${formatCredits(BATTLE_PASS_SEASON.price)}`}</button>
     </div>
@@ -6863,6 +6990,7 @@ function renderCommandHub() {
     collection.innerHTML = `<div class="command-hub-showcase">${highlights.length ? highlights.map(item => `<button type="button" data-hub-skin="${escapeHtml(String(item.id))}" title="Деталі: ${escapeHtml(item.name)}"><img src="${escapeHtml(getSkinImageSrc(item))}" alt="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><span>${escapeHtml(item.name)}</span><small>${formatCredits(verifiedInventoryMarketPrice(item))}</small></button>`).join('') : '<div class="command-hub-empty"><i class="fa-solid fa-box-open"></i><strong>Колекція ще порожня</strong><span>Перший дроп з’явиться тут.</span></div>'}</div><div class="command-hub-collection-summary"><span>Завершено колекцій</span><strong>${completedCollections} / ${COLLECTION_DEFINITIONS.length}</strong></div><div class="command-hub-collection-list">${collectionRows}</div>`;
     collection.querySelectorAll('[data-hub-skin]').forEach(button => button.addEventListener('click', () => showItemDetail(button.dataset.hubSkin)));
   }
+  renderRuntimePromos();
   renderSignalSeasonHub();
 }
 
@@ -6906,6 +7034,7 @@ function addSignalSeasonMoment(state, reward) {
 function claimSignalSeasonReward(step) {
   if (!gameState) return;
   const progress = getSignalCampaignProgress();
+  const runtimeSeason = getRuntimeSeason();
   const reward = progress.rewards.find(entry => entry.step === Number(step));
   if (!reward || progress.completed < reward.step) {
     showToast('Спочатку активуй потрібні вузли маршруту.', 'info');
@@ -6954,7 +7083,7 @@ function renderSignalSeasonHub() {
   const claimed = progress.state.claimed.length;
   const phase = progress.completed >= progress.total ? 'ЛЕГЕНДА' : progress.completed >= 4 ? 'РЕЗОНАНС' : progress.completed >= 2 ? 'ПОСИЛЕННЯ' : 'СКАНУВАННЯ';
   const nodes = progress.nodes.map(node => `<i class="${node.done ? 'is-done' : next?.id === node.id ? 'is-next' : ''}" title="${escapeHtml(node.title)}"></i>`).join('');
-  root.innerHTML = `<article class="signal-season-hub-card"><div class="signal-season-hub-beacon" aria-hidden="true"><i class="fa-solid fa-satellite-dish"></i><span>01</span></div><div class="signal-season-hub-copy"><p><i class="fa-solid fa-tower-broadcast"></i> ${SIGNAL_SEASON.title} · ФАЗА ${phase}</p><h2>${progress.completed} <small>/ ${progress.total}</small> вузлів у мережі</h2><span>${next ? `Наступний сигнал: ${escapeHtml(next.title)} · ${escapeHtml(next.note)}` : 'Маршрут завершено — стиль і рамка вже працюють у твоєму профілі.'}</span></div><div class="signal-season-hub-meter"><div class="signal-season-hub-meter-top"><strong>${progress.percent}%</strong><small>${claimed}/${progress.rewards.length} нагород</small></div><i aria-label="Прогрес сезону ${progress.percent}%"><b style="width:${progress.percent}%"></b></i><div class="signal-season-hub-nodes" aria-hidden="true">${nodes}</div></div><button type="button" data-signal-open>Відкрити Сигнал <i class="fa-solid fa-arrow-right"></i></button></article>`;
+  root.innerHTML = `<article class="signal-season-hub-card"><div class="signal-season-hub-beacon" aria-hidden="true"><i class="fa-solid fa-satellite-dish"></i><span>01</span></div><div class="signal-season-hub-copy"><p><i class="fa-solid fa-tower-broadcast"></i> ${escapeHtml(runtimeSeason.title)} · ФАЗА ${phase}</p><h2>${progress.completed} <small>/ ${progress.total}</small> вузлів у мережі</h2><span>${next ? `Наступний сигнал: ${escapeHtml(next.title)} · ${escapeHtml(next.note)}` : escapeHtml(runtimeSeason.subtitle)}</span></div><div class="signal-season-hub-meter"><div class="signal-season-hub-meter-top"><strong>${progress.percent}%</strong><small>${claimed}/${progress.rewards.length} нагород</small></div><i aria-label="Прогрес сезону ${progress.percent}%"><b style="width:${progress.percent}%"></b></i><div class="signal-season-hub-nodes" aria-hidden="true">${nodes}</div></div><button type="button" data-signal-open>Відкрити сезон <i class="fa-solid fa-arrow-right"></i></button></article>`;
   root.querySelector('[data-signal-open]')?.addEventListener('click', () => showPage('tasks'));
 }
 
@@ -6966,6 +7095,7 @@ function renderSignalSeason() {
     return;
   }
   const progress = getSignalCampaignProgress();
+  const runtimeSeason = getRuntimeSeason();
   const journal = getSignalJournal(progress);
   const phase = progress.completed >= progress.total ? 'ЛЕГЕНДА' : progress.completed >= 4 ? 'РЕЗОНАНС' : progress.completed >= 2 ? 'ПОСИЛЕННЯ' : 'СКАНУВАННЯ';
   const remainingNodes = progress.total - progress.completed;
@@ -7000,7 +7130,7 @@ function renderSignalSeason() {
     ? `<button type="button" class="signal-season-route-action" data-signal-next="${escapeHtml(progress.next.page)}"><i class="fa-solid fa-satellite-dish"></i><span><small>НАСТУПНА КООРДИНАТА</small><b>${escapeHtml(progress.next.title)}</b></span><em>${escapeHtml(progress.next.note)}</em><i class="fa-solid fa-arrow-right"></i></button>`
     : '<button type="button" class="signal-season-route-action is-complete" data-signal-profile><i class="fa-solid fa-star"></i><span><small>МАРШРУТ ЗАВЕРШЕНО</small><b>Твій Сигнал увійшов у легенду</b></span><em>Показати його у профілі</em><i class="fa-solid fa-arrow-right"></i></button>';
   const finaleMarkup = isComplete ? `<section class="signal-legend-victory"><div class="signal-legend-victory-flare" aria-hidden="true"><i></i><i></i><i></i></div><div class="signal-legend-victory-copy"><p><i class="fa-solid fa-star"></i> ПІДСУМОК КАМПАНІЇ</p><h3>Ти не просто пройшов маршрут.<br><em>Ти став сигналом.</em></h3><span>Твій титул, рамка та історія тепер видно кожному, хто відкриє профіль.</span></div><div class="signal-legend-unlocks"><article class="signal-legend-unlock ${hasTitle ? 'is-unlocked' : ''}"><i class="fa-solid ${titleReward.icon}"></i><span><small>ТИТУЛ</small><b>${escapeHtml(titleReward.title)}</b><em>${titleStatus}</em></span></article><article class="signal-legend-unlock ${hasFrame ? 'is-unlocked' : ''}"><span class="signal-legend-frame"><img src="${escapeHtml(avatarPreview)}" alt=""></span><span><small>РАМКА АВАТАРА</small><b>${escapeHtml(frameReward.title)}</b><em>${frameStatus}</em></span></article></div><div class="signal-legend-victory-actions"><button type="button" data-signal-cosmetics><i class="fa-solid fa-wand-magic-sparkles"></i> Оформлення</button><button type="button" data-signal-profile><i class="fa-solid fa-user-astronaut"></i> Мій профіль</button></div></section>` : '';
-  root.innerHTML = `<article class="signal-season-card ${isComplete ? 'is-complete' : ''}" aria-label="Сезон Сигнал"><header class="signal-season-head"><div class="signal-season-head-copy"><p><i class="fa-solid fa-tower-broadcast"></i> ПОСТІЙНА КАМПАНІЯ · ЛИШЕ КОСМЕТИКА</p><h2>СЕЗОН: <em>СИГНАЛ</em></h2><span>${progress.next ? `Твоя наступна точка — «${escapeHtml(progress.next.title)}». Залишай свій слід у мережі.` : 'Усі шість вузлів зафіксовано. Тепер твій стиль став частиною легенди спільноти.'}</span><div class="signal-season-phase"><i class="fa-solid fa-satellite-dish"></i><b>ФАЗА: ${phase}</b><small>${progress.next ? `Координата ${progress.completed + 1} з ${progress.total}` : 'Усі частоти синхронізовано'}</small></div><div class="signal-season-hero-telemetry"><span><i class="fa-solid fa-signal"></i> ЧАСТОТА 88.6</span><span><i class="fa-solid fa-shield-halved"></i> ПРОТОКОЛ СТИЛЮ</span></div></div><div class="signal-season-orbit signal-season-core" aria-hidden="true"><i></i><i></i><i></i><b><i class="fa-solid fa-tower-broadcast"></i></b><span>LIVE</span></div><div class="signal-season-progress" aria-label="Прогрес: ${progress.completed} з ${progress.total} вузлів"><strong>${progress.completed}<small>/${progress.total}</small></strong><span>вузлів онлайн</span><i><b style="width:${progress.percent}%"></b></i><small>${progress.percent}% сигналу</small></div></header><div class="signal-season-command-bar"><span><i class="fa-solid fa-circle-dot"></i> КАНАЛ «СИГНАЛ» АКТИВНИЙ</span><b>${isComplete ? 'Мережа повністю синхронізована · легенда збережена' : `${remainingNodes} ${remainingNodesLabel} до повного резонансу`}</b><small>Нагороди косметичні · без впливу на PC та шанси</small></div>${finaleMarkup}<div class="signal-season-grid"><section class="signal-season-route"><header><span><i class="fa-solid fa-route"></i> МАРШРУТ СИГНАЛУ</span><small>${isComplete ? 'Шість координат стали твоїм постійним слідом у системі.' : 'Виконуй вузли послідовно — кожен залишає слід у профілі.'}</small></header><div class="signal-season-route-line" aria-hidden="true"><i style="width:${progress.percent}%"></i></div>${nodeMarkup}${routeAction}</section><aside class="signal-season-side"><section><header><span><i class="fa-solid fa-gift"></i> НАГОРОДИ</span><small>Стиль, не сила</small></header><div class="signal-season-rewards">${rewardMarkup}</div></section><section class="signal-season-journal"><header><span><i class="fa-solid fa-book-open"></i> ЖУРНАЛ ЛЕГЕНДИ</span><button type="button" onclick="showPage('profile')">Профіль</button></header><ul>${journalMarkup}</ul></section><section class="signal-season-hall"><header><span><i class="fa-solid fa-ranking-star"></i> ЗАЛ РЕЗОНАНСУ</span><small>спільнота</small></header><div>${hallMarkup}</div></section></aside></div><footer><i class="fa-solid fa-shield-heart"></i> Кампанія не дає PC, шансів або переваги. Вона зберігає твій стиль і прогрес у профілі.</footer></article>`;
+  root.innerHTML = `<article class="signal-season-card ${isComplete ? 'is-complete' : ''}" aria-label="${escapeHtml(runtimeSeason.title)}"><header class="signal-season-head"><div class="signal-season-head-copy"><p><i class="fa-solid fa-tower-broadcast"></i> ПОСТІЙНА КАМПАНІЯ · ЛИШЕ КОСМЕТИКА</p><h2>${escapeHtml(runtimeSeason.title)}</h2><span>${progress.next ? `Твоя наступна точка — «${escapeHtml(progress.next.title)}». ${escapeHtml(runtimeSeason.subtitle)}` : escapeHtml(runtimeSeason.subtitle)}</span><div class="signal-season-phase"><i class="fa-solid fa-satellite-dish"></i><b>ФАЗА: ${phase}</b><small>${progress.next ? `Координата ${progress.completed + 1} з ${progress.total}` : 'Усі частоти синхронізовано'}</small></div><div class="signal-season-hero-telemetry"><span><i class="fa-solid fa-signal"></i> ЧАСТОТА 88.6</span><span><i class="fa-solid fa-shield-halved"></i> ПРОТОКОЛ СТИЛЮ</span></div></div><div class="signal-season-orbit signal-season-core" aria-hidden="true"><i></i><i></i><i></i><b><i class="fa-solid fa-tower-broadcast"></i></b><span>LIVE</span></div><div class="signal-season-progress" aria-label="Прогрес: ${progress.completed} з ${progress.total} вузлів"><strong>${progress.completed}<small>/${progress.total}</small></strong><span>вузлів онлайн</span><i><b style="width:${progress.percent}%"></b></i><small>${progress.percent}% сигналу</small></div></header><div class="signal-season-command-bar"><span><i class="fa-solid fa-circle-dot"></i> КАНАЛ СЕЗОНУ АКТИВНИЙ</span><b>${isComplete ? 'Мережа повністю синхронізована · легенда збережена' : `${remainingNodes} ${remainingNodesLabel} до повного резонансу`}</b><small>Нагороди косметичні · без впливу на PC та шанси</small></div>${finaleMarkup}<div class="signal-season-grid"><section class="signal-season-route"><header><span><i class="fa-solid fa-route"></i> МАРШРУТ СЕЗОНУ</span><small>${isComplete ? 'Шість координат стали твоїм постійним слідом у системі.' : 'Виконуй вузли послідовно — кожен залишає слід у профілі.'}</small></header><div class="signal-season-route-line" aria-hidden="true"><i style="width:${progress.percent}%"></i></div>${nodeMarkup}${routeAction}</section><aside class="signal-season-side"><section><header><span><i class="fa-solid fa-gift"></i> НАГОРОДИ</span><small>Стиль, не сила</small></header><div class="signal-season-rewards">${rewardMarkup}</div></section><section class="signal-season-journal"><header><span><i class="fa-solid fa-book-open"></i> ЖУРНАЛ ЛЕГЕНДИ</span><button type="button" onclick="showPage('profile')">Профіль</button></header><ul>${journalMarkup}</ul></section><section class="signal-season-hall"><header><span><i class="fa-solid fa-ranking-star"></i> ЗАЛ РЕЗОНАНСУ</span><small>спільнота</small></header><div>${hallMarkup}</div></section></aside></div><footer><i class="fa-solid fa-shield-heart"></i> Кампанія не дає PC, шансів або переваги. Вона зберігає твій стиль і прогрес у профілі.</footer></article>`;
   root.querySelectorAll('[data-signal-page]').forEach(button => button.addEventListener('click', () => showPage(button.dataset.signalPage)));
   const nextAction = root.querySelector('[data-signal-next]');
   nextAction?.addEventListener('click', () => showPage(nextAction.dataset.signalNext));
@@ -9407,7 +9537,8 @@ const _caseCostCache = new Map();
 function getCaseCost(caseType) {
   if (caseType === 'free') return 0;
   const cfg = resolveCaseConfig(caseType);
-  const cacheKey = `${cfg.id}:${CS2_SKINS.length}`;
+  const multiplier = getRuntimeEconomy().casePriceMultiplier;
+  const cacheKey = `${cfg.id}:${CS2_SKINS.length}:${multiplier}`;
   const cached = _caseCostCache.get(cacheKey);
   if (cached !== undefined) return cached;
 
@@ -9452,8 +9583,9 @@ function getCaseCost(caseType) {
   }
 
   if (_caseCostCache.size >= 30) _caseCostCache.clear();
-  _caseCostCache.set(cacheKey, cost);
-  return cost;
+  const adjustedCost = roundPc(cost * multiplier);
+  _caseCostCache.set(cacheKey, adjustedCost);
+  return adjustedCost;
 }
 
 function getCaseSkinPool(caseType) {

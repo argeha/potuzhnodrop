@@ -156,6 +156,32 @@ button { cursor: pointer; }
 .custom-case-row small { margin-top: 3px; color: #88a3bb; font-size: 9px; font-weight: 700; }
 .custom-case-row.is-off { opacity: .62; }
 .custom-case-row .small-button { flex: 0 0 auto; }
+.custom-case-row .row-actions { margin-left: auto; }
+.campaign-card { grid-column: 1; }
+.promo-card, .release-card { grid-column: 1 / -1; }
+.promo-card h3, .release-card h3 { margin: 0; color: #f1f5f9; font-family: Teko, sans-serif; font-size: 28px; letter-spacing: .04em; line-height: .9; text-transform: uppercase; }
+.content-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.content-form label { display: block; min-width: 0; color: #a6b4c7; font-size: 9px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.content-form label.wide { grid-column: 1 / -1; }
+.content-form input, .content-form select { width: 100%; height: 38px; margin-top: 6px; padding: 0 9px; border: 1px solid rgba(71, 85, 105, .68); border-radius: 9px; outline: 0; color: #e5edf7; background: #080f18; font-size: 11px; letter-spacing: normal; text-transform: none; }
+.content-form input:focus, .content-form select:focus { border-color: rgba(56, 189, 248, .75); box-shadow: 0 0 0 3px rgba(56, 189, 248, .09); }
+.content-form .case-enabled, .content-form label:has(input[type="checkbox"]) { display: flex; align-items: center; align-self: end; min-height: 38px; gap: 7px; color: #c6d4e3; letter-spacing: normal; text-transform: none; }
+.content-form input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: #22d3ee; }
+.content-form-submit { align-self: end; min-height: 38px; }
+.content-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+.content-summary span { display: block; min-width: 0; padding: 10px; border: 1px solid rgba(71, 85, 105, .4); border-radius: 10px; color: #8396ab; background: rgba(8, 15, 24, .55); font-size: 9px; font-weight: 800; }
+.content-summary strong { display: block; margin-top: 4px; overflow: hidden; color: #e6f5ff; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.release-schedule { display: flex; align-items: end; gap: 8px; margin-top: 13px; }
+.release-schedule label { min-width: 190px; flex: 1; color: #a6b4c7; font-size: 9px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.release-schedule input { width: 100%; height: 38px; margin-top: 6px; padding: 0 9px; border: 1px solid rgba(71, 85, 105, .68); border-radius: 9px; outline: 0; color: #e5edf7; background: #080f18; font-size: 11px; }
+.release-schedule .small-button { min-height: 38px; }
+.content-history { display: grid; gap: 7px; margin-top: 14px; }
+.content-history-row { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border: 1px solid rgba(100, 116, 139, .36); border-radius: 10px; background: rgba(6, 12, 20, .46); }
+.content-history-row > i { color: #a5f3fc; }
+.content-history-row > div { min-width: 0; flex: 1; }
+.content-history-row strong, .content-history-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.content-history-row strong { color: #dcecf8; font-size: 11px; }
+.content-history-row small { margin-top: 3px; color: #8194aa; font-size: 9px; font-weight: 700; }
 .content-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 15px; }
 .content-actions .small-button, .content-actions .primary-button { min-height: 39px; padding: 0 12px; }
 .content-actions .primary-button { width: auto; margin: 0; }
@@ -287,8 +313,14 @@ button { cursor: pointer; }
   .content-version { justify-content: flex-start; }
   .content-workspace { grid-template-columns: 1fr; }
   .case-visibility-card, .custom-case-card { grid-column: auto; grid-row: auto; }
+  .campaign-card, .promo-card, .release-card { grid-column: auto; }
   .feature-toggles, .built-in-case-toggles { grid-template-columns: 1fr; }
   .custom-case-form { grid-template-columns: 1fr 1fr; }
+  .content-form { grid-template-columns: 1fr; }
+  .content-form label.wide { grid-column: auto; }
+  .content-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .release-schedule { align-items: stretch; flex-direction: column; }
+  .release-schedule label { min-width: 0; }
   .custom-case-form label.wide { grid-column: 1 / -1; }
   .custom-case-form .case-enabled, .custom-case-form .primary-button { grid-column: 1 / -1; }
   .content-actions { align-items: stretch; flex-direction: column; }
