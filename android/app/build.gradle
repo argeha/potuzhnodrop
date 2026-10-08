@@ -18,7 +18,7 @@ android {
         // Google Play requires a monotonically increasing code for every
         // upload. The displayed version deliberately matches the web bundle.
         versionCode 33
-        versionName "7.8.2"
+        versionName "7.8.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
