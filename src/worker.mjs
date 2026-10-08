@@ -4389,7 +4389,7 @@ export class PotuzhnoAdmin {
       return json({ error: 'Некоректні дані конфігурації.' }, 400)
     }
     const action = cleanText(body?.action, 32)
-    if (!['save_draft', 'publish', 'schedule_publish', 'cancel_schedule', 'reset_draft', 'rollback'].includes(action)) return json({ error: 'Невідома дія конфігурації.' }, 400)
+    if (!['save_draft', 'publish', 'schedule_publish', 'cancel_schedule', 'reset_draft', 'rollback', 'remove_announcement'].includes(action)) return json({ error: 'Невідома дія конфігурації.' }, 400)
 
     const result = await this.storage.transaction(async transaction => {
       const now = Date.now()
@@ -4441,6 +4441,25 @@ export class PotuzhnoAdmin {
         content.scheduled = null
         detail = `відкат до вмісту версії ${rollbackRevision}`
         auditAction = 'content_rolled_back'
+      } else if (action === 'remove_announcement') {
+        // This is deliberately a focused live action: it removes only the
+        // announcement and preserves every other unpublished draft change.
+        // A scheduled release is sanitised too, so an old banner cannot
+        // silently reappear later.
+        const emptyAnnouncement = { enabled: false, tone: 'cyan', title: '', body: '', ctaLabel: '', ctaPage: 'hub', startsAt: 0, endsAt: 0 }
+        const active = activeAdminContentConfig(content, now)
+        archiveAdminContentVersion(content, actor, now, active)
+        const revision = adminContentRevision(content)
+        content.published = { ...normalizeAdminContentConfig({ ...active, announcement: emptyAnnouncement }, now), revision, updatedAt: now }
+        content.draft = { ...normalizeAdminContentConfig({ ...content.draft, announcement: emptyAnnouncement }, now), revision, updatedAt: now }
+        if (content.scheduled) {
+          content.scheduled = {
+            ...content.scheduled,
+            config: { ...normalizeAdminContentConfig({ ...content.scheduled.config, announcement: emptyAnnouncement }, now), revision: content.scheduled.config.revision, updatedAt: content.scheduled.config.updatedAt },
+          }
+        }
+        detail = 'глобальне оголошення прибрано'
+        auditAction = 'content_announcement_removed'
       } else {
         content.draft = { ...content.published, revision: content.draft.revision + 1, updatedAt: now }
         detail = 'чернетку повернено до опублікованої версії'

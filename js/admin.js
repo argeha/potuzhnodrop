@@ -76,6 +76,7 @@
     content_scheduled: 'запланував(ла) публікацію',
     content_schedule_cancelled: 'скасував(ла) заплановану публікацію',
     content_rolled_back: 'відкотив(ла) версію сайту',
+    content_announcement_removed: 'прибрав(ла) глобальне оголошення',
   }
 
   const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[char]))
@@ -1158,6 +1159,12 @@
         draft.promos = (draft.promos || []).map(entry => entry.id === id ? { ...entry, enabled: entry.enabled === false } : entry)
       }
     })
+  })
+
+  $('#removeAnnouncementButton').addEventListener('click', () => {
+    if (!canGame('configure')) return
+    if (!window.confirm('Прибрати це оголошення з сайту й Android? Інші зміни в чернетці не будуть опубліковані.')) return
+    void saveContent('remove_announcement', 'Оголошення прибрано з сайту й Android.')
   })
 
   $('#cancelPromoEditButton').addEventListener('click', () => resetPromoEditor())
