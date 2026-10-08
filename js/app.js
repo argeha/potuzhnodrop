@@ -8,6 +8,7 @@ const STORAGE = {
   started: 'potuzhno_v2_started',
   bonusAt: 'potuzhno_v2_last_bonus',
   sound: 'potuzhno_v2_sound',
+  music: 'potuzhno_v79_music',
   haptics: 'potuzhno_v7_haptics',
   game: 'potuzhno_v6_game',
   account: 'potuzhno_v6_account',
@@ -535,6 +536,7 @@ function stableInventoryPrice(item) {
 let currentUser = null;
 let userInventory = [];
 let soundEnabled = true;
+let musicEnabled = true;
 let musicInteractionUnlocked = false;
 let hapticsEnabled = true;
 let filteredSkins = CS2_SKINS;
@@ -5485,6 +5487,7 @@ function loadState() {
   const started = localStorage.getItem(STORAGE.started) === '1';
   const bal = clampNumber(localStorage.getItem(STORAGE.balance), 0, MAX_STORED_BALANCE, DEMO_STARTING_BALANCE);
   soundEnabled = localStorage.getItem(STORAGE.sound) !== 'off';
+  musicEnabled = localStorage.getItem(STORAGE.music) !== 'off';
   hapticsEnabled = localStorage.getItem(STORAGE.haptics) !== 'off';
   updateSoundUI();
   updateHapticsUI();
@@ -7118,10 +7121,15 @@ function showToast(message, type = 'info') {
   }, 3300);
 }
 
-let audioCtx = null;
 const CASE_REEL_AUDIO_SRC = '/assets/audio/argeha-deepreceive-case.wav?v=7.9.0';
 const RARE_DROP_AUDIO_SRC = '/assets/audio/argeha-deepreceive-rare.wav?v=7.9.0';
 const VICTORY_AUDIO_SRC = '/assets/audio/argeha-st-victory.wav?v=7.9.0';
+const UI_SFX_TRACKS = Object.freeze({
+  tick: { src: '/assets/audio/argeha-ui-tick.wav?v=7.9.0', volume: 0.20, cooldown: 70 },
+  confirm: { src: '/assets/audio/argeha-ui-confirm.wav?v=7.9.0', volume: 0.28, cooldown: 130 },
+  warning: { src: '/assets/audio/argeha-ui-warning.wav?v=7.9.0', volume: 0.30, cooldown: 170 },
+  win: { src: '/assets/audio/argeha-ui-win.wav?v=7.9.0', volume: 0.34, cooldown: 260 },
+});
 const MUSIC_TRACKS = Object.freeze({
   skyline: { src: '/assets/audio/argeha-skyline-loop.wav?v=7.9.0', volume: 0.15 },
   event: { src: '/assets/audio/argeha-take-me-up-event.wav?v=7.9.0', volume: 0.13 },
@@ -7136,6 +7144,8 @@ let caseReelAudioUnlockSerial = 0;
 let rareDropAudio = null;
 let victoryAudio = null;
 let victoryAudioUnlockSerial = 0;
+const uiSfxPlayers = new Map();
+const uiSfxLastPlayedAt = new Map();
 let backgroundMusic = null;
 let backgroundMusicTrack = '';
 let backgroundMusicPausedForRound = false;
@@ -7152,7 +7162,7 @@ function getBackgroundMusicTrack(page = currentPage) {
 }
 
 function canPlayBackgroundMusic() {
-  return soundEnabled
+  return musicEnabled
     && musicInteractionUnlocked
     && !backgroundMusicPausedForRound
     && !document.hidden
@@ -7184,6 +7194,39 @@ function syncBackgroundMusic() {
   }
   backgroundMusic.volume = track.volume;
   backgroundMusic.play().catch(() => {});
+}
+
+function getUiSfxPlayer(id) {
+  const track = UI_SFX_TRACKS[id];
+  if (!track || typeof Audio !== 'function') return null;
+  if (!uiSfxPlayers.has(id)) {
+    const audio = new Audio(track.src);
+    audio.preload = 'auto';
+    uiSfxPlayers.set(id, audio);
+  }
+  return uiSfxPlayers.get(id);
+}
+
+function playUiSfx(id) {
+  if (!soundEnabled || document.hidden) return;
+  const track = UI_SFX_TRACKS[id];
+  const audio = getUiSfxPlayer(id);
+  if (!track || !audio) return;
+  const now = performance.now();
+  if (now - (uiSfxLastPlayedAt.get(id) || 0) < track.cooldown) return;
+  uiSfxLastPlayedAt.set(id, now);
+  audio.pause();
+  audio.currentTime = 0;
+  audio.muted = false;
+  audio.volume = track.volume;
+  audio.play().catch(() => {});
+}
+
+function stopUiSfx() {
+  uiSfxPlayers.forEach(audio => {
+    audio.pause();
+    audio.currentTime = 0;
+  });
 }
 
 function unlockGameMusic() {
@@ -7337,43 +7380,28 @@ function stopCaseReelSound() {
 
 function beep(freq = 440, dur = 0.08, type = 'sine') {
   if (!soundEnabled) return;
-  try {
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.type = type;
-    o.frequency.value = freq;
-    g.gain.setValueAtTime(0.07, audioCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
-    o.connect(g);
-    g.connect(audioCtx.destination);
-    o.start();
-    o.stop(audioCtx.currentTime + dur);
-  } catch {}
+  playUiSfx(type === 'sawtooth' || freq < 300 ? 'warning' : 'tick');
 }
 
 function soundWin() {
   haptic('success');
-  beep(880, 0.15, 'triangle');
-  setTimeout(() => beep(1180, 0.2, 'triangle'), 140);
+  playUiSfx('win');
 }
 function soundLose() {
   haptic('error');
-  beep(180, 0.28, 'sawtooth');
+  playUiSfx('warning');
 }
 function soundCase() {
   haptic('light');
-  beep(700, 0.12, 'triangle');
-  setTimeout(() => beep(1050, 0.16, 'triangle'), 120);
+  playUiSfx('confirm');
 }
 function soundCoin() {
   haptic('light');
-  beep(760, 0.12, 'triangle');
+  playUiSfx('confirm');
 }
 function soundSell() {
   haptic('light');
-  beep(700, 0.08, 'triangle');
+  playUiSfx('confirm');
 }
 
 function haptic(kind = 'light') {
@@ -7406,11 +7434,18 @@ function toggleSound() {
       victoryAudio.pause();
       victoryAudio.currentTime = 0;
     }
-    backgroundMusicPausedForRound = false;
-    pauseBackgroundMusic({ reset: true });
+    stopUiSfx();
   } else {
-    unlockGameMusic();
+    playUiSfx('confirm');
   }
+  updateSoundUI();
+}
+
+function toggleMusic() {
+  musicEnabled = !musicEnabled;
+  localStorage.setItem(STORAGE.music, musicEnabled ? 'on' : 'off');
+  if (!musicEnabled) pauseBackgroundMusic({ reset: true });
+  else unlockGameMusic();
   updateSoundUI();
 }
 
@@ -7427,14 +7462,27 @@ function updateSoundUI() {
   const button = document.getElementById('soundToggle');
   if (button) {
     button.setAttribute('aria-pressed', soundEnabled ? 'true' : 'false');
-    button.title = soundEnabled ? 'Звук і музика увімкнені' : 'Звук і музика вимкнені';
+    button.title = soundEnabled ? 'Звукові ефекти увімкнені' : 'Звукові ефекти вимкнені';
   }
   const mobileIcon = document.getElementById('mobileSoundIcon');
   if (mobileIcon) mobileIcon.className = soundEnabled ? 'fa-solid fa-volume-high mr-2' : 'fa-solid fa-volume-xmark mr-2';
   const mobileButton = document.getElementById('mobileSoundToggle');
   if (mobileButton) mobileButton.setAttribute('aria-pressed', soundEnabled ? 'true' : 'false');
   const mobileLabel = document.getElementById('mobileSoundLabel');
-  if (mobileLabel) mobileLabel.textContent = soundEnabled ? 'Звук і музика' : 'Звук і музика вимкнені';
+  if (mobileLabel) mobileLabel.textContent = soundEnabled ? 'Звуки' : 'Звуки вимкнено';
+  const musicIcon = document.getElementById('musicIcon');
+  if (musicIcon) musicIcon.className = musicEnabled ? 'fa-solid fa-music text-sm' : 'fa-solid fa-volume-xmark text-sm';
+  const musicButton = document.getElementById('musicToggle');
+  if (musicButton) {
+    musicButton.setAttribute('aria-pressed', musicEnabled ? 'true' : 'false');
+    musicButton.title = musicEnabled ? 'Музика увімкнена' : 'Музика вимкнена';
+  }
+  const mobileMusicIcon = document.getElementById('mobileMusicIcon');
+  if (mobileMusicIcon) mobileMusicIcon.className = musicEnabled ? 'fa-solid fa-music mr-2' : 'fa-solid fa-volume-xmark mr-2';
+  const mobileMusicButton = document.getElementById('mobileMusicToggle');
+  if (mobileMusicButton) mobileMusicButton.setAttribute('aria-pressed', musicEnabled ? 'true' : 'false');
+  const mobileMusicLabel = document.getElementById('mobileMusicLabel');
+  if (mobileMusicLabel) mobileMusicLabel.textContent = musicEnabled ? 'Музика' : 'Музика вимкнена';
 }
 
 // Browser and Android WebView both require a real user gesture before music
@@ -13464,6 +13512,7 @@ window.setTheme = setTheme;
 window.setPerformanceMode = setPerformanceMode;
 window.toggleMobileMenu = toggleMobileMenu;
 window.toggleSound = toggleSound;
+window.toggleMusic = toggleMusic;
 window.toggleHaptics = toggleHaptics;
 window.shareLatestMoment = shareLatestMoment;
 window.openLegendDossier = openLegendDossier;

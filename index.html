@@ -77,7 +77,8 @@
 </nav>
 <div class="header-actions flex items-center gap-2">
 <button class="mobile-menu-btn w-10 h-10 rounded-xl bg-brand-card border border-brand-border hover:bg-gray-800 items-center justify-center text-gray-300" onclick="toggleMobileMenu()"><i class="fa-solid fa-bars"></i></button>
-<button id="soundToggle" onclick="toggleSound()" title="Звук і музика увімкнені" aria-label="Звук і музика" aria-pressed="true" class="hidden sm:flex w-10 h-10 rounded-xl bg-brand-card border border-brand-border hover:bg-gray-800 items-center justify-center text-gray-300 transition"><i id="soundIcon" class="fa-solid fa-volume-high text-sm"></i></button>
+<button id="soundToggle" onclick="toggleSound()" title="Звукові ефекти увімкнені" aria-label="Звукові ефекти" aria-pressed="true" class="hidden sm:flex w-10 h-10 rounded-xl bg-brand-card border border-brand-border hover:bg-gray-800 items-center justify-center text-gray-300 transition"><i id="soundIcon" class="fa-solid fa-volume-high text-sm"></i></button>
+<button id="musicToggle" onclick="toggleMusic()" title="Музика увімкнена" aria-label="Музика" aria-pressed="true" class="hidden sm:flex w-10 h-10 rounded-xl bg-brand-card border border-brand-border hover:bg-gray-800 items-center justify-center text-cyan-200 transition"><i id="musicIcon" class="fa-solid fa-music text-sm"></i></button>
 <div class="theme-drop">
 <button onclick="toggleThemeMenu()" title="Змінити тему" class="w-10 h-10 rounded-xl bg-brand-card border border-brand-border hover:bg-gray-800 flex items-center justify-center text-amber-400 transition"><i class="fa-solid fa-palette text-sm"></i></button>
 <div id="themeMenu" class="theme-drop-menu hidden">
@@ -111,7 +112,8 @@
 <a href="#tasks" data-mobile-nav="tasks" onclick="showPage('tasks');return false" class="mobile-nav-link"><i class="fa-solid fa-list-check mr-2"></i>Завдання</a>
 <a href="#profile" data-mobile-nav="profile" onclick="showPage('profile');return false" class="mobile-nav-link"><i class="fa-solid fa-user mr-2"></i>Профіль</a>
 <a href="#about" data-mobile-nav="about" onclick="showPage('about');return false" class="col-span-2 mobile-nav-link"><i class="fa-solid fa-circle-info mr-2"></i>Про гру</a>
-<button id="mobileSoundToggle" type="button" onclick="toggleSound()" aria-label="Звук і музика" aria-pressed="true" class="col-span-2 mobile-nav-link text-left"><i id="mobileSoundIcon" class="fa-solid fa-volume-high mr-2"></i><span id="mobileSoundLabel">Звук і музика</span></button>
+<button id="mobileSoundToggle" type="button" onclick="toggleSound()" aria-label="Звукові ефекти" aria-pressed="true" class="mobile-nav-link text-left"><i id="mobileSoundIcon" class="fa-solid fa-volume-high mr-2"></i><span id="mobileSoundLabel">Звуки</span></button>
+<button id="mobileMusicToggle" type="button" onclick="toggleMusic()" aria-label="Музика" aria-pressed="true" class="mobile-nav-link text-left"><i id="mobileMusicIcon" class="fa-solid fa-music mr-2"></i><span id="mobileMusicLabel">Музика</span></button>
 </div>
 </div>
 </header>
@@ -786,6 +788,6 @@
 
 <script src="/js/mobile-config.js" defer></script>
 <script src="/js/mobile.js?v=1" defer></script>
-<script src="/js/app.js?v=7.9.0" defer></script>
+<script src="/js/app.js?v=7.9.0-audio.1" defer></script>
 </body>
 </html>
