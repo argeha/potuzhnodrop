@@ -6111,7 +6111,10 @@ let communitySyncStarted = false;
 let communitySyncInFlight = false;
 let queuedCommunityEvents = [];
 let communityFeedKey = null;
-const COMMUNITY_SYNC_MS = 35_000;
+// The live strip is shared state. Keep its refresh short enough that a drop
+// made on Android appears on the site (and vice versa) without a manual
+// reload, while staying well inside the Worker community rate limit.
+const COMMUNITY_SYNC_MS = 12_000;
 
 function getCommunityPlayerPayload() {
   const stats = gameState?.stats || {};
@@ -12671,6 +12674,15 @@ function openLiveFeedProfile(event) {
 }
 
 function addActivityEvent({ player, skin, outcome = 'attempt', profile = null, communityKind = '', activityKind = '' }) {
+  // A community event must be rendered from the Worker response, not merely
+  // appended to the current tab. Before this guard, a desktop tab could show
+  // its own optimistic history while Android correctly showed the shorter
+  // server history. Submit first; syncCommunity() applies the canonical event
+  // list to both clients as soon as the Worker accepts it.
+  if (communityKind && outcome === 'win') {
+    announceCommunityActivity(communityKind, skin);
+    return;
+  }
   const feed = document.getElementById('liveFeed');
   if (!feed || !skin) return;
   const owner = profile || getLiveFeedProfile(player);
@@ -12693,7 +12705,6 @@ function addActivityEvent({ player, skin, outcome = 'attempt', profile = null, c
   el.addEventListener('click', openLiveFeedProfile);
   feed.prepend(el);
   while (feed.children.length > 14) feed.removeChild(feed.lastElementChild);
-  if (communityKind && outcome === 'win') announceCommunityActivity(communityKind, skin);
 }
 
 let liveFeedStarted = false;
