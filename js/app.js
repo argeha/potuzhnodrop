@@ -9,6 +9,7 @@ const STORAGE = {
   bonusAt: 'potuzhno_v2_last_bonus',
   sound: 'potuzhno_v2_sound',
   music: 'potuzhno_v79_music',
+  musicTrack: 'potuzhno_v79_music_track',
   haptics: 'potuzhno_v7_haptics',
   game: 'potuzhno_v6_game',
   account: 'potuzhno_v6_account',
@@ -5488,6 +5489,7 @@ function loadState() {
   const bal = clampNumber(localStorage.getItem(STORAGE.balance), 0, MAX_STORED_BALANCE, DEMO_STARTING_BALANCE);
   soundEnabled = localStorage.getItem(STORAGE.sound) !== 'off';
   musicEnabled = localStorage.getItem(STORAGE.music) !== 'off';
+  backgroundMusicTrackIndex = getStoredMusicTrackIndex();
   hapticsEnabled = localStorage.getItem(STORAGE.haptics) !== 'off';
   updateSoundUI();
   updateHapticsUI();
@@ -7121,18 +7123,42 @@ function showToast(message, type = 'info') {
 
 let audioCtx = null;
 const CASE_REEL_AUDIO_SRC = '/assets/audio/metallic-tension.mp3?v=5.8.5';
-const MUSIC_TRACKS = Object.freeze({
-  skyline: { src: '/assets/audio/argeha-skyline-loop.wav?v=7.9.0', volume: 0.08 },
-});
+// A single playlist continues between pages. Every excerpt comes from an
+// original ARGEHA track supplied for this project; the small fades are baked
+// into each file so the hand-off stays calm on desktop and Android WebView.
+const MUSIC_PLAYLIST = Object.freeze([
+  { id: 'skyline', src: '/assets/audio/argeha-skyline-loop.wav?v=7.9.0', volume: 0.08 },
+  { id: 'deepreceive', src: '/assets/audio/argeha-deepreceive-loop.wav?v=7.9.0', volume: 0.07 },
+  { id: 'take-me-up', src: '/assets/audio/argeha-take-me-up-loop.wav?v=7.9.0', volume: 0.068 },
+  { id: 'unease', src: '/assets/audio/argeha-unease-loop.wav?v=7.9.0', volume: 0.06 },
+  { id: 'st', src: '/assets/audio/argeha-st-loop.wav?v=7.9.0', volume: 0.06 },
+  { id: 'phonk', src: '/assets/audio/argeha-phonk-loop.wav?v=7.9.0', volume: 0.054 },
+  { id: 'untitled-one', src: '/assets/audio/argeha-untitled-one-loop.wav?v=7.9.0', volume: 0.06 },
+  { id: 'untitled', src: '/assets/audio/argeha-untitled-loop.wav?v=7.9.0', volume: 0.06 },
+  { id: 'kk2', src: '/assets/audio/argeha-kk2-loop.wav?v=7.9.0', volume: 0.065 },
+]);
 let caseReelAudio = null;
 let caseReelAudioUnlockSerial = 0;
 let backgroundMusic = null;
-let backgroundMusicTrack = '';
+let backgroundMusicTrackIndex = 0;
 let backgroundMusicPausedForRound = false;
 
-function getBackgroundMusicTrack(page = currentPage) {
-  if (page === 'hub') return 'skyline';
-  return '';
+function getStoredMusicTrackIndex() {
+  const savedIndex = Number.parseInt(localStorage.getItem(STORAGE.musicTrack), 10);
+  return Number.isInteger(savedIndex) && savedIndex >= 0 && savedIndex < MUSIC_PLAYLIST.length
+    ? savedIndex
+    : 0;
+}
+
+function setBackgroundMusicTrackIndex(index) {
+  const normalized = ((index % MUSIC_PLAYLIST.length) + MUSIC_PLAYLIST.length) % MUSIC_PLAYLIST.length;
+  backgroundMusicTrackIndex = normalized;
+  try { localStorage.setItem(STORAGE.musicTrack, String(normalized)); } catch {}
+  return normalized;
+}
+
+function getCurrentMusicTrack() {
+  return MUSIC_PLAYLIST[backgroundMusicTrackIndex] || MUSIC_PLAYLIST[0];
 }
 
 function canPlayBackgroundMusic() {
@@ -7149,25 +7175,41 @@ function pauseBackgroundMusic({ reset = false } = {}) {
   if (reset) backgroundMusic.currentTime = 0;
 }
 
+function advanceBackgroundMusic(source = null) {
+  if (source && source !== backgroundMusic) return;
+  const outgoing = backgroundMusic;
+  backgroundMusic = null;
+  if (outgoing) {
+    outgoing.onended = null;
+    outgoing.onerror = null;
+    outgoing.pause();
+  }
+  setBackgroundMusicTrackIndex(backgroundMusicTrackIndex + 1);
+  syncBackgroundMusic();
+}
+
+function createBackgroundMusic(track) {
+  const audio = new Audio(track.src);
+  audio.preload = 'auto';
+  audio.loop = false;
+  audio.onended = () => advanceBackgroundMusic(audio);
+  // If one cached file is unavailable, skip it instead of leaving the player
+  // silent for the rest of the session.
+  audio.onerror = () => advanceBackgroundMusic(audio);
+  backgroundMusic = audio;
+  return audio;
+}
+
 function syncBackgroundMusic() {
-  const trackId = getBackgroundMusicTrack();
-  if (!trackId || !canPlayBackgroundMusic()) {
+  if (!canPlayBackgroundMusic()) {
     pauseBackgroundMusic();
     return;
   }
-  const track = MUSIC_TRACKS[trackId];
+  const track = getCurrentMusicTrack();
   if (!track) return;
-  if (!backgroundMusic || backgroundMusicTrack !== trackId) {
-    pauseBackgroundMusic({ reset: true });
-    backgroundMusic = new Audio(track.src);
-    backgroundMusic.preload = 'metadata';
-    // The clips have a tiny baked-in fade at both ends, so this loop is
-    // unobtrusive even on Android WebView.
-    backgroundMusic.loop = true;
-    backgroundMusicTrack = trackId;
-  }
-  backgroundMusic.volume = track.volume;
-  backgroundMusic.play().catch(() => {});
+  const audio = backgroundMusic || createBackgroundMusic(track);
+  audio.volume = track.volume;
+  audio.play().catch(() => {});
 }
 
 function unlockGameMusic() {
@@ -7327,7 +7369,7 @@ function toggleSound() {
 function toggleMusic() {
   musicEnabled = !musicEnabled;
   localStorage.setItem(STORAGE.music, musicEnabled ? 'on' : 'off');
-  if (!musicEnabled) pauseBackgroundMusic({ reset: true });
+  if (!musicEnabled) pauseBackgroundMusic();
   else unlockGameMusic();
   updateSoundUI();
 }
