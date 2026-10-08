@@ -7119,31 +7119,18 @@ function showToast(message, type = 'info') {
   }, 3300);
 }
 
-const CASE_REEL_AUDIO_SRC = '/assets/audio/argeha-deepreceive-case.wav?v=7.9.0';
-const RARE_DROP_AUDIO_SRC = '/assets/audio/argeha-deepreceive-rare.wav?v=7.9.0';
-const UI_SFX_TRACKS = Object.freeze({
-  tick: { src: '/assets/audio/argeha-ui-tick.wav?v=7.9.0', volume: 0.10, cooldown: 180 },
-  confirm: { src: '/assets/audio/argeha-ui-confirm.wav?v=7.9.0', volume: 0.18, cooldown: 220 },
-  warning: { src: '/assets/audio/argeha-ui-warning.wav?v=7.9.0', volume: 0.22, cooldown: 300 },
-  win: { src: '/assets/audio/argeha-ui-win.wav?v=7.9.0', volume: 0.28, cooldown: 550 },
-});
+let audioCtx = null;
+const CASE_REEL_AUDIO_SRC = '/assets/audio/metallic-tension.mp3?v=5.8.5';
 const MUSIC_TRACKS = Object.freeze({
   skyline: { src: '/assets/audio/argeha-skyline-loop.wav?v=7.9.0', volume: 0.08 },
-  event: { src: '/assets/audio/argeha-take-me-up-event.wav?v=7.9.0', volume: 0.075 },
-  royale: { src: '/assets/audio/argeha-phonk-royale.wav?v=7.9.0', volume: 0.07 },
 });
 let caseReelAudio = null;
 let caseReelAudioUnlockSerial = 0;
-let rareDropAudio = null;
-const uiSfxPlayers = new Map();
-const uiSfxLastPlayedAt = new Map();
 let backgroundMusic = null;
 let backgroundMusicTrack = '';
 let backgroundMusicPausedForRound = false;
 
 function getBackgroundMusicTrack(page = currentPage) {
-  if (page === 'royale') return 'royale';
-  if (page === 'battle') return 'event';
   if (page === 'hub') return 'skyline';
   return '';
 }
@@ -7183,67 +7170,9 @@ function syncBackgroundMusic() {
   backgroundMusic.play().catch(() => {});
 }
 
-function getUiSfxPlayer(id) {
-  const track = UI_SFX_TRACKS[id];
-  if (!track || typeof Audio !== 'function') return null;
-  if (!uiSfxPlayers.has(id)) {
-    const audio = new Audio(track.src);
-    audio.preload = 'auto';
-    uiSfxPlayers.set(id, audio);
-  }
-  return uiSfxPlayers.get(id);
-}
-
-function playUiSfx(id) {
-  if (!soundEnabled || document.hidden) return;
-  const track = UI_SFX_TRACKS[id];
-  const audio = getUiSfxPlayer(id);
-  if (!track || !audio) return;
-  const now = performance.now();
-  if (now - (uiSfxLastPlayedAt.get(id) || 0) < track.cooldown) return;
-  uiSfxLastPlayedAt.set(id, now);
-  audio.pause();
-  audio.currentTime = 0;
-  audio.muted = false;
-  audio.volume = track.volume;
-  audio.play().catch(() => {});
-}
-
-function stopUiSfx() {
-  uiSfxPlayers.forEach(audio => {
-    audio.pause();
-    audio.currentTime = 0;
-  });
-}
-
 function unlockGameMusic() {
   musicInteractionUnlocked = true;
   syncBackgroundMusic();
-}
-
-function getRareDropAudio() {
-  if (rareDropAudio || typeof Audio !== 'function') return rareDropAudio;
-  rareDropAudio = new Audio(RARE_DROP_AUDIO_SRC);
-  rareDropAudio.preload = 'auto';
-  rareDropAudio.volume = 0.28;
-  return rareDropAudio;
-}
-
-function shouldPlayRareDropMusic(items) {
-  return (Array.isArray(items) ? items : []).some(item => {
-    const rarity = String(item?.rarity?.name || item?.rarity || '').toLowerCase();
-    const value = Number(verifiedInventoryMarketPrice(item) || item?.price || 0);
-    return /covert|classified|contraband|extraordinary|засекреч|таємн/.test(rarity) || value >= 5_000;
-  });
-}
-
-function playRareDropMusic(items) {
-  if (!soundEnabled || document.hidden || !shouldPlayRareDropMusic(items)) return;
-  const audio = getRareDropAudio();
-  if (!audio) return;
-  audio.pause();
-  audio.currentTime = 0;
-  audio.play().catch(() => {});
 }
 
 function getCaseReelAudio() {
@@ -7251,7 +7180,7 @@ function getCaseReelAudio() {
   caseReelAudio = new Audio(CASE_REEL_AUDIO_SRC);
   caseReelAudio.preload = 'auto';
   caseReelAudio.loop = false;
-  caseReelAudio.volume = 0.25;
+  caseReelAudio.volume = 0.38;
   return caseReelAudio;
 }
 
@@ -7330,28 +7259,43 @@ function stopCaseReelSound() {
 
 function beep(freq = 440, dur = 0.08, type = 'sine') {
   if (!soundEnabled) return;
-  playUiSfx(type === 'sawtooth' || freq < 300 ? 'warning' : 'tick');
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const oscillator = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    oscillator.type = type;
+    oscillator.frequency.value = freq;
+    gain.gain.setValueAtTime(0.07, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+    oscillator.connect(gain);
+    gain.connect(audioCtx.destination);
+    oscillator.start();
+    oscillator.stop(audioCtx.currentTime + dur);
+  } catch {}
 }
 
 function soundWin() {
   haptic('success');
-  playUiSfx('win');
+  beep(880, 0.15, 'triangle');
+  setTimeout(() => beep(1180, 0.2, 'triangle'), 140);
 }
 function soundLose() {
   haptic('error');
-  playUiSfx('warning');
+  beep(180, 0.28, 'sawtooth');
 }
 function soundCase() {
   haptic('light');
-  playUiSfx('confirm');
+  beep(700, 0.12, 'triangle');
+  setTimeout(() => beep(1050, 0.16, 'triangle'), 120);
 }
 function soundCoin() {
   haptic('light');
-  playUiSfx('confirm');
+  beep(760, 0.12, 'triangle');
 }
 function soundSell() {
   haptic('light');
-  playUiSfx('confirm');
+  beep(700, 0.08, 'triangle');
 }
 
 function haptic(kind = 'light') {
@@ -7376,13 +7320,6 @@ function toggleSound() {
       caseReelAudio.pause();
       caseReelAudio.currentTime = 0;
     }
-    if (rareDropAudio) {
-      rareDropAudio.pause();
-      rareDropAudio.currentTime = 0;
-    }
-    stopUiSfx();
-  } else {
-    playUiSfx('confirm');
   }
   updateSoundUI();
 }
@@ -10272,7 +10209,6 @@ function displayCaseDropResult(items, isFree, caseName, resultKind = 'case') {
   }
 
   openModal('caseModal');
-  playRareDropMusic(items);
 }
 
 function quickSellCaseResult() {
