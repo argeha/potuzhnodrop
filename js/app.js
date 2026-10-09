@@ -158,6 +158,22 @@ function setProfileTab(tab) {
 
 window.setProfileTab = setProfileTab;
 
+function openInventoryPage() {
+  // The inventory lives in the collection part of the profile, but it is a
+  // core game surface — never make a player search through profile tabs for it.
+  setProfileTab('collection');
+  if (currentPage !== 'profile') showPage('profile');
+  else {
+    renderProfileInventory();
+    renderProfileTabs();
+  }
+  requestAnimationFrame(() => {
+    document.getElementById('profileInventoryPanel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
+window.openInventoryPage = openInventoryPage;
+
 function toggleThemeMenu() {
   document.getElementById('themeMenu')?.classList.toggle('hidden');
 }

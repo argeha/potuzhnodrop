@@ -84,6 +84,7 @@
 <button id="musicToggle" onclick="toggleMusic()" title="Музика увімкнена" aria-label="Музика" aria-pressed="true" class="hidden sm:flex w-10 h-10 rounded-xl bg-brand-card border border-brand-border hover:bg-gray-800 items-center justify-center text-cyan-200 transition"><i id="musicIcon" class="fa-solid fa-music text-sm"></i></button>
 <div id="userBalanceBox" class="hidden sm:flex items-center gap-2 bg-brand-card border border-brand-border rounded-xl px-3 py-1.5">
 <div class="flex flex-col text-right"><span class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold hidden sm:inline">Баланс</span><span id="userBalance" class="text-amber-400 font-bold text-xs sm:text-sm">0 PC</span></div>
+<button type="button" onclick="openInventoryPage()" title="Відкрити інвентар" aria-label="Відкрити інвентар" class="w-8 h-8 rounded-lg bg-brand-card border border-brand-border hover:bg-gray-800 text-cyan-200 font-bold flex items-center justify-center transition"><i class="fa-solid fa-boxes-stacked text-xs"></i></button>
 <button id="giftBtn" onclick="openDailyCalendar()" title="Щоденний календар нагород" class="relative w-8 h-8 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold flex items-center justify-center transition"><i id="giftIcon" class="fa-solid fa-gift text-xs"></i><span id="giftTimer" class="absolute -bottom-2 -right-2 text-[8px] font-extrabold bg-black text-amber-300 border border-amber-500/50 rounded px-1 hidden"></span></button>
 <button onclick="openModal('topupModal')" title="Заробити віртуальні Potuzhno Coin" aria-label="Заробити віртуальні Potuzhno Coin" class="w-8 h-8 rounded-lg bg-brand-card border border-brand-border hover:bg-gray-800 text-amber-400 font-bold flex items-center justify-center transition"><i class="fa-solid fa-plus text-xs"></i></button>
 </div>
@@ -105,6 +106,7 @@
 <a href="#royale" data-mobile-nav="royale" onclick="showPage('royale');return false" class="mobile-nav-link"><i class="fa-solid fa-crown mr-2"></i>Royale</a>
 <a href="#contract" data-mobile-nav="contract" onclick="showPage('contract');return false" class="mobile-nav-link"><i class="fa-solid fa-boxes-packing mr-2"></i>Контракт</a>
 <a href="#tasks" data-mobile-nav="tasks" onclick="showPage('tasks');return false" class="mobile-nav-link"><i class="fa-solid fa-list-check mr-2"></i>Завдання</a>
+<button type="button" onclick="openInventoryPage()" class="mobile-nav-link text-left"><i class="fa-solid fa-boxes-stacked mr-2"></i>Інвентар</button>
 <a href="#profile" data-mobile-nav="profile" onclick="showPage('profile');return false" class="mobile-nav-link"><i class="fa-solid fa-user mr-2"></i>Профіль</a>
 <a href="#about" data-mobile-nav="about" onclick="showPage('about');return false" class="col-span-2 mobile-nav-link"><i class="fa-solid fa-circle-info mr-2"></i>Про гру</a>
 <button id="mobileSoundToggle" type="button" onclick="toggleSound()" aria-label="Звукові ефекти" aria-pressed="true" class="mobile-nav-link text-left"><i id="mobileSoundIcon" class="fa-solid fa-volume-high mr-2"></i><span id="mobileSoundLabel">Звуки</span></button>
@@ -118,7 +120,7 @@
 <a href="#hub" data-mobile-nav="hub" onclick="showPage('hub');return false" class="mobile-dock-link"><i class="fa-solid fa-house"></i><span>Центр</span></a>
 <a href="#case" data-mobile-nav="case" onclick="showPage('case');return false" class="mobile-dock-link"><i class="fa-solid fa-box-open"></i><span>Кейси</span></a>
 <a href="#upgrader" data-mobile-nav="upgrader" onclick="showPage('upgrader');return false" class="mobile-dock-link mobile-dock-link-primary"><i class="fa-solid fa-bolt"></i><span>Апгрейд</span></a>
-<a href="#tasks" data-mobile-nav="tasks" onclick="showPage('tasks');return false" class="mobile-dock-link"><i class="fa-solid fa-list-check"></i><span>Цілі</span></a>
+<button type="button" onclick="openInventoryPage()" class="mobile-dock-link"><i class="fa-solid fa-boxes-stacked"></i><span>Інвентар</span></button>
 <a href="#profile" data-mobile-nav="profile" onclick="showPage('profile');return false" class="mobile-dock-link"><i class="fa-solid fa-user"></i><span>Профіль</span></a>
 </nav>
 
@@ -151,7 +153,7 @@
     <div class="command-hub-hero-signals" aria-label="Принципи платформи"><span><i class="fa-solid fa-shield-halved"></i> FAIR PLAY</span><span><i class="fa-solid fa-sparkles"></i> VIRTUAL ONLY</span></div>
     <div class="command-hub-hero-actions">
       <button type="button" onclick="showPage('case')" class="command-hub-primary" data-onboarding-target="case"><i class="fa-solid fa-box-open"></i> Відкрити кейс</button>
-      <button type="button" onclick="showPage('profile')" class="command-hub-secondary" data-onboarding-target="showcase"><i class="fa-solid fa-gem"></i> Моя колекція</button>
+      <button type="button" onclick="openInventoryPage()" class="command-hub-secondary" data-onboarding-target="showcase"><i class="fa-solid fa-boxes-stacked"></i> Мій інвентар</button>
     </div>
   </div>
   <div class="command-hub-level-orbit" aria-label="Поточний рівень"><span>РІВЕНЬ</span><strong id="hubLevel">LVL 1</strong><small id="hubXp">0 / 1 200 XP</small><i id="hubLevelRing"></i></div>
@@ -172,7 +174,7 @@
 
 <section class="command-hub-lower-grid">
   <article class="command-hub-panel"><header><div><p>СЬОГОДНІШНІЙ ФОКУС</p><h2><i class="fa-solid fa-crosshairs"></i> Три кроки</h2></div><button type="button" onclick="showPage('tasks')">Усі завдання</button></header><div id="hubDailyFocus" class="command-hub-focus-list"></div></article>
-  <article class="command-hub-panel command-hub-collection-panel"><header><div><p>КОЛЕКЦІЯ</p><h2><i class="fa-solid fa-gem"></i> Чим пишатися</h2></div><button type="button" onclick="showPage('profile')">Відкрити</button></header><div id="hubCollectionPreview" class="command-hub-collection-preview"></div></article>
+  <article class="command-hub-panel command-hub-collection-panel"><header><div><p>ІНВЕНТАР</p><h2><i class="fa-solid fa-boxes-stacked"></i> Твої предмети</h2></div><button type="button" onclick="openInventoryPage()">Відкрити</button></header><div id="hubCollectionPreview" class="command-hub-collection-preview"></div></article>
 </section>
 <section id="hubSignalSeason" aria-live="polite"></section>
 </section>
@@ -517,7 +519,7 @@
 <article class="profile-legend-card" data-profile-section="achievements" aria-label="Паспорт легенди гравця"><div id="profileLegendCard"></div></article>
 
 <nav class="profile-section-tabs" id="profileSectionTabs" aria-label="Розділи профілю" role="tablist">
-<button type="button" role="tab" data-profile-tab="collection" onclick="setProfileTab('collection')"><i class="fa-solid fa-boxes-stacked"></i> Колекція</button>
+<button type="button" role="tab" data-profile-tab="collection" onclick="setProfileTab('collection')"><i class="fa-solid fa-boxes-stacked"></i> Інвентар</button>
 <button type="button" role="tab" data-profile-tab="showcase" onclick="setProfileTab('showcase')"><i class="fa-solid fa-gem"></i> Вітрина</button>
 <button type="button" role="tab" data-profile-tab="achievements" onclick="setProfileTab('achievements')"><i class="fa-solid fa-medal"></i> Досягнення</button>
 <button type="button" role="tab" data-profile-tab="style" onclick="setProfileTab('style')"><i class="fa-solid fa-palette"></i> Стиль</button>
