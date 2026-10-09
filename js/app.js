@@ -2362,7 +2362,7 @@ function renderHalloweenSeasonShell() {
       ? '<i class="fa-solid fa-map-location-dot"></i><span>КАРТА</span><small>Подія ICEWIRE</small>'
       : '<i class="fa-solid fa-map-location-dot"></i><span>КАРТА</span><small>Подія Nightfall</small>';
   }
-  if (label) label.textContent = season?.kind === 'winter' ? 'Aurora signal' : season?.kind === 'halloween' ? 'Nightfall signal' : 'Live skins';
+  if (label) label.textContent = season?.kind === 'winter' ? 'Сигнал Aurora' : season?.kind === 'halloween' ? 'Сигнал Nightfall' : 'Стрічка спільноти';
   if (labelWrap) labelWrap.classList.toggle('is-nightfall', season?.kind === 'halloween');
   if (labelWrap) labelWrap.classList.toggle('is-icewire', season?.kind === 'winter');
   document.body.dataset.nightfallPhase = season?.kind === 'halloween' ? String(getPulseCircuitCommunity().phase) : '';
