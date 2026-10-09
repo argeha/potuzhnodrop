@@ -183,7 +183,7 @@
 <section data-page="upgrader" class="page-view hidden space-y-5">
 <div class="mode-intro mode-intro-upgrader">
   <div><span class="mode-eyebrow"><i class="fa-solid fa-bolt"></i> Лабораторія апгрейду</span><h1>Піднімай рівень <em>розумно</em></h1><p>Збери ставку зі скіна або віртуальних PC, обери ціль і контролюй шанс до запуску.</p></div>
-  <div class="mode-intro-stats"><span><b>1–95%</b><small>діапазон шансу</small></span><span><b>PROVABLY</b><small>перевірка раунду</small></span></div>
+  <div class="mode-intro-stats"><span><b>1–95%</b><small>діапазон шансу</small></span><span><b>ПЕРЕВІРКА</b><small>історія раунду</small></span></div>
 </div>
 <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
 <div class="lg:col-span-4 glass-panel rounded-2xl p-5 border border-brand-border flex flex-col h-[560px]">
@@ -293,8 +293,8 @@
 <div class="mode-intro mode-intro-case flex flex-col md:flex-row md:items-end md:justify-between gap-4">
   <div>
     <span class="text-xs font-extrabold uppercase tracking-[.2em] text-amber-400">Відкрий кейс</span>
-    <h1 class="font-heading mt-1 text-4xl sm:text-5xl font-extrabold uppercase tracking-wider text-white">Кейси CS2</h1>
-    <p class="text-sm text-gray-400 mt-1">Відкривай авторські та тематичні кейси, вибивай ножі, рукавиці та рідкісні AWP.</p>
+    <h1 class="font-heading mt-1 text-4xl sm:text-5xl font-extrabold uppercase tracking-wider text-white">Кейси</h1>
+    <p class="text-sm text-gray-400 mt-1">Відкривай авторські й тематичні добірки для своєї цифрової CS2-колекції.</p>
   </div>
   <!-- Daily Free Case Banner -->
   <div class="glass-panel rounded-2xl border border-emerald-500/35 bg-emerald-500/5 p-4 flex items-center justify-between gap-4 max-w-md w-full shrink-0">
@@ -316,11 +316,11 @@
 <!-- Категорії кейсів -->
 <div class="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar" id="caseCategoryBar">
   <button class="case-cat-pill active" onclick="setCaseCategory('all')"><i class="fa-solid fa-layer-group"></i> Всі кейси</button>
-  <button class="case-cat-pill" onclick="setCaseCategory('hot')"><i class="fa-solid fa-fire text-red-400"></i> Hot & Limited</button>
+  <button class="case-cat-pill" onclick="setCaseCategory('hot')"><i class="fa-solid fa-fire text-red-400"></i> Лімітовані</button>
   <button class="case-cat-pill" onclick="setCaseCategory('knives')"><i class="fa-solid fa-swords text-amber-400"></i> Ножі</button>
   <button class="case-cat-pill" onclick="setCaseCategory('gloves')"><i class="fa-solid fa-mitten text-cyan-400"></i> Рукавиці</button>
-  <button class="case-cat-pill" onclick="setCaseCategory('weapons')"><i class="fa-solid fa-rifle text-purple-400"></i> Зброя & AWP</button>
-  <button class="case-cat-pill" onclick="setCaseCategory('budget')"><i class="fa-solid fa-bolt text-yellow-400"></i> Бюджет / Фарм</button>
+  <button class="case-cat-pill" onclick="setCaseCategory('weapons')"><i class="fa-solid fa-rifle text-purple-400"></i> Зброя та AWP</button>
+  <button class="case-cat-pill" onclick="setCaseCategory('budget')"><i class="fa-solid fa-bolt text-yellow-400"></i> Доступні</button>
   <button class="case-cat-pill" onclick="setCaseCategory('collections')"><i class="fa-solid fa-book-atlas text-cyan-300"></i> Колекції кейсів</button>
 </div>
 
@@ -331,15 +331,15 @@
 <!-- BATTLE -->
 <section data-page="battle" class="page-view hidden">
 <div class="mode-intro mode-intro-battle flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-4">
-<div><span class="text-xs font-extrabold uppercase tracking-[.2em] text-amber-400">1 VS 1 · COIN FLIP</span><h1 class="font-heading mt-1 text-4xl sm:text-5xl font-extrabold uppercase tracking-wider text-white">Потужний бій</h1></div>
-<p class="max-w-lg text-sm leading-6 text-gray-400">Вистав свій віртуальний скін у відкритий бій або прийми ставку іншого гравця. Монетка та результат синхронізуються через сервер.</p>
+<div><span class="text-xs font-extrabold uppercase tracking-[.2em] text-amber-400">1v1 · синхронний раунд</span><h1 class="font-heading mt-1 text-4xl sm:text-5xl font-extrabold uppercase tracking-wider text-white">Потужний бій</h1></div>
+<p class="max-w-lg text-sm leading-6 text-gray-400">Обери віртуальний предмет для відкритого 1v1 або прийми виклик іншого гравця. Жереб і результат сервер фіксує для обох профілів.</p>
 </div>
 <div class="battle-lobby-tabs mb-4" role="tablist" aria-label="Режим Потужного бою">
 <button id="battleOpenTab" type="button" class="is-active" role="tab" aria-selected="true" onclick="setBattleLobbyTab('open')"><i class="fa-solid fa-tower-broadcast"></i>Відкриті бої</button>
 <button id="battleCreateTab" type="button" role="tab" aria-selected="false" onclick="setBattleLobbyTab('create')"><i class="fa-solid fa-plus"></i>Створити бій</button>
 </div>
 <section id="battleListingsPanel" class="glass-panel rounded-2xl border border-brand-border p-4 sm:p-5 max-w-5xl mx-auto">
-<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p class="text-[10px] font-extrabold uppercase tracking-[.18em] text-amber-400">Вітрина 1v1</p><h2 class="font-heading text-2xl font-extrabold uppercase text-white">Відкриті бої</h2><p class="mt-1 text-xs text-gray-400">Прийми ставку, обери свій скін у межах ±35% — і монетка вирішить бій.</p></div><button type="button" onclick="refreshBattleListings(false)" class="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-3 py-2 text-[11px] font-extrabold text-cyan-100 hover:bg-cyan-400/20"><i class="fa-solid fa-rotate-right mr-1"></i>Оновити</button></div>
+<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p class="text-[10px] font-extrabold uppercase tracking-[.18em] text-amber-400">Вітрина 1v1</p><h2 class="font-heading text-2xl font-extrabold uppercase text-white">Відкриті бої</h2><p class="mt-1 text-xs text-gray-400">Прийми виклик, обери предмет у межах ±35% — сервер зафіксує прозорий результат.</p></div><button type="button" onclick="refreshBattleListings(false)" class="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-3 py-2 text-[11px] font-extrabold text-cyan-100 hover:bg-cyan-400/20"><i class="fa-solid fa-rotate-right mr-1"></i>Оновити</button></div>
 <div id="battleListingsGrid" class="battle-listings-grid mt-4" aria-live="polite"><div class="battle-listings-empty"><i class="fa-solid fa-spinner fa-spin"></i> Завантажуємо відкриті бої…</div></div>
 </section>
 <div id="battleCreatePanel" class="hidden">
@@ -383,12 +383,12 @@
 <!-- ROYALE -->
 <section data-page="royale" class="page-view hidden space-y-5">
   <div class="mode-intro mode-intro-royale flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-2">
-    <div><span class="text-xs font-extrabold uppercase tracking-[.2em] text-violet-300">Джекпот · синхронний раунд</span><h1 class="font-heading mt-1 text-4xl sm:text-5xl font-extrabold uppercase tracking-wider text-white">Battle Royale</h1></div>
-    <p class="max-w-lg text-sm leading-6 text-gray-400">Збери віртуальний банк із гравцями сайту або запусти миттєвий раунд із ботами. Відлік і результат синхронізує сервер.</p>
+    <div><span class="text-xs font-extrabold uppercase tracking-[.2em] text-violet-300">Спільний раунд · синхронно</span><h1 class="font-heading mt-1 text-4xl sm:text-5xl font-extrabold uppercase tracking-wider text-white">Battle Royale</h1></div>
+    <p class="max-w-lg text-sm leading-6 text-gray-400">Збери спільну добірку з гравцями сайту або запусти миттєвий раунд із ботами. Відлік і результат синхронізує сервер.</p>
   </div>
 
   <div class="royale-mode-switch" role="tablist" aria-label="Режим Battle Royale">
-    <button id="royaleLiveMode" type="button" role="tab"><i class="fa-solid fa-tower-broadcast"></i><span><b>Відкритий банк</b><small>Реальні гравці · до 8 місць · без ботів</small></span></button>
+    <button id="royaleLiveMode" type="button" role="tab"><i class="fa-solid fa-tower-broadcast"></i><span><b>Відкритий раунд</b><small>Гравці сайту · до 8 місць · без ботів</small></span></button>
     <button id="royaleBotsMode" type="button" role="tab"><i class="fa-solid fa-robot"></i><span><b>Швидкий VS ботів</b><small>Збалансований раунд без очікування</small></span></button>
     <div class="royale-mode-signal"><i class="fa-solid fa-circle"></i><span id="royalePhasePill">ЗБІР БАНКУ</span></div>
   </div>
@@ -421,8 +421,8 @@
   </div>
 
   <div class="royale-bottom-grid">
-    <article class="royale-integration-card"><div class="royale-integration-icon"><i class="fa-solid fa-link"></i></div><div><span>ЄДИНИЙ РИТМ</span><h2>Від бою до рулетки</h2><p>Як у «Потужному бою»: вибір ставки → короткий відлік → автоматичний результат. У Royale проти тебе не одна ставка, а весь банк.</p></div><button type="button" id="royaleQuickModeBtn"><i class="fa-solid fa-robot"></i> Швидкий бій</button></article>
-    <article class="royale-history-card"><div class="royale-history-head"><div><span>ОСТАННІ РАУНДИ</span><h2>Журнал банку</h2></div><button type="button" id="royaleHistoryRefresh"><i class="fa-solid fa-rotate-right"></i></button></div><div id="royaleRecentRounds" class="royale-history-list"></div></article>
+    <article class="royale-integration-card"><div class="royale-integration-icon"><i class="fa-solid fa-link"></i></div><div><span>ЄДИНИЙ РИТМ</span><h2>Від предмета до раунду</h2><p>Як у «Потужному бою»: вибір предметів → короткий відлік → автоматичний результат. У Royale беруть участь усі обрані предмети раунду.</p></div><button type="button" id="royaleQuickModeBtn"><i class="fa-solid fa-robot"></i> Швидкий бій</button></article>
+    <article class="royale-history-card"><div class="royale-history-head"><div><span>ОСТАННІ РАУНДИ</span><h2>Журнал раундів</h2></div><button type="button" id="royaleHistoryRefresh"><i class="fa-solid fa-rotate-right"></i></button></div><div id="royaleRecentRounds" class="royale-history-list"></div></article>
   </div>
 
   <div id="royaleWinBanner" class="hidden royale-win-banner">
@@ -434,8 +434,8 @@
 <!-- CONTRACT -->
 <section data-page="contract" class="page-view hidden">
 <div class="mode-intro mode-intro-contract flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-4">
-<div><span class="text-xs font-extrabold uppercase tracking-[.2em] text-amber-400">TRADE-UP</span><h1 class="font-heading mt-1 text-4xl sm:text-5xl font-extrabold uppercase tracking-wider text-white">Контракт</h1></div>
-<p class="max-w-lg text-sm leading-6 text-gray-400">Вклади 5 предметів і отримай 1 випадковий. Сумарна цінність визначає діапазон.</p>
+<div><span class="text-xs font-extrabold uppercase tracking-[.2em] text-amber-400">Обмін колекції</span><h1 class="font-heading mt-1 text-4xl sm:text-5xl font-extrabold uppercase tracking-wider text-white">Контракт</h1></div>
+<p class="max-w-lg text-sm leading-6 text-gray-400">Обери 5 предметів і створи 1 новий. Сумарна цінність визначає його діапазон.</p>
 </div>
 <article class="glass-panel rounded-2xl border border-brand-border p-5 sm:p-7 max-w-4xl mx-auto">
 <div class="grid grid-cols-5 gap-2 sm:gap-3">
