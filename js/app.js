@@ -7052,7 +7052,7 @@ function renderCommandHub() {
   const pulse = document.getElementById('hubPulseStats');
   if (pulse) pulse.innerHTML = [
     { icon: 'fa-coins', label: 'Баланс', value: formatCredits(currentUser?.balance || 0), accent: 'amber' },
-    { icon: 'fa-gem', label: 'Колекція', value: formatCredits(collectionValue), accent: 'cyan' },
+    { icon: 'fa-gem', label: 'Вартість колекції', value: formatCredits(collectionValue), accent: 'cyan' },
     { icon: 'fa-fire', label: 'Серія', value: `${Math.max(0, Number(gameState.dailyStreak?.current) || 0)} дн.`, accent: 'orange' },
     { icon: 'fa-copy', label: 'Дублі', value: duplicateCount ? `×${duplicateCount}` : '—', accent: 'violet' }
   ].map(stat => `<div class="command-hub-pulse-card is-${stat.accent}"><i class="fa-solid ${stat.icon}"></i><span>${stat.label}</span><strong>${stat.value}</strong></div>`).join('');
@@ -7080,7 +7080,7 @@ function renderCommandHub() {
       const percent = state.total ? Math.round((state.count / state.total) * 100) : 0;
       return `<div class="command-hub-collection-progress"><span>${escapeHtml(definition.title)}</span><strong>${state.count}/${state.total}</strong><i><b style="width:${percent}%"></b></i></div>`;
     }).join('');
-    collection.innerHTML = `<div class="command-hub-showcase">${highlights.length ? highlights.map(item => `<button type="button" data-hub-skin="${escapeHtml(String(item.id))}" title="Деталі: ${escapeHtml(item.name)}"><img src="${escapeHtml(getSkinImageSrc(item))}" alt="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><span>${escapeHtml(item.name)}</span><small>${formatCredits(verifiedInventoryMarketPrice(item))}</small></button>`).join('') : '<div class="command-hub-empty"><i class="fa-solid fa-box-open"></i><strong>Колекція ще порожня</strong><span>Перший дроп з’явиться тут.</span></div>'}</div><div class="command-hub-collection-summary"><span>Завершено колекцій</span><strong>${completedCollections} / ${COLLECTION_DEFINITIONS.length}</strong></div><div class="command-hub-collection-list">${collectionRows}</div>`;
+    collection.innerHTML = `<div class="command-hub-showcase">${highlights.length ? highlights.map(item => `<button type="button" data-hub-skin="${escapeHtml(String(item.id))}" title="Деталі: ${escapeHtml(item.name)}"><img src="${escapeHtml(getSkinImageSrc(item))}" alt="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><span>${escapeHtml(item.name)}</span><small>${formatCredits(verifiedInventoryMarketPrice(item))}</small></button>`).join('') : '<div class="command-hub-empty"><i class="fa-solid fa-box-open"></i><strong>Інвентар ще порожній</strong><span>Перший предмет з’явиться тут.</span></div>'}</div><div class="command-hub-collection-summary"><span>Завершено колекцій</span><strong>${completedCollections} / ${COLLECTION_DEFINITIONS.length}</strong></div><div class="command-hub-collection-list">${collectionRows}</div>`;
     collection.querySelectorAll('[data-hub-skin]').forEach(button => button.addEventListener('click', () => showItemDetail(button.dataset.hubSkin)));
   }
   renderRuntimePromos();
