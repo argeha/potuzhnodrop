@@ -32,13 +32,13 @@
 <link rel="preconnect" href="https://community.akamai.steamstatic.com">
 <link rel="preconnect" href="https://avatars.steamstatic.com">
 <!-- Tailwind зібраний локально: інтерфейс не залежить від зовнішнього CDN. -->
-<link rel="stylesheet" href="/css/tailwind.css?v=7.9.0">
+<link rel="stylesheet" href="/css/tailwind.css?v=7.9.0-blackout.2">
 <!-- Font Awesome -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Teko:wght@600;700&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-  <link rel="stylesheet" href="/css/style.css?v=7.9.0-blackout.1">
+  <link rel="stylesheet" href="/css/style.css?v=7.9.0-blackout.2">
 </head>
 <body class="pd-rebrand min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -188,17 +188,17 @@
     <div class="blackout-hero-copy">
       <p><i class="fa-solid fa-shield-halved"></i> ТАКТИЧНА ЕКСПЕДИЦІЯ · СОЛО</p>
       <h1>POTUZHNO <em>BLACKOUT</em></h1>
-      <span>Проклади чистий маршрут через заражені сектори, тримай комбо й зафіксуй власний рекорд. Жодних втрат предметів — лише твоя швидкість і точність.</span>
-      <div class="blackout-hero-tags"><b><i class="fa-solid fa-mobile-screen-button"></i> ПК + ТЕЛЕФОН</b><b><i class="fa-solid fa-bolt"></i> 45 СЕКУНД</b><b><i class="fa-solid fa-trophy"></i> РЕКОРДИ</b></div>
+      <span>Вилазка починається на базі: обери сектор, підготуй спорядження, пройди лабіринт у тумані та евакуюй знайдений метал.</span>
+      <div class="blackout-hero-tags"><b><i class="fa-solid fa-mobile-screen-button"></i> ПК + ANDROID</b><b><i class="fa-solid fa-route"></i> ТАКТИКА</b><b><i class="fa-solid fa-tower-broadcast"></i> 6 СЕКТОРІВ</b></div>
     </div>
     <div class="blackout-hero-radar" aria-hidden="true"><i></i><i></i><i></i><strong><i class="fa-solid fa-satellite-dish"></i></strong><span>LINK</span></div>
     <div class="blackout-hero-status"><span>ОПЕРАТОР</span><strong id="blackoutRankLabel">ROOKIE</strong><small id="blackoutHeroStats">0 експедицій · 0 INTEL</small></div>
   </article>
 
   <section class="blackout-commandbar" aria-label="Статистика BLACKOUT">
-    <article><i class="fa-solid fa-crosshairs"></i><span>РЕКОРД</span><strong id="blackoutBestScore">0</strong></article>
-    <article><i class="fa-solid fa-link"></i><span>НАЙКРАЩЕ КОМБО</span><strong id="blackoutBestCombo">×0</strong></article>
-    <article><i class="fa-solid fa-microchip"></i><span>ЗІБРАНО INTEL</span><strong id="blackoutIntel">0</strong></article>
+    <article><i class="fa-solid fa-screwdriver-wrench"></i><span>МЕТАЛ</span><strong id="blackoutBestScore">0</strong></article>
+    <article><i class="fa-solid fa-person-walking"></i><span>ВИЛАЗКИ</span><strong id="blackoutBestCombo">0</strong></article>
+    <article><i class="fa-solid fa-microchip"></i><span>ДОСВІД BLACKOUT</span><strong id="blackoutIntel">0</strong></article>
     <article><i class="fa-solid fa-flag-checkered"></i><span>ЗАВЕРШЕНО</span><strong id="blackoutCompleted">0</strong></article>
   </section>
 
@@ -211,15 +211,15 @@
 
     <article class="blackout-mission-panel">
       <header class="blackout-mission-head"><div><p id="blackoutMissionEyebrow">СЕКТОР 01 · ПІДГОТОВКА</p><h2 id="blackoutMissionTitle">Точка входу</h2><span id="blackoutMissionDescription">Знайди чистий канал і зафіксуй сигнал до завершення таймера.</span></div><button type="button" class="blackout-how-button" onclick="toggleBlackoutBriefing()" aria-expanded="false" aria-controls="blackoutBriefing"><i class="fa-solid fa-circle-question"></i> Правила</button></header>
-      <div id="blackoutBriefing" class="blackout-briefing hidden"><b><i class="fa-solid fa-route"></i> Як грати</b><span>Тисни на вузол із пульсом. Кожне влучання продовжує комбо; хибний вузол скидає серію, але не завершує місію.</span></div>
+      <div id="blackoutBriefing" class="blackout-briefing hidden"><b><i class="fa-solid fa-route"></i> Як грати</b><span>Рухайся стрілками або WASD, або торкайся сусідньої клітинки. Сканер відкриває туман, броня рятує від одного зіткнення.</span></div>
       <div id="blackoutMissionStage" class="blackout-mission-stage" aria-live="polite"></div>
-      <footer class="blackout-mission-foot"><div><span>ЦІЛЬ</span><strong id="blackoutMissionGoal">2 400</strong></div><div><span>НАГОРОДА</span><strong id="blackoutMissionReward">+35 XP · +1 INTEL</strong></div><button type="button" id="blackoutStartButton" onclick="startBlackoutExpedition()"><i class="fa-solid fa-play"></i><span>ПОЧАТИ ЕКСПЕДИЦІЮ</span><small>45 секунд · без втрати предметів</small></button></footer>
+      <footer class="blackout-mission-foot"><div><span id="blackoutMissionGoalLabel">ЗАГРОЗА</span><strong id="blackoutMissionGoal">1 / 5</strong></div><div><span>НАГОРОДА</span><strong id="blackoutMissionReward">до 55 МЕТАЛУ</strong></div><button type="button" id="blackoutStartButton" onclick="startBlackoutTacticalExpedition()"><i class="fa-solid fa-play"></i><span>ПОЧАТИ ЕКСПЕДИЦІЮ</span><small>лабіринт · туман · евакуація</small></button></footer>
     </article>
   </section>
 
   <section class="blackout-lower-grid">
     <article class="blackout-intel-panel"><header><p><i class="fa-solid fa-terminal"></i> СТАН ОПЕРАЦІЇ</p><span id="blackoutRunState">ОБЕРИ СЕКТОР</span></header><div id="blackoutOperationLog" class="blackout-operation-log"></div></article>
-    <article class="blackout-protocol-panel"><header><p><i class="fa-solid fa-shield-heart"></i> ПРОТОКОЛ BLACKOUT</p></header><ul><li><i class="fa-solid fa-check"></i> Результат залежить від твоєї реакції.</li><li><i class="fa-solid fa-check"></i> Колекція та Steam-інвентар не ризикують.</li><li><i class="fa-solid fa-check"></i> Рекорди зберігаються у твоєму профілі.</li></ul></article>
+    <article class="blackout-protocol-panel"><header><p><i class="fa-solid fa-screwdriver-wrench"></i> ПРОКАЧКА ОПЕРАТОРА</p></header><div id="blackoutUpgradeList" class="blackout-upgrade-list"></div></article>
   </section>
 </section>
 
@@ -840,6 +840,6 @@
 
 <script src="/js/mobile-config.js" defer></script>
 <script src="/js/mobile.js?v=1" defer></script>
-<script src="/js/app.js?v=7.9.0-blackout.1" defer></script>
+<script src="/js/app.js?v=7.9.0-blackout.2" defer></script>
 </body>
 </html>
