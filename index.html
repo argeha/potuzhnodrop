@@ -35,7 +35,7 @@
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-<link rel="stylesheet" href="/css/style.css?v=7.9.0-ops.2">
+<link rel="stylesheet" href="/css/style.css?v=7.9.0-ops.3">
 </head>
 <body class="min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -161,6 +161,7 @@
   <div class="command-hub-level-orbit" aria-label="Поточний рівень"><span>РІВЕНЬ</span><strong id="hubLevel">LVL 1</strong><small id="hubXp">0 / 1 200 XP</small><i id="hubLevelRing"></i></div>
 </article>
 
+<section id="hubGettingStarted" class="getting-started-card hidden" aria-live="polite"></section>
 <section id="hubPulseStats" class="command-hub-pulse" aria-label="Стан профілю"></section>
 <section id="hubPromos" class="runtime-promo-grid" aria-live="polite"></section>
 
@@ -520,21 +521,30 @@
 </div>
 </article>
 
-<article class="profile-legend-card" aria-label="Паспорт легенди гравця"><div id="profileLegendCard"></div></article>
+<article class="profile-legend-card" data-profile-section="achievements" aria-label="Паспорт легенди гравця"><div id="profileLegendCard"></div></article>
+
+<nav class="profile-section-tabs" id="profileSectionTabs" aria-label="Розділи профілю" role="tablist">
+<button type="button" role="tab" data-profile-tab="collection" onclick="setProfileTab('collection')"><i class="fa-solid fa-boxes-stacked"></i> Колекція</button>
+<button type="button" role="tab" data-profile-tab="showcase" onclick="setProfileTab('showcase')"><i class="fa-solid fa-gem"></i> Вітрина</button>
+<button type="button" role="tab" data-profile-tab="achievements" onclick="setProfileTab('achievements')"><i class="fa-solid fa-medal"></i> Досягнення</button>
+<button type="button" role="tab" data-profile-tab="style" onclick="setProfileTab('style')"><i class="fa-solid fa-palette"></i> Стиль</button>
+</nav>
 
 <section class="profile-social-grid" aria-label="Прогрес гравця">
-<article class="profile-social-card"><div class="profile-social-heading"><div><p>ВІТРИНА</p><h3><i class="fa-solid fa-gem"></i> Обрані скіни</h3></div><button type="button" class="profile-showcase-manage" onclick="openShowcaseManager()"><i class="fa-solid fa-pen"></i> Налаштувати</button></div><div id="profileShowcase" class="profile-showcase-grid"></div></article>
-<article class="profile-social-card"><div class="profile-social-heading"><div><p>ОСТАННІ РАУНДИ</p><h3><i class="fa-solid fa-clock-rotate-left"></i> Історія</h3></div><div class="profile-history-actions"><button type="button" onclick="shareLatestMoment()"><i class="fa-solid fa-share-nodes"></i> Поділитися</button><button type="button" onclick="showPage('stats')">Вся статистика</button><small id="profileHistorySummary">—</small></div></div><div id="profileRoundHistory" class="profile-history-list"></div></article>
-<article class="profile-social-card profile-wishlist-card"><div class="profile-social-heading"><div><p>СПИСОК БАЖАНОГО</p><h3><i class="fa-solid fa-heart"></i> Скіни, за якими полюєш</h3></div><button type="button" class="profile-showcase-manage" onclick="openWishlistModal()"><i class="fa-solid fa-list-check"></i> Мій список</button></div><div id="profileWishlistPreview" class="profile-wishlist-preview"></div></article>
-<article class="profile-social-card profile-referral-card"><div class="profile-social-heading"><div><p>НАПАРНИКИ</p><h3><i class="fa-solid fa-user-group"></i> Запросити друга</h3></div><small id="profileReferralStatus">Підключи Steam для програми</small></div><div class="profile-referral-content"><div class="profile-referral-mark"><i class="fa-solid fa-link"></i></div><div class="profile-referral-copy"><strong id="profileReferralCount">0</strong><span>активних напарників у твоїй команді</span><small>За LVL 3, 10, 20 і перший престиж — <b id="profileReferralReward">170 PC</b>; за активну гру — ще до 40 PC/тиждень.</small><div class="profile-referral-meta"><span><i class="fa-solid fa-coins"></i><b id="profileReferralDividends">0 PC</b> дивідендів</span><span><i class="fa-solid fa-bolt"></i><b id="profileReferralWeekly">+4 PC</b> / 1 200 XP</span></div></div><button type="button" onclick="topupShareSite()" class="profile-referral-action"><i class="fa-solid fa-share-nodes"></i> Запросити</button></div></article>
+<article class="profile-social-card" data-profile-section="showcase"><div class="profile-social-heading"><div><p>ВІТРИНА</p><h3><i class="fa-solid fa-gem"></i> Обрані скіни</h3></div><button type="button" class="profile-showcase-manage" onclick="openShowcaseManager()"><i class="fa-solid fa-pen"></i> Налаштувати</button></div><div id="profileShowcase" class="profile-showcase-grid"></div></article>
+<article class="profile-social-card" data-profile-section="showcase"><div class="profile-social-heading"><div><p>ОСТАННІ РАУНДИ</p><h3><i class="fa-solid fa-clock-rotate-left"></i> Історія</h3></div><div class="profile-history-actions"><button type="button" onclick="shareLatestMoment()"><i class="fa-solid fa-share-nodes"></i> Поділитися</button><button type="button" onclick="showPage('stats')">Вся статистика</button><small id="profileHistorySummary">—</small></div></div><div id="profileRoundHistory" class="profile-history-list"></div></article>
+<article class="profile-social-card profile-wishlist-card" data-profile-section="collection"><div class="profile-social-heading"><div><p>СПИСОК БАЖАНОГО</p><h3><i class="fa-solid fa-heart"></i> Скіни, за якими полюєш</h3></div><button type="button" class="profile-showcase-manage" onclick="openWishlistModal()"><i class="fa-solid fa-list-check"></i> Мій список</button></div><div id="profileWishlistPreview" class="profile-wishlist-preview"></div></article>
+<article class="profile-social-card profile-referral-card" data-profile-section="showcase"><div class="profile-social-heading"><div><p>НАПАРНИКИ</p><h3><i class="fa-solid fa-user-group"></i> Запросити друга</h3></div><small id="profileReferralStatus">Підключи Steam для програми</small></div><div class="profile-referral-content"><div class="profile-referral-mark"><i class="fa-solid fa-link"></i></div><div class="profile-referral-copy"><strong id="profileReferralCount">0</strong><span>активних напарників у твоїй команді</span><small>За LVL 3, 10, 20 і перший престиж — <b id="profileReferralReward">170 PC</b>; за активну гру — ще до 40 PC/тиждень.</small><div class="profile-referral-meta"><span><i class="fa-solid fa-coins"></i><b id="profileReferralDividends">0 PC</b> дивідендів</span><span><i class="fa-solid fa-bolt"></i><b id="profileReferralWeekly">+4 PC</b> / 1 200 XP</span></div></div><button type="button" onclick="topupShareSite()" class="profile-referral-action"><i class="fa-solid fa-share-nodes"></i> Запросити</button></div></article>
 </section>
 
-<article id="steamProfileCard" class="profile-steam-console hidden">
+<article id="profileStyleSection" class="profile-style-panel" data-profile-section="style"><div class="profile-social-heading"><div><p>ОФОРМЛЕННЯ ПРОФІЛЮ</p><h3><i class="fa-solid fa-palette"></i> Твій стиль</h3></div><button type="button" class="profile-showcase-manage" onclick="openProfileCosmeticsModal()"><i class="fa-solid fa-pen"></i> Змінити</button></div><div id="profileStylePreview" class="profile-style-preview"></div></article>
+
+<article id="steamProfileCard" class="profile-steam-console hidden" data-profile-section="collection">
 <div class="profile-steam-console-copy"><span id="profileSteamAvatarShell" class="profile-steam-avatar-shell"><img id="profileSteamAvatar" alt="Steam-аватар" onerror="handleSteamAvatarError(this)"></span><div class="min-w-0"><p>STEAM ПІДКЛЮЧЕНО</p><h3 id="profileSteamName">Steam</h3><span id="profileSteamId" class="sr-only">—</span><small id="profileSteamStatus">Публічний профіль та інвентар доступні для синхронізації</small></div></div>
 <div class="profile-steam-console-actions"><div class="profile-steam-count"><strong id="profileSteamImportedCount">0</strong><span>Steam-копій</span></div><button id="steamProfileSyncBtn" onclick="syncSteamInventory()"><i class="fa-solid fa-rotate"></i><span>Синхронізувати</span></button><button id="steamProfileReconnectBtn" onclick="startSteamLogin()" class="hidden"><i class="fa-solid fa-right-to-bracket"></i><span>Увійти знову</span></button><a id="profileSteamLink" href="#" target="_blank" rel="noopener noreferrer" title="Відкрити профіль у Steam"><i class="fa-solid fa-arrow-up-right-from-square"></i></a><button id="steamDisconnectBtn" onclick="disconnectSteam()" title="Відключити Steam лише від цього сайту"><i class="fa-solid fa-link-slash"></i></button></div>
 </article>
 
-<article id="profileInventoryPanel" class="profile-inventory-panel">
+<article id="profileInventoryPanel" class="profile-inventory-panel" data-profile-section="collection">
 <div class="profile-inventory-heading">
 <div>
 <p>ІНВЕНТАР</p>
@@ -790,6 +800,6 @@
 
 <script src="/js/mobile-config.js" defer></script>
 <script src="/js/mobile.js?v=1" defer></script>
-<script src="/js/app.js?v=7.9.0-ops.2" defer></script>
+<script src="/js/app.js?v=7.9.0-ops.3" defer></script>
 </body>
 </html>

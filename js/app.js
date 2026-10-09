@@ -23,6 +23,7 @@ const STORAGE = {
   pendingWager: 'potuzhno_v6_pending_wager',
   fair: 'potuzhno_v9_fair',
   steamNudge: 'potuzhno_v10_steam_nudge',
+  profileTab: 'potuzhno_v79_profile_tab',
   adminProfileRefresh: 'potuzhno_v6_admin_profile_refresh',
   adminGameRefresh: 'potuzhno_v6_admin_game_refresh'
 };
@@ -102,6 +103,7 @@ function showPage(id) {
   if (id === 'profile') {
     renderProfileProgress();
     renderProfileInventory();
+    renderProfileTabs();
     updateAccountUI();
   }
   if (id === 'stats') renderStatsPage();
@@ -124,6 +126,37 @@ window.addEventListener('hashchange', () => {
   const h = location.hash.replace('#', '') || 'hub';
   if (PAGES.includes(h) && h !== currentPage) showPage(h);
 });
+
+const PROFILE_SECTION_TABS = Object.freeze(['collection', 'showcase', 'achievements', 'style']);
+
+function getProfileTab() {
+  try {
+    const saved = localStorage.getItem(STORAGE.profileTab);
+    return PROFILE_SECTION_TABS.includes(saved) ? saved : 'collection';
+  } catch {
+    return 'collection';
+  }
+}
+
+function renderProfileTabs() {
+  const active = getProfileTab();
+  document.querySelectorAll('[data-profile-tab]').forEach(button => {
+    const selected = button.dataset.profileTab === active;
+    button.classList.toggle('is-active', selected);
+    button.setAttribute('aria-selected', selected ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-profile-section]').forEach(section => {
+    section.classList.toggle('profile-tab-hidden', section.dataset.profileSection !== active);
+  });
+}
+
+function setProfileTab(tab) {
+  const next = PROFILE_SECTION_TABS.includes(tab) ? tab : 'collection';
+  try { localStorage.setItem(STORAGE.profileTab, next); } catch {}
+  renderProfileTabs();
+}
+
+window.setProfileTab = setProfileTab;
 
 function toggleThemeMenu() {
   document.getElementById('themeMenu')?.classList.toggle('hidden');
@@ -2579,6 +2612,17 @@ function renderProfileCosmeticsSummary() {
   label.textContent = cosmetics.activeTitle?.title || cosmetics.activeFrame?.title || getProfileStyleDefinition().title;
   renderProfileFramePresentation(cosmetics);
   renderProfileStyleSummary();
+  renderProfileStylePreview(cosmetics);
+}
+
+function renderProfileStylePreview(cosmetics = getHalloweenCosmetics()) {
+  const root = document.getElementById('profileStylePreview');
+  if (!root) return;
+  const style = getProfileStyleDefinition();
+  const title = cosmetics.activeTitle?.title || 'Титул ще не обрано';
+  const frame = cosmetics.activeFrame?.title || 'Рамка ще не обрана';
+  const unlockedStyles = PROFILE_STYLE_DEFINITIONS.filter(isProfileStyleUnlocked).length;
+  root.innerHTML = `<div class="profile-style-preview-main"><span class="profile-style-preview-icon"><i class="fa-solid ${escapeHtml(style.icon)}"></i></span><div><strong>${escapeHtml(style.title)}</strong><p>${escapeHtml(style.note)}</p></div></div><div class="profile-style-preview-stats"><span><i class="fa-solid fa-id-badge"></i>${escapeHtml(title)}</span><span><i class="fa-solid fa-border-all"></i>${escapeHtml(frame)}</span><span><i class="fa-solid fa-unlock"></i>${unlockedStyles} / ${PROFILE_STYLE_DEFINITIONS.length} стилів</span></div>`;
 }
 
 function renderSignalForgeProfile() {
@@ -6924,6 +6968,32 @@ function getCollectionForInventoryItem(item) {
   return COLLECTION_DEFINITIONS.find(collection => collection.items.some(entry => normalizeSkinName(entry) === name)) || null;
 }
 
+function getNewcomerGuide() {
+  const allTime = gameState?.allTime || {};
+  const stats = gameState?.stats || {};
+  const totalRounds = Math.max(0, Number(allTime.rounds) || Number(stats.rounds) || 0);
+  const hasClaimedTask = Array.isArray(gameState?.daily?.claimed) && gameState.daily.claimed.length > 0;
+  const hasShowcase = getShowcaseItems().length > 0;
+  if (!totalRounds) return { step: 1, page: 'case', icon: 'fa-box-open', title: 'Зроби перший дроп', copy: 'Відкрий будь-який кейс — це перший крок до твоєї колекції.', action: 'До кейсів' };
+  if (!hasClaimedTask) return { step: 2, page: 'tasks', icon: 'fa-bullseye', title: 'Візьми першу нагороду', copy: 'Завдання показують, що зробити далі, а готову нагороду можна забрати одним натисканням.', action: 'До завдань' };
+  if (!hasShowcase) return { step: 3, page: 'profile', icon: 'fa-gem', title: 'Покажи свій перший скін', copy: 'Додай предмет у вітрину профілю — її бачитимуть інші гравці.', action: 'Відкрити профіль', profileTab: 'showcase' };
+  return null;
+}
+
+function renderNewcomerGuide() {
+  const root = document.getElementById('hubGettingStarted');
+  if (!root || !gameState) return;
+  const guide = getNewcomerGuide();
+  root.classList.toggle('hidden', !guide);
+  root.replaceChildren();
+  if (!guide) return;
+  root.innerHTML = `<div class="getting-started-step"><span>${guide.step}<small>/3</small></span><i class="fa-solid ${escapeHtml(guide.icon)}"></i></div><div class="getting-started-copy"><p>ШВИДКИЙ СТАРТ</p><strong>${escapeHtml(guide.title)}</strong><span>${escapeHtml(guide.copy)}</span></div><button type="button" data-getting-started-go>${escapeHtml(guide.action)} <i class="fa-solid fa-arrow-right"></i></button>`;
+  root.querySelector('[data-getting-started-go]')?.addEventListener('click', () => {
+    if (guide.profileTab) setProfileTab(guide.profileTab);
+    showPage(guide.page);
+  });
+}
+
 function renderCommandHub() {
   if (!gameState) return;
   ensureDailyState();
@@ -6955,6 +7025,8 @@ function renderCommandHub() {
   if (xpNode) xpNode.textContent = `${progress.current.toLocaleString('uk-UA')} / ${progress.total.toLocaleString('uk-UA')} XP`;
   const ring = document.getElementById('hubLevelRing');
   if (ring) ring.style.setProperty('--hub-progress', `${progress.percent}%`);
+
+  renderNewcomerGuide();
 
   const pulse = document.getElementById('hubPulseStats');
   if (pulse) pulse.innerHTML = [

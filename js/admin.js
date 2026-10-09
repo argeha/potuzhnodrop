@@ -35,10 +35,13 @@
   const promoList = $('#promoList')
   const contentSummary = $('#contentSummary')
   const contentHistory = $('#contentHistory')
+  const adminSectionNav = $('#adminSectionNav')
   let skinSearchTimer = null
   let playerDirectorySearchTimer = null
   let editingCustomCaseId = ''
   let editingPromoId = ''
+  let activeAdminSection = 'content'
+  let activeContentGroup = 'content'
   const GAME_ACCOUNT_STORAGE = 'potuzhno_v6_account'
   const GAME_REFRESH_STORAGE = 'potuzhno_v6_admin_game_refresh'
   const CLOUD_PROFILE_ID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i
@@ -112,6 +115,46 @@
   function setNotice(message = '') {
     accessNotice.textContent = message
     accessNotice.classList.toggle('hidden', !message)
+  }
+
+  const ADMIN_SECTIONS = new Set(['content', 'events', 'players', 'moderation', 'releases', 'access', 'audit'])
+  const CONTENT_GROUPS = new Set(['content', 'events', 'releases'])
+
+  function applyAdminSectionView() {
+    const active = ADMIN_SECTIONS.has(activeAdminSection) ? activeAdminSection : 'content'
+    const contentGroup = active === 'events' ? 'events' : active === 'releases' ? 'releases' : activeContentGroup
+    adminSectionNav?.querySelectorAll('[data-admin-section]').forEach(button => {
+      const selected = button.dataset.adminSection === active
+      button.classList.toggle('is-active', selected)
+      button.setAttribute('aria-current', selected ? 'page' : 'false')
+    })
+    contentPanel.classList.toggle('admin-view-hidden', !['content', 'events', 'releases'].includes(active))
+    eventPreviewPanel.classList.toggle('admin-view-hidden', active !== 'events')
+    gamePanel.classList.toggle('admin-view-hidden', !['players', 'moderation'].includes(active))
+    gamePanel.classList.toggle('is-moderation-view', active === 'moderation')
+    document.querySelectorAll('[data-admin-panel="access"]').forEach(panel => panel.classList.toggle('admin-view-hidden', active !== 'access'))
+    document.querySelectorAll('[data-admin-panel="audit"]').forEach(panel => panel.classList.toggle('admin-view-hidden', active !== 'audit'))
+    document.querySelectorAll('[data-content-group]').forEach(section => section.classList.toggle('content-group-hidden', section.dataset.contentGroup !== contentGroup))
+    document.querySelectorAll('[data-content-group-select]').forEach(button => {
+      const selected = button.dataset.contentGroupSelect === contentGroup
+      button.classList.toggle('is-active', selected)
+      button.setAttribute('aria-current', selected ? 'page' : 'false')
+    })
+  }
+
+  function setAdminSection(section) {
+    activeAdminSection = ADMIN_SECTIONS.has(section) ? section : 'content'
+    if (activeAdminSection === 'events') activeContentGroup = 'events'
+    if (activeAdminSection === 'releases') activeContentGroup = 'releases'
+    if (activeAdminSection === 'content') activeContentGroup = 'content'
+    applyAdminSectionView()
+  }
+
+  function setContentGroup(group) {
+    if (!CONTENT_GROUPS.has(group)) return
+    activeContentGroup = group
+    activeAdminSection = group === 'events' ? 'events' : group === 'releases' ? 'releases' : 'content'
+    applyAdminSectionView()
   }
 
   async function api(path, options = {}) {
@@ -654,6 +697,7 @@
     renderAudit()
     renderGame()
     renderContent()
+    applyAdminSectionView()
   }
 
   function renderInvite(invite) {
@@ -1194,6 +1238,15 @@
     if (!Number.isFinite(revision)) return
     if (!window.confirm(`Відкотити сайт і Android до вмісту версії ${revision}?`)) return
     void saveContent('rollback', `Вміст відкачено до версії ${revision}.`, { rollbackRevision: revision })
+  })
+
+  adminSectionNav?.addEventListener('click', event => {
+    const button = event.target.closest('[data-admin-section]')
+    if (button) setAdminSection(button.dataset.adminSection)
+  })
+  contentWorkspace.addEventListener('click', event => {
+    const button = event.target.closest('[data-content-group-select]')
+    if (button) setContentGroup(button.dataset.contentGroupSelect)
   })
 
   logoutButton.addEventListener('click', async () => {

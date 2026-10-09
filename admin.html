@@ -9,10 +9,10 @@
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="/css/tailwind.css?v=6.9.7">
+<link rel="stylesheet" href="/css/tailwind.css?v=6.9.9">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/css/admin.css?v=6.9.7">
+<link rel="stylesheet" href="/css/admin.css?v=6.9.9">
 </head>
 <body>
 <div class="admin-shell">
@@ -56,6 +56,16 @@
 
     <section class="notice hidden" id="accessNotice" role="alert"></section>
 
+    <nav id="adminSectionNav" class="admin-section-nav" aria-label="Розділи адмін-панелі">
+      <button type="button" data-admin-section="content"><i class="fa-solid fa-boxes-stacked"></i> Контент</button>
+      <button type="button" data-admin-section="events"><i class="fa-solid fa-calendar-days"></i> Події</button>
+      <button type="button" data-admin-section="players"><i class="fa-solid fa-users"></i> Гравці</button>
+      <button type="button" data-admin-section="moderation"><i class="fa-solid fa-user-shield"></i> Модерація</button>
+      <button type="button" data-admin-section="releases"><i class="fa-solid fa-tower-broadcast"></i> Релізи</button>
+      <button type="button" data-admin-section="access"><i class="fa-solid fa-user-gear"></i> Доступи</button>
+      <button type="button" data-admin-section="audit"><i class="fa-solid fa-clock-rotate-left"></i> Журнал</button>
+    </nav>
+
     <section class="dashboard-grid" aria-label="Стан доступу">
       <article class="panel identity-card">
         <div class="panel-label">ТВІЙ ДОСТУП</div>
@@ -79,17 +89,22 @@
       </div>
       <div id="contentUnavailable" class="game-unavailable hidden"><i class="fa-solid fa-lock"></i> Твоя роль не має доступу до керування вмістом.</div>
       <div id="contentWorkspace" class="content-workspace hidden">
-        <section class="content-card">
+        <nav class="content-workspace-tabs" aria-label="Підрозділи контенту">
+          <button type="button" data-content-group-select="content"><i class="fa-solid fa-boxes-stacked"></i> Кейси й режими</button>
+          <button type="button" data-content-group-select="events"><i class="fa-solid fa-bullhorn"></i> Події й промо</button>
+          <button type="button" data-content-group-select="releases"><i class="fa-solid fa-tower-broadcast"></i> Публікація</button>
+        </nav>
+        <section class="content-card" data-content-group="content">
           <div class="form-heading"><i class="fa-solid fa-sliders"></i><span>Режими сайту</span></div>
           <p class="form-hint"><i class="fa-solid fa-circle-info"></i> Вимкнений режим не показується в меню, на головній і за прямим посиланням.</p>
           <div id="featureToggles" class="feature-toggles" aria-label="Перемикачі режимів"></div>
         </section>
-        <section class="content-card case-visibility-card">
+        <section class="content-card case-visibility-card" data-content-group="content">
           <div class="form-heading"><i class="fa-solid fa-box-open"></i><span>Вбудовані кейси</span></div>
           <p class="form-hint"><i class="fa-solid fa-eye-slash"></i> Прихований кейс лишається в коді, але не доступний гравцям.</p>
           <div id="builtInCaseToggles" class="built-in-case-toggles"></div>
         </section>
-        <section class="content-card custom-case-card">
+        <section class="content-card custom-case-card" data-content-group="content">
           <div class="section-head"><div><p class="eyebrow">КОНСТРУКТОР</p><h3>Новий кейс</h3></div><span class="count-pill" id="customCaseCount">0 / 24</span></div>
           <form id="customCaseForm" class="custom-case-form">
             <label>Технічний ID<input id="customCaseId" maxlength="40" pattern="[a-z0-9][a-z0-9_-]{1,39}" placeholder="streamer-argeha" required></label>
@@ -111,7 +126,7 @@
           </form>
           <div id="customCaseList" class="custom-case-list" aria-live="polite"></div>
         </section>
-        <section class="content-card campaign-card">
+        <section class="content-card campaign-card" data-content-group="events">
           <div class="form-heading"><i class="fa-solid fa-bullhorn"></i><span>Оголошення для всіх</span></div>
           <p class="form-hint"><i class="fa-solid fa-tower-broadcast"></i> Показується вгорі сайту й у застосунку без оновлення збірки.</p>
           <form id="announcementForm" class="content-form">
@@ -127,7 +142,7 @@
             <button id="removeAnnouncementButton" class="small-button danger content-form-submit" type="button"><i class="fa-solid fa-trash"></i> Прибрати з сайту</button>
           </form>
         </section>
-        <section class="content-card campaign-card">
+        <section class="content-card campaign-card" data-content-group="events">
           <div class="form-heading"><i class="fa-solid fa-calendar-days"></i><span>Сезон, Battle Pass і економіка</span></div>
           <p class="form-hint"><i class="fa-solid fa-shield-halved"></i> Коефіцієнти працюють лише з віртуальними PC. Діапазон: від 0.50× до 2.00×.</p>
           <form id="campaignForm" class="content-form">
@@ -144,7 +159,7 @@
             <button class="small-button content-form-submit" type="submit"><i class="fa-solid fa-sliders"></i> Застосувати до чернетки</button>
           </form>
         </section>
-        <section class="content-card promo-card">
+        <section class="content-card promo-card" data-content-group="events">
           <div class="section-head"><div><p class="eyebrow">ПРОМО-ЦЕНТР</p><h3>Картки кампаній</h3></div><span class="count-pill" id="promoCount">0 / 6</span></div>
           <form id="promoForm" class="content-form">
             <label>ID кампанії<input id="promoId" maxlength="40" pattern="[a-z0-9][a-z0-9_-]{1,39}" placeholder="streamer-week" required></label>
@@ -162,7 +177,7 @@
           </form>
           <div id="promoList" class="custom-case-list" aria-live="polite"></div>
         </section>
-        <section class="content-card release-card">
+        <section class="content-card release-card" data-content-group="releases">
           <div class="section-head"><div><p class="eyebrow">РЕЛІЗ-ЦЕНТР</p><h3>Стан і відкат</h3></div><span id="contentScheduleState" class="count-pill">Без розкладу</span></div>
           <div id="contentSummary" class="content-summary" aria-live="polite"></div>
           <div class="release-schedule"><label>Опублікувати пізніше<input id="contentPublishAt" type="datetime-local"></label><button id="scheduleContentButton" class="small-button" type="button"><i class="fa-solid fa-clock"></i> Запланувати</button><button id="cancelScheduleButton" class="small-button danger hidden" type="button"><i class="fa-solid fa-ban"></i> Скасувати</button></div>
@@ -176,13 +191,13 @@
       </div>
     </section>
 
-    <section class="panel event-preview-panel hidden" id="eventPreviewPanel" aria-labelledby="eventPreviewTitle">
+    <section class="panel event-preview-panel hidden" id="eventPreviewPanel" data-admin-panel="events" aria-labelledby="eventPreviewTitle">
       <div class="event-preview-icon" aria-hidden="true"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
       <div class="event-preview-copy"><p class="eyebrow">СЕЗОННИЙ КОНТРОЛЬ</p><h2 id="eventPreviewTitle">Приватний preview подій</h2><p>Відкривай повний вигляд майбутнього сезону в цій вкладці. Його бачить лише авторизований адміністратор.</p></div>
       <div class="event-preview-action"><span><i class="fa-solid fa-shield-halved"></i> Без нагород і змін у прогресі</span><div class="event-preview-buttons"><button id="openHalloweenPreviewButton" class="event-preview-button is-nightfall" type="button"><i class="fa-solid fa-moon"></i><span><b>Nightfall</b><small>18 жовтня — 3 листопада</small></span><i class="fa-solid fa-arrow-right"></i></button><button id="openIcewirePreviewButton" class="event-preview-button is-icewire" type="button"><i class="fa-solid fa-snowflake"></i><span><b>ICEWIRE</b><small>12 грудня — 17 січня</small></span><i class="fa-solid fa-arrow-right"></i></button></div><small>Preview відкривається в цій вкладці — без popup-вікон.</small></div>
     </section>
 
-    <section class="panel game-panel" id="gamePanel" aria-labelledby="gameTitle">
+    <section class="panel game-panel" id="gamePanel" data-admin-panel="players" aria-labelledby="gameTitle">
       <div class="section-head">
         <div><p class="eyebrow">ВІРТУАЛЬНА ГРА</p><h2 id="gameTitle">Керування профілем</h2></div>
         <span class="audit-lock"><i class="fa-brands fa-steam"></i> Серверний акаунт</span>
@@ -248,7 +263,7 @@
       </div>
     </section>
 
-    <section class="panel team-panel" aria-labelledby="teamTitle">
+    <section class="panel team-panel" data-admin-panel="access" aria-labelledby="teamTitle">
       <div class="section-head">
         <div><p class="eyebrow">КОМАНДА</p><h2 id="teamTitle">Доступи</h2></div>
         <span class="count-pill" id="teamCount">—</span>
@@ -271,13 +286,13 @@
       </div>
     </section>
 
-    <section class="panel audit-panel" aria-labelledby="auditTitle">
+    <section class="panel audit-panel" data-admin-panel="audit" aria-labelledby="auditTitle">
       <div class="section-head"><div><p class="eyebrow">ПРОЗОРІСТЬ</p><h2 id="auditTitle">Журнал дій</h2></div><span class="audit-lock"><i class="fa-solid fa-clock-rotate-left"></i> Серверний</span></div>
       <div id="auditList" class="audit-list" aria-live="polite"><p class="loading-line"><i class="fa-solid fa-spinner fa-spin"></i> Завантаження журналу…</p></div>
     </section>
   </main>
 </div>
 <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
-<script src="/js/admin.js?v=6.9.8" defer></script>
+<script src="/js/admin.js?v=6.9.9" defer></script>
 </body>
 </html>

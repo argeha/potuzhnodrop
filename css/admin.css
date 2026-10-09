@@ -185,6 +185,16 @@ button { cursor: pointer; }
 .content-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 15px; }
 .content-actions .small-button, .content-actions .primary-button { min-height: 39px; padding: 0 12px; }
 .content-actions .primary-button { width: auto; margin: 0; }
+.admin-section-nav { display: flex; gap: 7px; margin-top: 18px; overflow-x: auto; padding: 2px 1px 4px; scrollbar-width: none; }
+.admin-section-nav::-webkit-scrollbar { display: none; }
+.admin-section-nav button, .content-workspace-tabs button { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 6px; min-height: 34px; border: 1px solid rgba(100, 116, 139, .42); border-radius: 9px; padding: 0 10px; color: #8fa1b5; background: rgba(8, 15, 24, .72); font-size: 10px; font-weight: 850; white-space: nowrap; transition: .16s; }
+.admin-section-nav button:hover, .content-workspace-tabs button:hover { border-color: rgba(103, 232, 249, .48); color: #d9f8ff; }
+.admin-section-nav button.is-active, .content-workspace-tabs button.is-active { border-color: rgba(103, 232, 249, .63); color: #dffaff; background: linear-gradient(135deg, rgba(8, 95, 117, .36), rgba(17, 24, 42, .9)); box-shadow: inset 0 1px rgba(255, 255, 255, .07); }
+.admin-view-hidden, .content-group-hidden { display: none !important; }
+.content-workspace-tabs { display: flex; grid-column: 1 / -1; gap: 7px; overflow-x: auto; padding: 1px 0 3px; scrollbar-width: none; }
+.content-workspace-tabs::-webkit-scrollbar { display: none; }
+.game-panel.is-moderation-view .game-controls > :not(.moderation-card):not(.visibility-card), .game-panel.is-moderation-view .skin-manager { display: none; }
+.game-panel.is-moderation-view .player-workspace { grid-template-columns: 1fr; }
 .content-actions i { margin-right: 5px; }
 .event-preview-panel { display: grid; grid-template-columns: 50px minmax(0, 1fr) minmax(305px, .9fr); align-items: center; gap: 16px; margin-top: 16px; padding: 18px; border-color: rgba(56, 189, 248, .31); background: radial-gradient(circle at 100% 0%, rgba(56, 189, 248, .1), transparent 34%), radial-gradient(circle at 0% 100%, rgba(249, 115, 22, .1), transparent 35%), linear-gradient(112deg, rgba(11, 26, 39, .92), rgba(20, 14, 35, .92)); }
 .event-preview-panel.hidden { display: none; }
@@ -324,6 +334,8 @@ button { cursor: pointer; }
   .custom-case-form label.wide { grid-column: 1 / -1; }
   .custom-case-form .case-enabled, .custom-case-form .primary-button { grid-column: 1 / -1; }
   .content-actions { align-items: stretch; flex-direction: column; }
+  .admin-section-nav { margin-top: 14px; }
+  .admin-section-nav button, .content-workspace-tabs button { min-height: 33px; }
   .content-actions .small-button, .content-actions .primary-button { width: 100%; }
   .event-preview-action { grid-column: 1 / -1; }
   .profile-lookup, .skin-grant-row { align-items: stretch; flex-direction: column; }
