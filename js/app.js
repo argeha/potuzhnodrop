@@ -746,7 +746,7 @@ function setPerformanceMode(mode) {
   if (currentPage === 'case') renderCaseCatalog();
   if (document.getElementById('shopModal')?.classList.contains('flex')) filterShop();
   showToast(gameState.performanceMode === 'lite'
-    ? 'Легкий режим увімкнено: менше анімацій і карток у рулетці.'
+    ? 'Легкий режим увімкнено: менше анімацій і декоративних карток.'
     : 'Автоматичний режим продуктивності увімкнено.', 'success');
 }
 
@@ -3923,7 +3923,7 @@ function renderPerformancePanel() {
   }
   const mode = getPerformanceMode();
   const automaticSavings = mode === 'auto' && prefersLightweightMotion();
-  panel.innerHTML = `<div class="flex items-start justify-between gap-3"><div><p class="text-[11px] font-extrabold text-violet-100"><i class="fa-solid fa-gauge-high mr-1.5 text-violet-300"></i>Швидкодія</p><p class="mt-1 text-[10px] leading-4 text-gray-400">Легкий режим прибирає декоративні прев’ю поза екраном і скорочує рулетку. Шанси, ціни та результати не змінюються.</p></div><span class="shrink-0 rounded-md border ${mode === 'lite' ? 'border-emerald-400/35 bg-emerald-500/10 text-emerald-200' : 'border-gray-600/50 bg-black/20 text-gray-300'} px-2 py-1 text-[8px] font-extrabold">${mode === 'lite' ? 'ЛЕГКИЙ' : automaticSavings ? 'АВТО · ЕКОНОМНО' : 'АВТО'}</span></div><div class="mt-3 grid grid-cols-2 gap-2"><button type="button" onclick="setPerformanceMode('auto')" class="rounded-lg border px-2 py-2 text-[10px] font-extrabold transition ${mode === 'auto' ? 'border-cyan-400/45 bg-cyan-400/10 text-cyan-100' : 'border-gray-700 bg-black/20 text-gray-400 hover:border-gray-500'}">Автоматично</button><button type="button" onclick="setPerformanceMode('lite')" class="rounded-lg border px-2 py-2 text-[10px] font-extrabold transition ${mode === 'lite' ? 'border-emerald-400/45 bg-emerald-500/10 text-emerald-100' : 'border-gray-700 bg-black/20 text-gray-400 hover:border-gray-500'}">Легкий режим</button></div>`;
+  panel.innerHTML = `<div class="flex items-start justify-between gap-3"><div><p class="text-[11px] font-extrabold text-violet-100"><i class="fa-solid fa-gauge-high mr-1.5 text-violet-300"></i>Швидкодія</p><p class="mt-1 text-[10px] leading-4 text-gray-400">Легкий режим прибирає декоративні прев’ю поза екраном і скорочує анімації. Шанси, ціни та результати не змінюються.</p></div><span class="shrink-0 rounded-md border ${mode === 'lite' ? 'border-emerald-400/35 bg-emerald-500/10 text-emerald-200' : 'border-gray-600/50 bg-black/20 text-gray-300'} px-2 py-1 text-[8px] font-extrabold">${mode === 'lite' ? 'ЛЕГКИЙ' : automaticSavings ? 'АВТО · ЕКОНОМНО' : 'АВТО'}</span></div><div class="mt-3 grid grid-cols-2 gap-2"><button type="button" onclick="setPerformanceMode('auto')" class="rounded-lg border px-2 py-2 text-[10px] font-extrabold transition ${mode === 'auto' ? 'border-cyan-400/45 bg-cyan-400/10 text-cyan-100' : 'border-gray-700 bg-black/20 text-gray-400 hover:border-gray-500'}">Автоматично</button><button type="button" onclick="setPerformanceMode('lite')" class="rounded-lg border px-2 py-2 text-[10px] font-extrabold transition ${mode === 'lite' ? 'border-emerald-400/45 bg-emerald-500/10 text-emerald-100' : 'border-gray-700 bg-black/20 text-gray-400 hover:border-gray-500'}">Легкий режим</button></div>`;
 }
 
 function updateAccountUI() {
@@ -9214,7 +9214,7 @@ function renderSmartSuggestions(inputVal) {
   const presets = [
     { key: 'safe',    icon: '🛡',  label: 'Safe',    mult: 2,    accent: '#22c55e', bg: 'rgba(34,197,94,0.08)',   border: 'rgba(34,197,94,0.25)' },
     { key: 'balance', icon: '⚡',  label: 'Balance', mult: 3.3,  accent: '#f59e0b', bg: 'rgba(245,158,11,0.08)',  border: 'rgba(245,158,11,0.25)' },
-    { key: 'jackpot', icon: '💎', label: 'Jackpot', mult: 12.5, accent: '#a855f7', bg: 'rgba(168,85,247,0.08)',  border: 'rgba(168,85,247,0.25)' },
+    { key: 'jackpot', icon: '💎', label: 'Aurora', mult: 12.5, accent: '#a855f7', bg: 'rgba(168,85,247,0.08)',  border: 'rgba(168,85,247,0.25)' },
   ];
 
   el.innerHTML = presets.map(p => {
@@ -12269,7 +12269,7 @@ function legacyRoyaleSettle(winnerIdx, wagerId) {
 
   gameState.rounds.unshift({
     at: Date.now(), win: userWon,
-    targetName: `🎰 Jackpot Royale (${allPotSkins.length} скінів)`,
+    targetName: `◈ Royale · ${allPotSkins.length} скінів`,
     targetValue: total, chance, mode: 'royale', inputValue: pv, bonus: 0,
   });
   gameState.rounds = gameState.rounds.slice(0, ROUND_HISTORY_LIMIT);
@@ -12351,7 +12351,7 @@ function setRoyaleMode(mode) {
 
 function royalePhaseLabel() {
   if (royalePhase === 'countdown') return `СТАРТ ЗА ${Math.max(1, Math.ceil((royaleCountdownEndsAt - Date.now()) / 1_000))} С`;
-  if (royalePhase === 'spinning') return 'РУЛЕТКА В ЕФІРІ';
+  if (royalePhase === 'spinning') return 'ВИБІР У ПРОЦЕСІ';
   if (royalePhase === 'settled') return 'РАУНД ЗАВЕРШЕНО';
   return 'ЗБІР УЧАСНИКІВ';
 }
@@ -12518,7 +12518,7 @@ function updateRoyaleUI() {
   if (chanceEl) chanceEl.textContent = `${chance.toFixed(chance >= 10 ? 1 : 2)}%`;
   if (phasePill) phasePill.textContent = royalePhaseLabel();
   if (roundMode) roundMode.textContent = config.label;
-  if (roundTitle) roundTitle.textContent = royalePhase === 'collecting' ? config.title : royalePhase === 'countdown' ? `Рулетка стартує за ${remaining} с` : royalePhase === 'spinning' ? 'Добірка в русі' : 'Результат зафіксовано';
+  if (roundTitle) roundTitle.textContent = royalePhase === 'collecting' ? config.title : royalePhase === 'countdown' ? `Вибір стартує за ${remaining} с` : royalePhase === 'spinning' ? 'Добірка в русі' : 'Результат зафіксовано';
   if (wheelStatus) wheelStatus.textContent = royalePhase === 'countdown' ? 'СТАРТ ЗА' : royalePhase === 'spinning' ? 'ДОБІРКА В РУСІ' : 'ТВІЙ ШАНС';
   if (wheelSub) wheelSub.textContent = royalePhase === 'countdown' ? `${remaining} секунд` : royalePhase === 'spinning' ? 'серверний ритм' : royalePlayerSkins.length ? 'місце в раунді' : 'додай скін';
   if (hint) hint.textContent = isLive
@@ -12536,7 +12536,7 @@ function updateRoyaleUI() {
     startButton.innerHTML = royalePhase === 'countdown'
       ? `<i class="fa-solid fa-clock"></i><span>СТАРТ ЧЕРЕЗ ${remaining}</span><small>предмети вже додано</small>`
       : royalePhase === 'spinning'
-        ? '<i class="fa-solid fa-spinner fa-spin"></i><span>РУЛЕТКА В ЕФІРІ</span><small>визначаємо переможця</small>'
+        ? '<i class="fa-solid fa-spinner fa-spin"></i><span>ВИБІР У ПРОЦЕСІ</span><small>визначаємо переможця</small>'
         : isLive && liveLocked
           ? '<i class="fa-solid fa-users"></i><span>ЧЕКАЄМО ГРАВЦЯ</span><small>натисни, щоб вийти з раунду</small>'
           : isLive
@@ -12898,7 +12898,7 @@ async function joinLiveRoyale() {
     document.getElementById('royaleWinBanner')?.classList.add('hidden');
     startLiveRoyalePolling();
     applyLiveRoyaleState(round);
-    showToast(round.status === 'countdown' ? 'Гравець приєднався — сервер запускає рулетку.' : `У раунді ${skins.length} ${skins.length === 1 ? 'скін' : 'скінів'}. Чекаємо ще одного гравця.`, 'success');
+    showToast(round.status === 'countdown' ? 'Гравець приєднався — сервер запускає вибір.' : `У раунді ${skins.length} ${skins.length === 1 ? 'скін' : 'скінів'}. Чекаємо ще одного гравця.`, 'success');
   } catch (error) {
     releaseLiveRoyaleReservation();
     renderRoyaleDeck();
