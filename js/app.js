@@ -9134,7 +9134,7 @@ function recalculateUpgrade() {
   const multiplierText = document.getElementById('multiplierText');
 
   if (!iv || !tv) {
-    if (winChanceText) winChanceText.textContent = '0.00 %';
+    if (winChanceText) winChanceText.textContent = '—';
     if (multiplierText) multiplierText.textContent = 'x0.00';
     renderCanvas(0);
     return;
