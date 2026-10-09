@@ -6974,24 +6974,29 @@ function getNewcomerGuide() {
   const totalRounds = Math.max(0, Number(allTime.rounds) || Number(stats.rounds) || 0);
   const hasClaimedTask = Array.isArray(gameState?.daily?.claimed) && gameState.daily.claimed.length > 0;
   const hasShowcase = getShowcaseItems().length > 0;
-  if (!totalRounds) return { step: 1, page: 'case', icon: 'fa-box-open', title: 'Зроби перший дроп', copy: 'Відкрий будь-який кейс — це перший крок до твоєї колекції.', action: 'До кейсів' };
-  if (!hasClaimedTask) return { step: 2, page: 'tasks', icon: 'fa-bullseye', title: 'Візьми першу нагороду', copy: 'Завдання показують, що зробити далі, а готову нагороду можна забрати одним натисканням.', action: 'До завдань' };
-  if (!hasShowcase) return { step: 3, page: 'profile', icon: 'fa-gem', title: 'Покажи свій перший скін', copy: 'Додай предмет у вітрину профілю — її бачитимуть інші гравці.', action: 'Відкрити профіль', profileTab: 'showcase' };
+  if (!totalRounds) return { step: 1, target: 'case', icon: 'fa-box-open', title: 'Зроби перший дроп' };
+  if (!hasClaimedTask) return { step: 2, target: 'tasks', icon: 'fa-bullseye', title: 'Забери першу нагороду' };
+  if (!hasShowcase) return { step: 3, target: 'showcase', icon: 'fa-gem', title: 'Додай скін у вітрину', profileTab: 'showcase' };
   return null;
 }
 
 function renderNewcomerGuide() {
-  const root = document.getElementById('hubGettingStarted');
-  if (!root || !gameState) return;
-  const guide = getNewcomerGuide();
-  root.classList.toggle('hidden', !guide);
-  root.replaceChildren();
-  if (!guide) return;
-  root.innerHTML = `<div class="getting-started-step"><span>${guide.step}<small>/3</small></span><i class="fa-solid ${escapeHtml(guide.icon)}"></i></div><div class="getting-started-copy"><p>ШВИДКИЙ СТАРТ</p><strong>${escapeHtml(guide.title)}</strong><span>${escapeHtml(guide.copy)}</span></div><button type="button" data-getting-started-go>${escapeHtml(guide.action)} <i class="fa-solid fa-arrow-right"></i></button>`;
-  root.querySelector('[data-getting-started-go]')?.addEventListener('click', () => {
-    if (guide.profileTab) setProfileTab(guide.profileTab);
-    showPage(guide.page);
+  const targets = document.querySelectorAll('[data-onboarding-target]');
+  targets.forEach(target => {
+    target.classList.remove('is-onboarding-target');
+    target.removeAttribute('aria-describedby');
+    target.querySelector('.newcomer-action-hint')?.remove();
   });
+  if (!gameState) return;
+  const guide = getNewcomerGuide();
+  if (!guide) return;
+  const target = document.querySelector(`[data-onboarding-target="${guide.target}"]`);
+  if (!target) return;
+  if (guide.profileTab) target.addEventListener('click', () => setProfileTab(guide.profileTab), { once: true });
+  const hintId = `newcomerHint${guide.step}`;
+  target.classList.add('is-onboarding-target');
+  target.setAttribute('aria-describedby', hintId);
+  target.insertAdjacentHTML('beforeend', `<span id="${hintId}" class="newcomer-action-hint" role="status"><b>${guide.step}/3</b><span><i class="fa-solid ${escapeHtml(guide.icon)}"></i>${escapeHtml(guide.title)}</span></span>`);
 }
 
 function renderCommandHub() {

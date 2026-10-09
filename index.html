@@ -35,7 +35,7 @@
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Teko:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-<link rel="stylesheet" href="/css/style.css?v=7.9.0-ops.3">
+  <link rel="stylesheet" href="/css/style.css?v=7.9.0-ops.4">
 </head>
 <body class="min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -154,25 +154,24 @@
     <h1>ТРИМАЙ <em>ТЕМП</em></h1>
     <p id="hubGreeting">Твій профіль, колекція та наступна дія — в одному місці.</p>
     <div class="command-hub-hero-actions">
-      <button type="button" onclick="showPage('case')" class="command-hub-primary"><i class="fa-solid fa-box-open"></i> Відкрити кейс</button>
-      <button type="button" onclick="showPage('profile')" class="command-hub-secondary"><i class="fa-solid fa-gem"></i> Моя колекція</button>
+      <button type="button" onclick="showPage('case')" class="command-hub-primary" data-onboarding-target="case"><i class="fa-solid fa-box-open"></i> Відкрити кейс</button>
+      <button type="button" onclick="showPage('profile')" class="command-hub-secondary" data-onboarding-target="showcase"><i class="fa-solid fa-gem"></i> Моя колекція</button>
     </div>
   </div>
   <div class="command-hub-level-orbit" aria-label="Поточний рівень"><span>РІВЕНЬ</span><strong id="hubLevel">LVL 1</strong><small id="hubXp">0 / 1 200 XP</small><i id="hubLevelRing"></i></div>
 </article>
 
-<section id="hubGettingStarted" class="getting-started-card hidden" aria-live="polite"></section>
 <section id="hubPulseStats" class="command-hub-pulse" aria-label="Стан профілю"></section>
 <section id="hubPromos" class="runtime-promo-grid" aria-live="polite"></section>
 
 <section class="command-hub-section-head"><div><p>ОБЕРИ РЕЖИМ</p><h2>Наступний хід</h2></div><button type="button" onclick="showPage('stats')"><i class="fa-solid fa-chart-simple"></i> Вся статистика</button></section>
 <section class="command-hub-mode-grid" aria-label="Ігрові режими">
-  <button type="button" class="command-hub-mode is-case" onclick="showPage('case')"><i class="fa-solid fa-box-open"></i><span><b>Кейси</b><small>Відкрий дроп за фіксованими цінами</small></span><em><i class="fa-solid fa-arrow-right"></i></em></button>
+  <button type="button" class="command-hub-mode is-case" onclick="showPage('case')" data-onboarding-target="case"><i class="fa-solid fa-box-open"></i><span><b>Кейси</b><small>Відкрий дроп за фіксованими цінами</small></span><em><i class="fa-solid fa-arrow-right"></i></em></button>
   <button type="button" class="command-hub-mode is-upgrade" onclick="showPage('upgrader')"><i class="fa-solid fa-bolt"></i><span><b>Апгрейд</b><small>Ризикни за прозорим шансом</small></span><em><i class="fa-solid fa-arrow-right"></i></em></button>
   <button type="button" class="command-hub-mode is-battle" onclick="showPage('battle')"><i class="fa-solid fa-swords"></i><span><b>Відкритий бій</b><small>1v1 з другом або спільнотою</small></span><em><i class="fa-solid fa-arrow-right"></i></em></button>
   <button type="button" class="command-hub-mode is-royale" onclick="showPage('royale')"><i class="fa-solid fa-crown"></i><span><b>Battle Royale</b><small>Спільний банк та один переможець</small></span><em><i class="fa-solid fa-arrow-right"></i></em></button>
   <button type="button" class="command-hub-mode is-contract" onclick="showPage('contract')"><i class="fa-solid fa-boxes-packing"></i><span><b>Контракт</b><small>Збери п’ять у новий предмет</small></span><em><i class="fa-solid fa-arrow-right"></i></em></button>
-  <button type="button" class="command-hub-mode is-tasks" onclick="showPage('tasks')"><i class="fa-solid fa-list-check"></i><span><b>Завдання</b><small>Щоденні цілі й сезонний прогрес</small></span><em><i class="fa-solid fa-arrow-right"></i></em></button>
+  <button type="button" class="command-hub-mode is-tasks" onclick="showPage('tasks')" data-onboarding-target="tasks"><i class="fa-solid fa-list-check"></i><span><b>Завдання</b><small>Щоденні цілі й сезонний прогрес</small></span><em><i class="fa-solid fa-arrow-right"></i></em></button>
 </section>
 
 <section class="command-hub-lower-grid">
@@ -800,6 +799,6 @@
 
 <script src="/js/mobile-config.js" defer></script>
 <script src="/js/mobile.js?v=1" defer></script>
-<script src="/js/app.js?v=7.9.0-ops.3" defer></script>
+<script src="/js/app.js?v=7.9.0-ops.4" defer></script>
 </body>
 </html>
