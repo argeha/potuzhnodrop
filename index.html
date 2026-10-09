@@ -3,9 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ПОТУЖНО DROP — віртуальна CS2-гра</title>
-<meta name="description" content="Прозора гра-пародія про апгрейд CS2: віртуальні предмети, нуль депозитів і нуль реальних призів.">
-<meta name="theme-color" content="#080A0F">
+<title>ПОТУЖНО DROP — цифрова колекція CS2</title>
+<meta name="description" content="ПОТУЖНО DROP — твоя цифрова CS2-колекція: кейси, апгрейд, бої та сезонний прогрес без депозитів і реальних призів.">
+<meta name="theme-color" content="#0B1018">
+<meta property="og:title" content="ПОТУЖНО DROP — цифрова колекція CS2">
+<meta property="og:description" content="Збирай цифрову CS2-колекцію, відкривай кейси та піднімай свій рівень у ПОТУЖНО DROP.">
+<meta property="og:type" content="website">
 <script>
 // Inline image handlers can run before the deferred application script is ready.
 // Keep this tiny, safe fallback available from the first parsed image onward.
@@ -35,7 +38,7 @@
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Teko:wght@600;700&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-  <link rel="stylesheet" href="/css/style.css?v=7.9.0-atelier.1">
+  <link rel="stylesheet" href="/css/style.css?v=7.9.0-atelier.2">
 </head>
 <body class="pd-rebrand min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -79,14 +82,6 @@
 <button class="mobile-menu-btn w-10 h-10 rounded-xl bg-brand-card border border-brand-border hover:bg-gray-800 items-center justify-center text-gray-300" onclick="toggleMobileMenu()"><i class="fa-solid fa-bars"></i></button>
 <button id="soundToggle" onclick="toggleSound()" title="Звукові ефекти увімкнені" aria-label="Звукові ефекти" aria-pressed="true" class="hidden sm:flex w-10 h-10 rounded-xl bg-brand-card border border-brand-border hover:bg-gray-800 items-center justify-center text-gray-300 transition"><i id="soundIcon" class="fa-solid fa-volume-high text-sm"></i></button>
 <button id="musicToggle" onclick="toggleMusic()" title="Музика увімкнена" aria-label="Музика" aria-pressed="true" class="hidden sm:flex w-10 h-10 rounded-xl bg-brand-card border border-brand-border hover:bg-gray-800 items-center justify-center text-cyan-200 transition"><i id="musicIcon" class="fa-solid fa-music text-sm"></i></button>
-<div class="theme-drop">
-<button onclick="toggleThemeMenu()" title="Змінити тему" class="w-10 h-10 rounded-xl bg-brand-card border border-brand-border hover:bg-gray-800 flex items-center justify-center text-amber-400 transition"><i class="fa-solid fa-palette text-sm"></i></button>
-<div id="themeMenu" class="theme-drop-menu hidden">
-<button data-theme-pick="amber" onclick="pickTheme('amber')"><span class="theme-dot bg-amber-400"></span>Потужне золото</button>
-<button data-theme-pick="neon" onclick="pickTheme('neon')"><span class="theme-dot bg-cyan-400"></span>Неон</button>
-<button data-theme-pick="violet" onclick="pickTheme('violet')"><span class="theme-dot bg-violet-400"></span>Фіолет</button>
-</div>
-</div>
 <div id="userBalanceBox" class="hidden sm:flex items-center gap-2 bg-brand-card border border-brand-border rounded-xl px-3 py-1.5">
 <div class="flex flex-col text-right"><span class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold hidden sm:inline">Баланс</span><span id="userBalance" class="text-amber-400 font-bold text-xs sm:text-sm">0 PC</span></div>
 <button id="giftBtn" onclick="openDailyCalendar()" title="Щоденний календар нагород" class="relative w-8 h-8 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold flex items-center justify-center transition"><i id="giftIcon" class="fa-solid fa-gift text-xs"></i><span id="giftTimer" class="absolute -bottom-2 -right-2 text-[8px] font-extrabold bg-black text-amber-300 border border-amber-500/50 rounded px-1 hidden"></span></button>

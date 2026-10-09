@@ -10050,7 +10050,7 @@ function renderCaseCatalog() {
       <b><i class="fa-solid fa-trophy"></i> ${totalTrophies} / ${filtered.length || 0}</b>
     </div>` : '';
 
-  grid.innerHTML = `${collectionIntro}${filtered.map(([id, c]) => {
+  grid.innerHTML = `${collectionIntro}${filtered.map(([id, c], index) => {
     const previews = getPerformanceMode() === 'lite' ? [] : getCasePreviewItems(id, 4);
     const metrics = getCaseMetrics(id);
     const caseCost = getCaseCost(id);
@@ -10068,6 +10068,7 @@ function renderCaseCatalog() {
     return `
       <div class="case-catalog-card tier-${c.category || 'hot'} group">
         <span class="case-catalog-badge ${c.badgeClass || 'badge-hot'}">${c.badge || 'HOT'}</span>
+        <span class="case-catalog-serial" aria-label="Номер кейсу">CASE // ${String(index + 1).padStart(2, '0')}</span>
         
         <!-- Top Preview Strip -->
         ${previews.length ? `<div class="case-catalog-preview-strip">
