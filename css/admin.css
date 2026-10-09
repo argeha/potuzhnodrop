@@ -1,19 +1,20 @@
 :root {
   color-scheme: dark;
-  font-family: Inter, system-ui, sans-serif;
-  background: #070a0f;
+  font-family: Manrope, system-ui, sans-serif;
+  background: #080d14;
   color: #e8edf5;
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; background: #070a0f; }
+body { margin: 0; min-width: 320px; background: #080d14; }
 button, input, select { font: inherit; }
 button { cursor: pointer; }
 
-.admin-shell { min-height: 100vh; background: radial-gradient(75rem 38rem at 8% -10%, rgba(44, 131, 180, .16), transparent 62%), radial-gradient(55rem 36rem at 98% 2%, rgba(245, 158, 11, .12), transparent 64%), #070a0f; }
-.admin-header { min-height: 72px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid rgba(148, 163, 184, .15); background: rgba(8, 12, 19, .84); backdrop-filter: blur(18px); }
+.admin-shell { min-height: 100vh; background: radial-gradient(75rem 38rem at 8% -10%, rgba(44, 131, 180, .16), transparent 62%), radial-gradient(55rem 36rem at 98% 2%, rgba(245, 158, 11, .12), transparent 64%), #080d14; }
+.admin-header { min-height: 72px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid rgba(181, 202, 225, .13); background: rgba(6, 9, 14, .84); box-shadow: 0 12px 30px rgba(0,0,0,.12); backdrop-filter: blur(22px); }
 .brand { display: inline-flex; align-items: center; gap: 10px; color: #f8c13e; font-family: Teko, sans-serif; font-size: 27px; line-height: 1; font-weight: 700; letter-spacing: .07em; text-decoration: none; }
 .brand b { color: #f7f7f7; font-weight: inherit; }
+.brand-copy { display:grid; gap:3px; }.brand-copy strong { font:inherit; }.brand-copy small { color:#90a2b5; font-family:Manrope,system-ui,sans-serif; font-size:7px; font-weight:800; letter-spacing:.18em; line-height:1; }
 .brand-mark { width: 37px; height: 37px; display: grid; place-items: center; border: 1px solid rgba(251, 191, 36, .35); border-radius: 11px; background: linear-gradient(145deg, #182331, #0d121a); box-shadow: 0 8px 22px rgba(0, 0, 0, .35); }
 .brand-mark img { width: 27px; height: 27px; }
 .header-actions { display: flex; align-items: center; gap: 10px; }
