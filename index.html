@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ПОТУЖНО DROP — цифрова колекція CS2</title>
-<meta name="description" content="ПОТУЖНО DROP — твоя цифрова CS2-колекція: кейси, апгрейд, бої та сезонний прогрес без депозитів і реальних призів.">
+<meta name="description" content="ПОТУЖНО DROP — цифрова колекція з тактичною експедицією BLACKOUT, режимами, сезонним прогресом і без реальних призів.">
 <meta name="theme-color" content="#0B1018">
 <meta property="og:title" content="ПОТУЖНО DROP — цифрова колекція CS2">
-<meta property="og:description" content="Збирай цифрову CS2-колекцію, відкривай кейси та піднімай свій рівень у ПОТУЖНО DROP.">
+<meta property="og:description" content="Збирай цифрову колекцію, проходь експедиції BLACKOUT і прокачуй свій профіль у ПОТУЖНО DROP.">
 <meta property="og:type" content="website">
 <script>
 // Inline image handlers can run before the deferred application script is ready.
@@ -38,7 +38,7 @@
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Teko:wght@600;700&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-  <link rel="stylesheet" href="/css/style.css?v=7.9.0-atelier.3">
+  <link rel="stylesheet" href="/css/style.css?v=7.9.0-blackout.1">
 </head>
 <body class="pd-rebrand min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -71,6 +71,7 @@
 <a href="#hub" data-nav="hub" class="nav-link" onclick="showPage('hub');return false"><i class="fa-solid fa-house text-xs"></i> Центр</a>
 <a href="#upgrader" data-nav="upgrader" class="nav-link" onclick="showPage('upgrader');return false"><i class="fa-solid fa-bolt text-xs"></i> Апгрейд</a>
 <a href="#case" data-nav="case" class="nav-link" onclick="showPage('case');return false"><i class="fa-solid fa-box-open text-xs"></i> Кейс</a>
+<a href="#blackout" data-nav="blackout" class="nav-link nav-link-blackout" onclick="showPage('blackout');return false"><i class="fa-solid fa-satellite-dish text-xs"></i> BLACKOUT</a>
 <a href="#battle" data-nav="battle" class="nav-link" onclick="showPage('battle');return false"><i class="fa-solid fa-swords text-xs"></i> Бій</a>
 <a href="#royale" data-nav="royale" class="nav-link" onclick="showPage('royale');return false"><i class="fa-solid fa-crown text-xs"></i> Royale</a>
 <a href="#contract" data-nav="contract" class="nav-link" onclick="showPage('contract');return false"><i class="fa-solid fa-boxes-packing text-xs"></i> Контракт</a>
@@ -102,6 +103,7 @@
 <a href="#hub" data-mobile-nav="hub" onclick="showPage('hub');return false" class="mobile-nav-link"><i class="fa-solid fa-house mr-2"></i>Центр</a>
 <a href="#upgrader" data-mobile-nav="upgrader" onclick="showPage('upgrader');return false" class="mobile-nav-link active"><i class="fa-solid fa-bolt mr-2"></i>Апгрейд</a>
 <a href="#case" data-mobile-nav="case" onclick="showPage('case');return false" class="mobile-nav-link"><i class="fa-solid fa-box-open mr-2"></i>Кейс</a>
+<a href="#blackout" data-mobile-nav="blackout" onclick="showPage('blackout');return false" class="mobile-nav-link"><i class="fa-solid fa-satellite-dish mr-2"></i>BLACKOUT</a>
 <a href="#battle" data-mobile-nav="battle" onclick="showPage('battle');return false" class="mobile-nav-link"><i class="fa-solid fa-swords mr-2"></i>Бій</a>
 <a href="#royale" data-mobile-nav="royale" onclick="showPage('royale');return false" class="mobile-nav-link"><i class="fa-solid fa-crown mr-2"></i>Royale</a>
 <a href="#contract" data-mobile-nav="contract" onclick="showPage('contract');return false" class="mobile-nav-link"><i class="fa-solid fa-boxes-packing mr-2"></i>Контракт</a>
@@ -119,7 +121,7 @@
 <nav class="mobile-action-dock lg:hidden" aria-label="Основна мобільна навігація">
 <a href="#hub" data-mobile-nav="hub" onclick="showPage('hub');return false" class="mobile-dock-link"><i class="fa-solid fa-house"></i><span>Центр</span></a>
 <a href="#case" data-mobile-nav="case" onclick="showPage('case');return false" class="mobile-dock-link"><i class="fa-solid fa-box-open"></i><span>Кейси</span></a>
-<a href="#upgrader" data-mobile-nav="upgrader" onclick="showPage('upgrader');return false" class="mobile-dock-link mobile-dock-link-primary"><i class="fa-solid fa-bolt"></i><span>Апгрейд</span></a>
+<a href="#blackout" data-mobile-nav="blackout" onclick="showPage('blackout');return false" class="mobile-dock-link mobile-dock-link-primary"><i class="fa-solid fa-satellite-dish"></i><span>BLACKOUT</span></a>
 <button type="button" onclick="openInventoryPage()" class="mobile-dock-link"><i class="fa-solid fa-boxes-stacked"></i><span>Інвентар</span></button>
 <a href="#profile" data-mobile-nav="profile" onclick="showPage('profile');return false" class="mobile-dock-link"><i class="fa-solid fa-user"></i><span>Профіль</span></a>
 </nav>
@@ -165,6 +167,7 @@
 <section class="command-hub-section-head"><div><p>ОБЕРИ РЕЖИМ</p><h2>Наступний хід</h2></div><button type="button" onclick="showPage('stats')"><i class="fa-solid fa-chart-simple"></i> Вся статистика</button></section>
 <section class="command-hub-mode-grid" aria-label="Ігрові режими">
   <button type="button" class="command-hub-mode is-case" onclick="showPage('case')" data-onboarding-target="case"><i class="fa-solid fa-box-open"></i><span><b>Кейси</b><small>Відкривай добірки за фіксованою ціною</small></span><em><i class="fa-solid fa-arrow-right"></i></em></button>
+  <button type="button" class="command-hub-mode is-blackout" onclick="showPage('blackout')"><i class="fa-solid fa-satellite-dish"></i><span><b>BLACKOUT</b><small>Тактична експедиція на рекорд</small></span><em><i class="fa-solid fa-arrow-right"></i></em></button>
   <button type="button" class="command-hub-mode is-upgrade" onclick="showPage('upgrader')"><i class="fa-solid fa-bolt"></i><span><b>Апгрейд</b><small>Обери ціль за видимим шансом</small></span><em><i class="fa-solid fa-arrow-right"></i></em></button>
   <button type="button" class="command-hub-mode is-battle" onclick="showPage('battle')"><i class="fa-solid fa-swords"></i><span><b>Відкритий бій</b><small>1v1 з другом або спільнотою</small></span><em><i class="fa-solid fa-arrow-right"></i></em></button>
   <button type="button" class="command-hub-mode is-royale" onclick="showPage('royale')"><i class="fa-solid fa-crown"></i><span><b>Battle Royale</b><small>Спільний раунд та один переможець</small></span><em><i class="fa-solid fa-arrow-right"></i></em></button>
@@ -177,6 +180,47 @@
   <article class="command-hub-panel command-hub-collection-panel"><header><div><p>ІНВЕНТАР</p><h2><i class="fa-solid fa-boxes-stacked"></i> Твої предмети</h2></div><button type="button" onclick="openInventoryPage()">Відкрити</button></header><div id="hubCollectionPreview" class="command-hub-collection-preview"></div></article>
 </section>
 <section id="hubSignalSeason" aria-live="polite"></section>
+</section>
+
+<!-- BLACKOUT -->
+<section data-page="blackout" class="page-view blackout-page hidden space-y-5">
+  <article class="blackout-hero">
+    <div class="blackout-hero-copy">
+      <p><i class="fa-solid fa-shield-halved"></i> ТАКТИЧНА ЕКСПЕДИЦІЯ · СОЛО</p>
+      <h1>POTUZHNO <em>BLACKOUT</em></h1>
+      <span>Проклади чистий маршрут через заражені сектори, тримай комбо й зафіксуй власний рекорд. Жодних втрат предметів — лише твоя швидкість і точність.</span>
+      <div class="blackout-hero-tags"><b><i class="fa-solid fa-mobile-screen-button"></i> ПК + ТЕЛЕФОН</b><b><i class="fa-solid fa-bolt"></i> 45 СЕКУНД</b><b><i class="fa-solid fa-trophy"></i> РЕКОРДИ</b></div>
+    </div>
+    <div class="blackout-hero-radar" aria-hidden="true"><i></i><i></i><i></i><strong><i class="fa-solid fa-satellite-dish"></i></strong><span>LINK</span></div>
+    <div class="blackout-hero-status"><span>ОПЕРАТОР</span><strong id="blackoutRankLabel">ROOKIE</strong><small id="blackoutHeroStats">0 експедицій · 0 INTEL</small></div>
+  </article>
+
+  <section class="blackout-commandbar" aria-label="Статистика BLACKOUT">
+    <article><i class="fa-solid fa-crosshairs"></i><span>РЕКОРД</span><strong id="blackoutBestScore">0</strong></article>
+    <article><i class="fa-solid fa-link"></i><span>НАЙКРАЩЕ КОМБО</span><strong id="blackoutBestCombo">×0</strong></article>
+    <article><i class="fa-solid fa-microchip"></i><span>ЗІБРАНО INTEL</span><strong id="blackoutIntel">0</strong></article>
+    <article><i class="fa-solid fa-flag-checkered"></i><span>ЗАВЕРШЕНО</span><strong id="blackoutCompleted">0</strong></article>
+  </section>
+
+  <section class="blackout-layout">
+    <article class="blackout-map-panel">
+      <header><div><p><i class="fa-solid fa-map-location-dot"></i> КАРТА СЕКТОРУ</p><h2>Маршрут <em>експедиції</em></h2></div><span id="blackoutMapProgress">01 / 06</span></header>
+      <div id="blackoutSectorGrid" class="blackout-sector-grid" role="list" aria-label="Сектори BLACKOUT"></div>
+      <footer><i class="fa-solid fa-circle-info"></i><span>Сектори відкриваються за успішні експедиції. Винагороди — XP, Intel і віртуальні PC.</span></footer>
+    </article>
+
+    <article class="blackout-mission-panel">
+      <header class="blackout-mission-head"><div><p id="blackoutMissionEyebrow">СЕКТОР 01 · ПІДГОТОВКА</p><h2 id="blackoutMissionTitle">Точка входу</h2><span id="blackoutMissionDescription">Знайди чистий канал і зафіксуй сигнал до завершення таймера.</span></div><button type="button" class="blackout-how-button" onclick="toggleBlackoutBriefing()" aria-expanded="false" aria-controls="blackoutBriefing"><i class="fa-solid fa-circle-question"></i> Правила</button></header>
+      <div id="blackoutBriefing" class="blackout-briefing hidden"><b><i class="fa-solid fa-route"></i> Як грати</b><span>Тисни на вузол із пульсом. Кожне влучання продовжує комбо; хибний вузол скидає серію, але не завершує місію.</span></div>
+      <div id="blackoutMissionStage" class="blackout-mission-stage" aria-live="polite"></div>
+      <footer class="blackout-mission-foot"><div><span>ЦІЛЬ</span><strong id="blackoutMissionGoal">2 400</strong></div><div><span>НАГОРОДА</span><strong id="blackoutMissionReward">+35 XP · +1 INTEL</strong></div><button type="button" id="blackoutStartButton" onclick="startBlackoutExpedition()"><i class="fa-solid fa-play"></i><span>ПОЧАТИ ЕКСПЕДИЦІЮ</span><small>45 секунд · без втрати предметів</small></button></footer>
+    </article>
+  </section>
+
+  <section class="blackout-lower-grid">
+    <article class="blackout-intel-panel"><header><p><i class="fa-solid fa-terminal"></i> СТАН ОПЕРАЦІЇ</p><span id="blackoutRunState">ОБЕРИ СЕКТОР</span></header><div id="blackoutOperationLog" class="blackout-operation-log"></div></article>
+    <article class="blackout-protocol-panel"><header><p><i class="fa-solid fa-shield-heart"></i> ПРОТОКОЛ BLACKOUT</p></header><ul><li><i class="fa-solid fa-check"></i> Результат залежить від твоєї реакції.</li><li><i class="fa-solid fa-check"></i> Колекція та Steam-інвентар не ризикують.</li><li><i class="fa-solid fa-check"></i> Рекорди зберігаються у твоєму профілі.</li></ul></article>
+  </section>
 </section>
 
 <!-- UPGRADER -->
@@ -796,6 +840,6 @@
 
 <script src="/js/mobile-config.js" defer></script>
 <script src="/js/mobile.js?v=1" defer></script>
-<script src="/js/app.js?v=7.9.0-ops.4" defer></script>
+<script src="/js/app.js?v=7.9.0-blackout.1" defer></script>
 </body>
 </html>

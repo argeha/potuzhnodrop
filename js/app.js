@@ -28,7 +28,7 @@ const STORAGE = {
   adminGameRefresh: 'potuzhno_v6_admin_game_refresh'
 };
 
-const PAGES = ['hub', 'upgrader', 'case', 'battle', 'royale', 'contract', 'tasks', 'profile', 'stats', 'about'];
+const PAGES = ['hub', 'upgrader', 'case', 'blackout', 'battle', 'royale', 'contract', 'tasks', 'profile', 'stats', 'about'];
 const RUNTIME_PAGE_FEATURES = Object.freeze({
   upgrader: 'upgrader',
   case: 'cases',
@@ -62,6 +62,7 @@ let currentPage = null;
 function showPage(id) {
   renderHalloweenSeasonShell();
   if (!PAGES.includes(id)) id = 'hub';
+  if (currentPage === 'blackout' && id !== 'blackout') pauseBlackoutExpedition();
   const requestedId = id;
   if (!isRuntimePageEnabled(id)) {
     id = 'hub';
@@ -95,6 +96,7 @@ function showPage(id) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 
   if (id === 'hub') renderCommandHub();
+  if (id === 'blackout') renderBlackout();
   if (id === 'case') {
     updateFreeCaseBtn();
     renderCaseCatalog();
@@ -2004,6 +2006,20 @@ function createDefaultTargetArena() {
   return { rounds: 0, bestScore: 0, totalSpent: 0, totalPayout: 0, lastPlayedAt: 0 };
 }
 
+function createDefaultBlackout() {
+  return {
+    selectedSector: 'sector-01',
+    unlockedSectors: 1,
+    runs: 0,
+    completed: 0,
+    bestScore: 0,
+    bestCombo: 0,
+    totalIntel: 0,
+    sectorRecords: {},
+    log: []
+  };
+}
+
 function createDefaultAllTime() {
   return { rounds: 0, wins: 0, cases: 0, battles: 0, battleWins: 0, contracts: 0, sells: 0, sellValue: 0, freeCases: 0, biggestWin: 0, legendaryDrops: 0, multiInputs: 0, creditInputs: 0, royaleWins: 0 };
 }
@@ -2024,6 +2040,7 @@ function createDefaultGameState() {
     profileStyle: 'standard',
     pulseCircuit: createDefaultPulseCircuit(),
     targetArena: createDefaultTargetArena(),
+    blackout: createDefaultBlackout(),
     allTime: createDefaultAllTime(),
     achievements: {},
     favorites: [],
@@ -2077,6 +2094,7 @@ function loadGameState() {
       seasonalCosmetics: { ...createDefaultSeasonalCosmetics(), ...(s.seasonalCosmetics || {}) },
       pulseCircuit: { ...createDefaultPulseCircuit(), ...(s.pulseCircuit || {}) },
       targetArena: { ...createDefaultTargetArena(), ...(s.targetArena || {}) },
+      blackout: { ...createDefaultBlackout(), ...(s.blackout || {}), sectorRecords: s.blackout?.sectorRecords && typeof s.blackout.sectorRecords === 'object' ? s.blackout.sectorRecords : {}, log: Array.isArray(s.blackout?.log) ? s.blackout.log.slice(0, 6) : [] },
       allTime: { ...createDefaultAllTime(), ...(s.allTime || {}) },
       achievements: s.achievements || {},
       favorites: Array.isArray(s.favorites) ? s.favorites.map(String) : [],
@@ -2263,7 +2281,7 @@ function getActiveSeason() {
 
 function getPageDisplayTitle(id) {
   const standard = {
-    hub: 'Ігровий центр', upgrader: 'Апгрейд', case: 'Кейси', battle: 'Бій', royale: 'Battle Royale',
+    hub: 'Ігровий центр', upgrader: 'Апгрейд', case: 'Кейси', blackout: 'BLACKOUT', battle: 'Бій', royale: 'Battle Royale',
     contract: 'Контракт', tasks: 'Завдання', profile: 'Профіль', stats: 'Статистика', about: 'Про гру'
   };
   const season = getActiveSeason();
@@ -7363,6 +7381,272 @@ function renderGameHub() {
   updateAccountUI();
   updateThemeMenuState();
 }
+
+/* ===== POTUZHNO: BLACKOUT ===== */
+const BLACKOUT_SECTORS = Object.freeze([
+  { id: 'sector-01', code: '01', title: 'Точка входу', note: 'Віднови перший чистий канал у затемненому периметрі.', goal: 1800, xp: 35, intel: 1, tone: 'cyan', threat: 'НИЗЬКИЙ' },
+  { id: 'sector-02', code: '02', title: 'Тиха лінія', note: 'Підтримай ритм сигналу в зоні з нестабільними вузлами.', goal: 2550, xp: 48, intel: 2, tone: 'violet', threat: 'КОНТРОЛЬ' },
+  { id: 'sector-03', code: '03', title: 'Мертва частота', note: 'Відсіки шум і проведи канал до вузла ретрансляції.', goal: 3300, xp: 62, intel: 3, tone: 'amber', threat: 'ВИСОКИЙ' },
+  { id: 'sector-04', code: '04', title: 'Контур шторму', note: 'Збери довгу серію, коли мережа починає втрачати стабільність.', goal: 4100, xp: 78, intel: 4, tone: 'cyan', threat: 'КРИТИЧНИЙ' },
+  { id: 'sector-05', code: '05', title: 'Сліпа зона', note: 'Зачисти прихований маршрут і тримай темп без права на паузу.', goal: 5000, xp: 96, intel: 5, tone: 'violet', threat: 'ЕКСТРЕМУМ' },
+  { id: 'sector-06', code: '06', title: 'Чорний маяк', note: 'Фінальна перевірка оператора. Тільки чистий сигнал веде далі.', goal: 6000, xp: 120, intel: 7, tone: 'amber', threat: 'BLACKOUT' }
+]);
+
+let blackoutSession = null;
+let blackoutFrame = 0;
+
+function getBlackoutState() {
+  if (!gameState) return createDefaultBlackout();
+  const source = gameState.blackout && typeof gameState.blackout === 'object' ? gameState.blackout : createDefaultBlackout();
+  gameState.blackout = {
+    ...createDefaultBlackout(),
+    ...source,
+    selectedSector: BLACKOUT_SECTORS.some(sector => sector.id === source.selectedSector) ? source.selectedSector : 'sector-01',
+    unlockedSectors: clampNumber(source.unlockedSectors, 1, BLACKOUT_SECTORS.length, 1),
+    sectorRecords: source.sectorRecords && typeof source.sectorRecords === 'object' ? source.sectorRecords : {},
+    log: Array.isArray(source.log) ? source.log.slice(0, 6) : []
+  };
+  return gameState.blackout;
+}
+
+function getBlackoutSector(id = getBlackoutState().selectedSector) {
+  return BLACKOUT_SECTORS.find(sector => sector.id === id) || BLACKOUT_SECTORS[0];
+}
+
+function getBlackoutRank(state = getBlackoutState()) {
+  if (state.completed >= 14 || state.bestScore >= 9000) return 'BLACK OPS';
+  if (state.completed >= 7 || state.bestScore >= 5500) return 'NIGHT RUNNER';
+  if (state.completed >= 3 || state.bestScore >= 3000) return 'SIGNAL OPERATOR';
+  if (state.runs >= 1) return 'FIELD SCOUT';
+  return 'ROOKIE';
+}
+
+function formatBlackoutScore(value) {
+  return Math.max(0, Math.round(Number(value) || 0)).toLocaleString('uk-UA');
+}
+
+function blackoutLogEntry(kind, title, note) {
+  const state = getBlackoutState();
+  state.log.unshift({ kind, title: cleanText(title, 72), note: cleanText(note, 120), at: Date.now() });
+  state.log = state.log.slice(0, 6);
+}
+
+function blackoutRandomNode(except = -1) {
+  let next = Math.floor(Math.random() * 9);
+  if (next === except) next = (next + 1 + Math.floor(Math.random() * 8)) % 9;
+  return next;
+}
+
+function renderBlackout() {
+  if (!gameState) return;
+  const state = getBlackoutState();
+  const sector = getBlackoutSector();
+  const root = document.querySelector('[data-page="blackout"]');
+  if (!root) return;
+  const rank = getBlackoutRank(state);
+  const selectedIndex = BLACKOUT_SECTORS.findIndex(item => item.id === sector.id);
+  const active = blackoutSession?.active === true;
+
+  document.getElementById('blackoutRankLabel')?.replaceChildren(document.createTextNode(rank));
+  document.getElementById('blackoutHeroStats')?.replaceChildren(document.createTextNode(`${state.runs} ${state.runs === 1 ? 'експедиція' : state.runs < 5 ? 'експедиції' : 'експедицій'} · ${state.totalIntel} INTEL`));
+  document.getElementById('blackoutBestScore')?.replaceChildren(document.createTextNode(formatBlackoutScore(state.bestScore)));
+  document.getElementById('blackoutBestCombo')?.replaceChildren(document.createTextNode(`×${state.bestCombo}`));
+  document.getElementById('blackoutIntel')?.replaceChildren(document.createTextNode(String(state.totalIntel)));
+  document.getElementById('blackoutCompleted')?.replaceChildren(document.createTextNode(String(state.completed)));
+  document.getElementById('blackoutMapProgress')?.replaceChildren(document.createTextNode(`${String(selectedIndex + 1).padStart(2, '0')} / ${String(BLACKOUT_SECTORS.length).padStart(2, '0')}`));
+  document.getElementById('blackoutMissionEyebrow')?.replaceChildren(document.createTextNode(`СЕКТОР ${sector.code} · РІВЕНЬ ЗАГРОЗИ: ${sector.threat}`));
+  document.getElementById('blackoutMissionTitle')?.replaceChildren(document.createTextNode(sector.title));
+  document.getElementById('blackoutMissionDescription')?.replaceChildren(document.createTextNode(sector.note));
+  document.getElementById('blackoutMissionGoal')?.replaceChildren(document.createTextNode(formatBlackoutScore(sector.goal)));
+  document.getElementById('blackoutMissionReward')?.replaceChildren(document.createTextNode(`+${sector.xp} XP · +${sector.intel} INTEL`));
+
+  const grid = document.getElementById('blackoutSectorGrid');
+  if (grid) {
+    grid.innerHTML = BLACKOUT_SECTORS.map((item, index) => {
+      const unlocked = index < state.unlockedSectors;
+      const selected = item.id === sector.id;
+      const record = Math.max(0, Number(state.sectorRecords?.[item.id]) || 0);
+      return `<button type="button" class="blackout-sector is-${item.tone} ${selected ? 'is-selected' : ''} ${unlocked ? '' : 'is-locked'}" onclick="selectBlackoutSector('${item.id}')" ${unlocked ? '' : 'aria-disabled="true"'} role="listitem"><span class="blackout-sector-link"></span><i class="fa-solid ${unlocked ? (record >= item.goal ? 'fa-circle-check' : 'fa-tower-broadcast') : 'fa-lock'}"></i><span><small>СЕКТОР ${item.code}</small><b>${escapeHtml(item.title)}</b><em>${unlocked ? `${formatBlackoutScore(record)} / ${formatBlackoutScore(item.goal)}` : 'ПОТРІБНА ЕКСПЕДИЦІЯ'}</em></span><strong>${unlocked ? item.threat : 'LOCK'}</strong></button>`;
+    }).join('');
+  }
+
+  const stateLabel = document.getElementById('blackoutRunState');
+  if (stateLabel) stateLabel.textContent = active ? 'КАНАЛ У РОБОТІ' : state.completed ? 'МАРШРУТ ДОСТУПНИЙ' : 'ОБЕРИ СЕКТОР';
+  renderBlackoutOperationLog();
+  renderBlackoutMission(active ? blackoutSession : null);
+}
+
+function renderBlackoutOperationLog() {
+  const root = document.getElementById('blackoutOperationLog');
+  if (!root) return;
+  const state = getBlackoutState();
+  const entries = blackoutSession?.log?.length ? blackoutSession.log : state.log;
+  if (!entries.length) {
+    root.innerHTML = '<div class="blackout-log-empty"><i class="fa-solid fa-satellite-dish"></i><span>Канал очікує на першу експедицію.</span></div>';
+    return;
+  }
+  root.innerHTML = entries.slice(0, 4).map(entry => `<div class="blackout-log-row is-${escapeHtml(entry.kind || 'info')}"><i class="fa-solid ${entry.kind === 'success' ? 'fa-circle-check' : entry.kind === 'warn' ? 'fa-triangle-exclamation' : 'fa-wave-square'}"></i><div><b>${escapeHtml(entry.title)}</b><span>${escapeHtml(entry.note)}</span></div><small>${entry.at ? new Date(entry.at).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' }) : 'LIVE'}</small></div>`).join('');
+}
+
+function renderBlackoutMission(session = null) {
+  const stage = document.getElementById('blackoutMissionStage');
+  const start = document.getElementById('blackoutStartButton');
+  if (!stage || !start) return;
+  const sector = getBlackoutSector();
+  if (!session?.active) {
+    start.disabled = false;
+    start.innerHTML = '<i class="fa-solid fa-play"></i><span>ПОЧАТИ ЕКСПЕДИЦІЮ</span><small>45 секунд · без втрати предметів</small>';
+    stage.innerHTML = `<div class="blackout-stage-idle"><div class="blackout-stage-radar" aria-hidden="true"><i></i><i></i><i></i><b><i class="fa-solid fa-satellite-dish"></i></b></div><div><p>ГОТОВНІСТЬ КАНАЛУ</p><strong>Сектор ${sector.code} чекає на оператора</strong><span>Влучай у вузли з активним пульсом, збирай комбо та досягни ${formatBlackoutScore(sector.goal)} балів.</span></div><button type="button" onclick="startBlackoutExpedition()"><i class="fa-solid fa-bolt"></i> ЗАПУСТИТИ</button></div>`;
+    return;
+  }
+  const remaining = Math.max(0, Math.ceil(session.remaining / 1000));
+  const progress = Math.max(0, Math.min(100, (session.remaining / session.duration) * 100));
+  start.disabled = true;
+  start.innerHTML = '<i class="fa-solid fa-satellite-dish fa-fade"></i><span>ЕКСПЕДИЦІЯ АКТИВНА</span><small>Не закривай канал</small>';
+  stage.innerHTML = `<div class="blackout-stage-live ${session.flash || ''}"><header><div><span>ЧАС</span><strong id="blackoutTimeLeft">00:${String(remaining).padStart(2, '0')}</strong></div><div><span>СЕРІЯ</span><strong id="blackoutCombo">×${session.combo}</strong></div><div><span>БАЛИ</span><strong id="blackoutScore">${formatBlackoutScore(session.score)}</strong></div></header><div class="blackout-timer"><i id="blackoutTimerFill" style="width:${progress}%"></i></div><p id="blackoutObjective"><i class="fa-solid fa-crosshairs"></i> Знайди вузол із активним пульсом</p><div class="blackout-node-grid" role="group" aria-label="Сигнальні вузли">${Array.from({ length: 9 }, (_, index) => `<button type="button" class="blackout-node ${index === session.target ? 'is-target' : ''}" onclick="hitBlackoutNode(${index})" aria-label="Сигнальний вузол ${index + 1}"><i></i><span>${String(index + 1).padStart(2, '0')}</span></button>`).join('')}</div><footer><span><i class="fa-solid fa-shield-halved"></i> Помилка скидає серію, але не забирає прогрес.</span><b>Ціль: ${formatBlackoutScore(sector.goal)}</b></footer></div>`;
+}
+
+function selectBlackoutSector(id) {
+  if (blackoutSession?.active) return showToast('Заверши поточну експедицію перед зміною сектора.', 'info');
+  const state = getBlackoutState();
+  const index = BLACKOUT_SECTORS.findIndex(sector => sector.id === id);
+  if (index < 0) return;
+  if (index >= state.unlockedSectors) return showToast('Цей сектор відкриється після успішної експедиції.', 'info');
+  state.selectedSector = id;
+  saveState();
+  renderBlackout();
+  soundCoin();
+}
+
+function toggleBlackoutBriefing() {
+  const briefing = document.getElementById('blackoutBriefing');
+  const button = document.querySelector('.blackout-how-button');
+  if (!briefing || !button) return;
+  const hidden = briefing.classList.toggle('hidden');
+  button.setAttribute('aria-expanded', hidden ? 'false' : 'true');
+}
+
+function startBlackoutExpedition() {
+  if (!gameState || blackoutSession?.active) return;
+  const sector = getBlackoutSector();
+  blackoutSession = {
+    active: true,
+    sectorId: sector.id,
+    startedAt: performance.now(),
+    duration: 45_000,
+    remaining: 45_000,
+    score: 0,
+    combo: 0,
+    bestCombo: 0,
+    hits: 0,
+    misses: 0,
+    target: blackoutRandomNode(),
+    log: [{ kind: 'info', title: `Сектор ${sector.code} активовано`, note: 'Чистий маршрут знайдено. Підтвердь сигнал вузлами.', at: Date.now() }],
+    flash: ''
+  };
+  haptic('light');
+  beep(520, 0.06, 'triangle');
+  renderBlackout();
+  blackoutTick(performance.now());
+}
+
+function hitBlackoutNode(index) {
+  const session = blackoutSession;
+  if (!session?.active || !Number.isInteger(index)) return;
+  const sector = getBlackoutSector(session.sectorId);
+  if (index === session.target) {
+    session.combo += 1;
+    session.bestCombo = Math.max(session.bestCombo, session.combo);
+    session.hits += 1;
+    const timeBonus = Math.max(0, Math.floor(session.remaining / 1_000));
+    const gained = 95 + session.combo * 16 + timeBonus + Number(sector.code) * 12;
+    session.score += gained;
+    session.target = blackoutRandomNode(index);
+    session.flash = 'is-hit';
+    session.log.unshift({ kind: 'success', title: `Вузол ${String(index + 1).padStart(2, '0')} синхронізовано`, note: `+${gained} · серія ×${session.combo}`, at: Date.now() });
+    session.log = session.log.slice(0, 4);
+    haptic('light');
+    beep(620 + Math.min(460, session.combo * 24), 0.045, 'triangle');
+  } else {
+    session.misses += 1;
+    session.combo = 0;
+    session.flash = 'is-miss';
+    session.log.unshift({ kind: 'warn', title: `Вузол ${String(index + 1).padStart(2, '0')} — шум`, note: 'Серію скинуто. Активний канал ще доступний.', at: Date.now() });
+    session.log = session.log.slice(0, 4);
+    haptic('light');
+    beep(210, 0.06, 'square');
+  }
+  renderBlackoutMission(session);
+  renderBlackoutOperationLog();
+}
+
+function blackoutTick(now) {
+  const session = blackoutSession;
+  if (!session?.active) return;
+  session.remaining = Math.max(0, session.duration - (now - session.startedAt));
+  const seconds = Math.ceil(session.remaining / 1000);
+  const time = document.getElementById('blackoutTimeLeft');
+  const fill = document.getElementById('blackoutTimerFill');
+  if (time) time.textContent = `00:${String(seconds).padStart(2, '0')}`;
+  if (fill) fill.style.width = `${Math.max(0, Math.min(100, (session.remaining / session.duration) * 100))}%`;
+  if (session.remaining <= 0) {
+    finishBlackoutExpedition();
+    return;
+  }
+  blackoutFrame = requestAnimationFrame(blackoutTick);
+}
+
+function pauseBlackoutExpedition() {
+  if (!blackoutSession?.active) return;
+  cancelAnimationFrame(blackoutFrame);
+  blackoutSession.active = false;
+  blackoutSession = null;
+  showToast('Експедицію призупинено. Запусти сектор знову, коли будеш готовий.', 'info');
+}
+
+function finishBlackoutExpedition() {
+  const session = blackoutSession;
+  if (!session) return;
+  cancelAnimationFrame(blackoutFrame);
+  const state = getBlackoutState();
+  const sector = getBlackoutSector(session.sectorId);
+  const success = session.score >= sector.goal;
+  const xp = Math.max(8, Math.round((success ? sector.xp : sector.xp * 0.3) + session.bestCombo * 1.5));
+  const intel = success ? sector.intel + Math.floor(session.score / sector.goal) : 0;
+  const pc = success ? roundPc(Math.min(0.3, 0.05 + Number(sector.code) * 0.015)) : 0;
+  state.runs += 1;
+  state.totalIntel += intel;
+  state.bestScore = Math.max(state.bestScore, session.score);
+  state.bestCombo = Math.max(state.bestCombo, session.bestCombo);
+  state.sectorRecords[sector.id] = Math.max(Number(state.sectorRecords[sector.id]) || 0, session.score);
+  if (success) {
+    state.completed += 1;
+    const sectorIndex = BLACKOUT_SECTORS.findIndex(item => item.id === sector.id);
+    state.unlockedSectors = Math.max(state.unlockedSectors, Math.min(BLACKOUT_SECTORS.length, sectorIndex + 2));
+    state.selectedSector = BLACKOUT_SECTORS[Math.min(BLACKOUT_SECTORS.length - 1, sectorIndex + 1)]?.id || sector.id;
+    blackoutLogEntry('success', `Сектор ${sector.code} пройдено`, `${formatBlackoutScore(session.score)} балів · +${xp} XP · +${intel} INTEL`);
+    soundWin();
+    showToast(`BLACKOUT: сектор ${sector.code} пройдено · +${xp} XP · +${intel} INTEL`, 'success');
+  } else {
+    blackoutLogEntry('warn', `Сектор ${sector.code} не зафіксовано`, `${formatBlackoutScore(session.score)} / ${formatBlackoutScore(sector.goal)} · +${xp} XP за дані експедиції`);
+    soundLose();
+    showToast(`Ще трохи: ${formatBlackoutScore(session.score)} / ${formatBlackoutScore(sector.goal)}. Дані збережено.`, 'warn');
+  }
+  addXp(xp);
+  if (pc > 0 && currentUser) {
+    currentUser.balance = clampNumber((currentUser.balance || 0) + pc, 0, MAX_STORED_BALANCE, DEMO_STARTING_BALANCE);
+    updateBalanceUI();
+  }
+  blackoutSession = null;
+  saveState();
+  renderBlackout();
+  renderGameHub();
+}
+
+window.selectBlackoutSector = selectBlackoutSector;
+window.toggleBlackoutBriefing = toggleBlackoutBriefing;
+window.startBlackoutExpedition = startBlackoutExpedition;
+window.hitBlackoutNode = hitBlackoutNode;
 
 function checkAchievements() {
   if (!gameState || !currentUser) return;
