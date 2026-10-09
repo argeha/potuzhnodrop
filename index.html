@@ -182,7 +182,7 @@
 <!-- UPGRADER -->
 <section data-page="upgrader" class="page-view hidden space-y-5">
 <div class="mode-intro mode-intro-upgrader">
-  <div><span class="mode-eyebrow"><i class="fa-solid fa-bolt"></i> Лабораторія апгрейду</span><h1>Піднімай рівень <em>розумно</em></h1><p>Збери ставку зі скіна або віртуальних PC, обери ціль і контролюй шанс до запуску.</p></div>
+  <div><span class="mode-eyebrow"><i class="fa-solid fa-bolt"></i> Лабораторія апгрейду</span><h1>Піднімай рівень <em>розумно</em></h1><p>Обери предмет або віртуальні PC, задай ціль і перевір шанс до запуску.</p></div>
   <div class="mode-intro-stats"><span><b>1–95%</b><small>діапазон шансу</small></span><span><b>ПЕРЕВІРКА</b><small>історія раунду</small></span></div>
 </div>
 <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
@@ -390,7 +390,7 @@
   <div class="royale-mode-switch" role="tablist" aria-label="Режим Battle Royale">
     <button id="royaleLiveMode" type="button" role="tab"><i class="fa-solid fa-tower-broadcast"></i><span><b>Відкритий раунд</b><small>Гравці сайту · до 8 місць · без ботів</small></span></button>
     <button id="royaleBotsMode" type="button" role="tab"><i class="fa-solid fa-robot"></i><span><b>Швидкий VS ботів</b><small>Збалансований раунд без очікування</small></span></button>
-    <div class="royale-mode-signal"><i class="fa-solid fa-circle"></i><span id="royalePhasePill">ЗБІР БАНКУ</span></div>
+    <div class="royale-mode-signal"><i class="fa-solid fa-circle"></i><span id="royalePhasePill">ЗБІР УЧАСНИКІВ</span></div>
   </div>
 
   <div class="royale-arena">
@@ -402,7 +402,7 @@
     </aside>
 
     <main class="royale-wheel-deck">
-      <div class="royale-deck-top"><div><span id="royaleRoundMode">ШВИДКИЙ РАУНД</span><b id="royaleRoundTitle">Збери свій банк</b></div><div><span>ЗАГАЛЬНИЙ БАНК</span><strong id="royalePotTotal">0 PC</strong></div></div>
+      <div class="royale-deck-top"><div><span id="royaleRoundMode">ШВИДКИЙ РАУНД</span><b id="royaleRoundTitle">Збери добірку</b></div><div><span>СПІЛЬНА ДОБІРКА</span><strong id="royalePotTotal">0 PC</strong></div></div>
       <div class="royale-wheel-stage" id="royaleWheelWrap">
         <div class="royale-wheel-halo"></div><div class="royale-wheel-pointer"><i class="fa-solid fa-caret-down"></i></div>
         <canvas id="royaleWheelCanvas" width="440" height="440"></canvas>
@@ -414,9 +414,9 @@
     </main>
 
     <aside class="royale-roster">
-      <div class="royale-panel-head"><div><span>УЧАСНИКИ БАНКУ</span><b>Коло претендентів</b></div><strong id="royaleParticipantCount">0</strong></div>
+      <div class="royale-panel-head"><div><span>УЧАСНИКИ РАУНДУ</span><b>Коло претендентів</b></div><strong id="royaleParticipantCount">0</strong></div>
       <div id="royaleParticipantList" class="royale-participant-list"></div>
-      <div class="royale-roster-foot"><i class="fa-solid fa-wand-magic-sparkles"></i><span id="royaleRosterHint">Боти підберуть чесні ставки під твій внесок.</span></div>
+      <div class="royale-roster-foot"><i class="fa-solid fa-wand-magic-sparkles"></i><span id="royaleRosterHint">Боти доберуть предмети під твою колекцію.</span></div>
     </aside>
   </div>
 
@@ -663,7 +663,7 @@
 
 <div id="battlePickModal" class="modal-backdrop fixed inset-0 z-[95] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4"><div class="glass-panel rounded-2xl max-w-3xl w-full p-6 border border-brand-border relative max-h-[85vh] flex flex-col"><button onclick="closeModal('battlePickModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button><h3 class="font-heading text-2xl font-bold text-white uppercase mb-3">Обери предмет</h3><div id="battlePickGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 overflow-y-auto pr-1 flex-1"></div></div></div>
 
-<div id="royalePickModal" class="modal-backdrop fixed inset-0 z-[96] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4"><div class="glass-panel rounded-2xl max-w-4xl w-full p-6 border border-amber-400/30 relative max-h-[88vh] flex flex-col"><button onclick="closeModal('royalePickModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white" aria-label="Закрити"><i class="fa-solid fa-xmark text-lg"></i></button><div class="mb-4 pr-9"><p class="text-[10px] font-extrabold uppercase tracking-[.2em] text-amber-300">Твій внесок у Royale</p><div class="mt-1 flex flex-wrap items-end justify-between gap-3"><div><h3 class="font-heading text-3xl font-bold uppercase text-white">Обери скіни в банк</h3><p class="mt-1 text-xs text-gray-400">Познач кілька предметів і додай їх однією ставкою. Ліміт — 10 віртуальних скінів на раунд.</p></div><span id="royalePickCount" class="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs font-extrabold text-amber-200">Вибрано 0</span></div></div><div id="royalePickGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 overflow-y-auto pr-1 flex-1"></div><div class="mt-5 flex flex-col-reverse gap-2 border-t border-white/10 pt-4 sm:flex-row sm:justify-end"><button type="button" onclick="closeModal('royalePickModal')" class="rounded-xl border border-gray-700 px-4 py-3 text-xs font-bold text-gray-300 hover:bg-white/5">Скасувати</button><button type="button" id="royalePickConfirm" class="rounded-xl bg-gradient-to-r from-amber-500 to-yellow-300 px-5 py-3 text-xs font-extrabold text-slate-950 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"><i class="fa-solid fa-plus mr-2"></i>Додати вибрані</button></div></div></div>
+<div id="royalePickModal" class="modal-backdrop fixed inset-0 z-[96] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4"><div class="glass-panel rounded-2xl max-w-4xl w-full p-6 border border-amber-400/30 relative max-h-[88vh] flex flex-col"><button onclick="closeModal('royalePickModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white" aria-label="Закрити"><i class="fa-solid fa-xmark text-lg"></i></button><div class="mb-4 pr-9"><p class="text-[10px] font-extrabold uppercase tracking-[.2em] text-amber-300">Твоя добірка для Royale</p><div class="mt-1 flex flex-wrap items-end justify-between gap-3"><div><h3 class="font-heading text-3xl font-bold uppercase text-white">Обери предмети для раунду</h3><p class="mt-1 text-xs text-gray-400">Познач кілька предметів і додай їх до спільної добірки. Ліміт — 10 віртуальних скінів на раунд.</p></div><span id="royalePickCount" class="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs font-extrabold text-amber-200">Вибрано 0</span></div></div><div id="royalePickGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 overflow-y-auto pr-1 flex-1"></div><div class="mt-5 flex flex-col-reverse gap-2 border-t border-white/10 pt-4 sm:flex-row sm:justify-end"><button type="button" onclick="closeModal('royalePickModal')" class="rounded-xl border border-gray-700 px-4 py-3 text-xs font-bold text-gray-300 hover:bg-white/5">Скасувати</button><button type="button" id="royalePickConfirm" class="rounded-xl bg-gradient-to-r from-amber-500 to-yellow-300 px-5 py-3 text-xs font-extrabold text-slate-950 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"><i class="fa-solid fa-plus mr-2"></i>Додати вибрані</button></div></div></div>
 
 <div id="contractPickModal" class="modal-backdrop fixed inset-0 z-[95] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4"><div class="glass-panel rounded-2xl max-w-3xl w-full p-6 border border-brand-border relative max-h-[85vh] flex flex-col"><button onclick="closeModal('contractPickModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button><h3 class="font-heading text-2xl font-bold text-white uppercase mb-3">Обери предмет для контракту</h3><div id="contractPickGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 overflow-y-auto pr-1 flex-1"></div></div></div>
 

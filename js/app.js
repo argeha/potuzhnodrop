@@ -1635,7 +1635,7 @@ const HALLOWEEN_PAGE_COPY = Object.freeze({
   upgrader: { nav: 'Алхімія', title: 'Алхімія тіней', eyebrow: 'НІЧНА АЛХІМІЯ', heading: 'Пробуди <em>силу тіней</em>', description: 'Поєднуй віртуальні предмети та PC у ритуалі Nightfall. Ти завжди бачиш шанс перед запуском.' },
   case: { nav: 'Ліхтарі', title: 'Ліхтарі Nightfall', eyebrow: 'СВІТЛО В ТУМАНІ', heading: 'Сховище <em>Nightfall</em>', description: 'Відкривай тематичні кейси Нічного міста та шукай рідкісні сигнали в кожному дропі.' },
   battle: { nav: 'Дуелі', title: 'Дуель примар', eyebrow: 'АРЕНА ПРИМАР', heading: 'Дуель <em>примар</em>', description: 'Кинь виклик іншому гравцю під світлом повного місяця. Пошук і результат лишаються чесною віртуальною грою.' },
-  royale: { nav: 'Місячний круг', title: 'Місячний круг', eyebrow: 'КОЛО ПОВНОГО МІСЯЦЯ', heading: 'Коло <em>повного місяця</em>', description: 'Збери віртуальний банк, займи місце в колі й дивись, кого обере ніч.' },
+  royale: { nav: 'Місячний круг', title: 'Місячний круг', eyebrow: 'КОЛО ПОВНОГО МІСЯЦЯ', heading: 'Коло <em>повного місяця</em>', description: 'Збери віртуальну добірку, займи місце в колі й дивись, кого обере ніч.' },
   contract: { nav: 'Ритуал', title: 'Ритуал ночі', eyebrow: 'РИТУАЛ ОБМІНУ', heading: 'Ритуал <em>обміну</em>', description: 'П’ять предметів входять у коло — один результат виходить з туману.' },
   tasks: { nav: 'Нічна мапа', title: 'Карта Нічного міста', eyebrow: 'МІСТО ПРОКИНУЛОСЯ', heading: 'Карта <em>Нічного міста</em>', description: 'Йди за сигналами, відкривай райони та збирай сезонний прогрес щодня.' },
   profile: { nav: 'Досьє', title: 'Нічне досьє' },
@@ -1645,7 +1645,7 @@ const WINTER_PAGE_COPY = Object.freeze({
   upgrader: { nav: 'Кріосинтез', title: 'Кріосинтез', eyebrow: 'ПОЛЯРНА ЛАБОРАТОРІЯ', heading: 'Збери <em>чистий сигнал</em>', description: 'Поєднуй віртуальні предмети та FC під холодним світлом реактора. Шанс завжди видно до запуску.' },
   case: { nav: 'Контейнери', title: 'Крижані контейнери', eyebrow: 'КРИЖАНИЙ ДОК', heading: 'Відкрий <em>ICEWIRE</em>', description: 'Шукай сигнали в контейнерах, які винесло на чорний лід після полярної бурі.' },
   battle: { nav: 'Чорний лід', title: 'Дуелі чорного льоду', eyebrow: 'ПОЛЯРНА АРЕНА', heading: 'Утримай <em>покриття</em>', description: 'Чесна віртуальна дуель на льоду: без ставок реальних грошей і без справжніх призів.' },
-  royale: { nav: 'Біла орбіта', title: 'Біла орбіта', eyebrow: 'КОЛО СЯЙВА', heading: 'Увійди в <em>білу орбіту</em>', description: 'Збери віртуальний банк у світлі полярного сяйва та подивись, кому дістанеться сигнал.' },
+  royale: { nav: 'Біла орбіта', title: 'Біла орбіта', eyebrow: 'КОЛО СЯЙВА', heading: 'Увійди в <em>білу орбіту</em>', description: 'Збери віртуальну добірку у світлі полярного сяйва та подивись, кому дістанеться сигнал.' },
   contract: { nav: 'Кріоконтракт', title: 'Кріоконтракт', eyebrow: 'СТАНЦІЯ НУЛЬ', heading: 'Перезбери <em>контур</em>', description: 'П’ять предметів входять у кріоконтур — один результат повертається з морозної темряви.' },
   tasks: { nav: 'ICEWIRE', title: 'ICEWIRE: Zero Hour', eyebrow: 'ЕКСПЕДИЦІЯ У ХОЛОД', heading: 'Станція <em>Нуль</em>', description: 'Заряджай Ядро полярного сяйва разом з усіма гравцями та проводь сигнали крізь заметіль.' },
   profile: { nav: 'Капсула', title: 'Крижана капсула' },
@@ -3395,7 +3395,7 @@ function renderLegacyTargetArena() {
   const compactAction = `<div class="target-arena-compact"><span><i class="fa-solid ${halloweenActive ? 'fa-ghost' : winterActive ? 'fa-snowflake' : 'fa-coins'}"></i> Внески від ${formatCredits(TARGET_ARENA_STAKES[0])} · +220 мс за влучання</span><button type="button" data-arena-open><i class="fa-solid fa-crosshairs"></i> Відкрити тир</button></div>`;
   const fullControls = `<div class="target-arena-body"><div class="target-arena-stakes"><span>ОБЕРИ ВНЕСОК</span><div>${TARGET_ARENA_STAKES.map(stake => `<button type="button" data-arena-stake="${stake}" class="${targetArenaSelectedStake === stake ? 'is-selected' : ''}">${formatCredits(stake)}</button>`).join('')}</div><small>Невдала спроба не повертає PC. Тут немає реальних грошей чи призів.</small></div><div class="target-arena-rules"><span>ПОВЕРНЕННЯ ЗА ВЛУЧАННЯ</span><div><b>0–4</b><b>5–8</b><b>9–12</b><b>13–16</b><b>17–20</b><b>21+</b></div><div><em>0%</em><em>10%</em><em>30%</em><em>55%</em><em>75%</em><em>95%</em></div></div><div class="target-arena-actions"><button type="button" class="target-arena-start" data-arena-start><i class="fa-solid fa-play"></i>ПОЧАТИ ЗА ${formatCredits(targetArenaSelectedStake)}<small>без cooldown</small></button><button type="button" class="target-arena-collapse" data-arena-close>Згорнути</button></div></div>`;
   root.innerHTML = `<article class="target-arena-card ${halloweenActive ? 'is-halloween' : winterActive ? 'is-icewire' : ''} ${targetArenaExpanded ? 'is-expanded' : 'is-compact'}" aria-label="${arenaName}">
-    <div class="target-arena-head"><div class="target-arena-icon">${halloweenActive ? '🎃' : winterActive ? '❄️' : '<i class="fa-solid fa-crosshairs"></i>'}</div><div><p>${halloweenActive ? 'HALLOWEEN · ДО 3 ЛИСТОПАДА' : winterActive ? 'ICEWIRE · ZERO HOUR' : 'ДЛЯ ВЕЛИКОГО БАЛАНСУ'}</p><h2>${arenaName}</h2><span>15 секунд на рухомі мішені. Чим краща точність — тим більша частина ставки повертається.</span></div><div class="target-arena-record"><span>РЕКОРД</span><b>${arena.bestScore}</b><small>${arena.rounds} спроб</small></div></div>
+    <div class="target-arena-head"><div class="target-arena-icon">${halloweenActive ? '🎃' : winterActive ? '❄️' : '<i class="fa-solid fa-crosshairs"></i>'}</div><div><p>${halloweenActive ? 'HALLOWEEN · ДО 3 ЛИСТОПАДА' : winterActive ? 'ICEWIRE · ZERO HOUR' : 'ДЛЯ ВЕЛИКОГО БАЛАНСУ'}</p><h2>${arenaName}</h2><span>15 секунд на рухомі мішені. Чим краща точність — тим більше віртуальних PC повертається.</span></div><div class="target-arena-record"><span>РЕКОРД</span><b>${arena.bestScore}</b><small>${arena.rounds} спроб</small></div></div>
     ${targetArenaExpanded ? fullControls : compactAction}
   </article>`;
   root.querySelector('[data-arena-open]')?.addEventListener('click', () => {
@@ -5772,7 +5772,7 @@ function recoverInterruptedWager() {
   currentUser.balance = clampNumber(currentUser.balance + clampNumber(wager.balance, 0, MAX_STORED_BALANCE, 0), 0, MAX_STORED_BALANCE, DEMO_STARTING_BALANCE);
   cancelPendingWager();
   saveState();
-  showToast('Незавершений раунд скасовано: ставку повернено.', 'info');
+  showToast('Незавершений раунд скасовано: предмети повернено.', 'info');
 }
 
 function migrateToUsdEconomy() {
@@ -7275,7 +7275,7 @@ function renderStatsPage() {
     { icon: 'fa-box-open', label: 'Кейси', value: Number(allTime.cases) || Number(stats.cases) || 0, note: `${Number(allTime.freeCases) || 0} безкоштовних` },
     { icon: 'fa-bolt', label: 'Апгрейди', value: Number(allTime.rounds) || Number(stats.rounds) || 0, note: `${Number(allTime.wins) || Number(stats.wins) || 0} перемог` },
     { icon: 'fa-swords', label: 'Бої', value: Number(allTime.battles) || Number(stats.battles) || 0, note: `${Number(allTime.battleWins) || Number(stats.battleWins) || 0} перемог` },
-    { icon: 'fa-crown', label: 'Royale', value: Number(allTime.royaleWins) || 0, note: 'перемог у банку' },
+    { icon: 'fa-crown', label: 'Royale', value: Number(allTime.royaleWins) || 0, note: 'перемог у спільних раундах' },
     { icon: 'fa-boxes-packing', label: 'Контракти', value: Number(allTime.contracts) || Number(stats.contracts) || 0, note: 'укладено' },
     { icon: 'fa-layer-group', label: 'Колекції', value: `${completedCollections}/${COLLECTION_DEFINITIONS.length}`, note: 'завершено' }
   ].map(row => `<div class="stats-mode-row"><i class="fa-solid ${row.icon}"></i><span>${row.label}<small>${row.note}</small></span><strong>${row.value}</strong></div>`).join('');
@@ -11050,7 +11050,7 @@ function renderBattleListings() {
     return `<article class="battle-listing-card ${listing.isMine ? 'is-mine' : ''}">
       <div class="battle-listing-kicker"><b>${escapeHtml(listing.name || 'Гравець')}</b><span>${listing.isMine ? 'Твій бій' : `ще ${formatBattleListingTime(remaining)}`}</span></div>
       <div class="battle-listing-skin"><img src="${escapeHtml(image)}" alt="" data-skin-name="${escapeHtml(stake.name || 'CS2 Skin')}" onerror="handleSkinImageError(this)"><div><strong>${escapeHtml(stake.name || 'CS2 Skin')}</strong><span>${formatCredits(stake.price || 0)}</span></div></div>
-      <div class="battle-listing-meta"><span>Твоя ставка: ${formatCredits(lower)}–${formatCredits(upper)}</span><span>1v1</span></div>
+      <div class="battle-listing-meta"><span>Твій діапазон: ${formatCredits(lower)}–${formatCredits(upper)}</span><span>1v1</span></div>
       <button type="button" class="${listing.isMine ? 'is-cancel' : ''}" data-battle-listing="${escapeHtml(listing.id)}">${listing.isMine ? '<i class="fa-solid fa-xmark mr-1"></i>Скасувати' : '<i class="fa-solid fa-handshake mr-1"></i>Прийняти бій'}</button>
     </article>`;
   }).join('');
@@ -11348,7 +11348,7 @@ async function createBattleListing() {
   }
   if (!verifiedInventoryMarketPrice(battlePlayerItem)) {
     requestInventoryMarketPrice(battlePlayerItem);
-    showToast('Не вдалося визначити стабільну ціну ставки.', 'warn');
+    showToast('Не вдалося визначити стабільну ціну обраного предмета.', 'warn');
     return;
   }
   const ticketId = makeUuid();
@@ -11416,7 +11416,7 @@ async function acceptBattleListing() {
   }
   if (!verifiedInventoryMarketPrice(battlePlayerItem)) {
     requestInventoryMarketPrice(battlePlayerItem);
-    showToast('Не вдалося визначити стабільну ціну ставки.', 'warn');
+    showToast('Не вдалося визначити стабільну ціну обраного предмета.', 'warn');
     return;
   }
   const ticketId = makeUuid();
@@ -11453,7 +11453,7 @@ async function findBattleOpponent() {
   if (battleInProgress || !battlePlayerItem || pendingWager) return;
   if (!verifiedInventoryMarketPrice(battlePlayerItem)) {
     requestInventoryMarketPrice(battlePlayerItem);
-    showToast('Не вдалося визначити стабільну ціну ставки.', 'warn');
+    showToast('Не вдалося визначити стабільну ціну обраного предмета.', 'warn');
     return;
   }
   const serial = ++battleSearchSerial;
@@ -11569,7 +11569,7 @@ function pickBotOpponent(basePrice) {
   const pool = marketPool.filter(skin => skin.price >= lo && skin.price <= hi);
   const pick = pool.length ? pool[Math.floor(Math.random() * pool.length)] : marketPool[Math.floor(Math.random() * marketPool.length)];
   if (!pick) {
-    showToast('Немає стабільної ціни для ставки бота. Онови каталог.', 'warn');
+    showToast('Немає стабільної ціни для предмета бота. Онови каталог.', 'warn');
     clearBattleOpponent();
     return;
   }
@@ -11797,8 +11797,8 @@ const ROYALE_COLORS    = [
 ];
 const ROYALE_BOT_NAMES = ['Bot_Voxxa', 'Bot_Fennec', 'Bot_Raven'];
 const ROYALE_MODE_CONFIG = Object.freeze({
-  live: { label: 'ВІДКРИТИЙ БАНК', title: 'Чекаємо гравців сайту', bots: 0, countdown: 5, names: [] },
-  bots: { label: 'ШВИДКИЙ VS БОТІВ', title: 'Збалансований бій за банк', bots: 3, countdown: 5, names: ROYALE_BOT_NAMES },
+  live: { label: 'ВІДКРИТИЙ РАУНД', title: 'Чекаємо гравців сайту', bots: 0, countdown: 5, names: [] },
+  bots: { label: 'ШВИДКИЙ VS БОТІВ', title: 'Збалансований спільний раунд', bots: 3, countdown: 5, names: ROYALE_BOT_NAMES },
 });
 let royaleMode = 'bots';
 let royalePhase = 'collecting';
@@ -12245,8 +12245,8 @@ function legacyRoyaleSettle(winnerIdx, wagerId) {
     if (banner)   banner.classList.remove('hidden');
     if (winIcon)  winIcon.textContent = '👑';
     if (winTitle) { winTitle.textContent = 'ПЕРЕМОГА!'; winTitle.className = 'font-heading text-3xl font-extrabold uppercase text-emerald-400'; }
-    if (winSub)   winSub.textContent = `Ти забираєш весь банк: ${formatCredits(total)} (${allPotSkins.length} скінів)`;
-    showToast(`👑 ROYALE! Ти виграв ${formatCredits(total)} банк!`, 'success');
+    if (winSub)   winSub.textContent = `Твоя колекція поповнюється: ${formatCredits(total)} (${allPotSkins.length} скінів)`;
+    showToast(`👑 ROYALE! Твоя добірка: ${formatCredits(total)}.`, 'success');
 
     gameState.stats.battleWins   = (gameState.stats.battleWins   || 0) + 1;
     gameState.daily.battleWins   = (gameState.daily.battleWins   || 0) + 1;
@@ -12263,8 +12263,8 @@ function legacyRoyaleSettle(winnerIdx, wagerId) {
     if (banner)   banner.classList.remove('hidden');
     if (winIcon)  winIcon.textContent = '💀';
     if (winTitle) { winTitle.textContent = 'ПОРАЗКА'; winTitle.className = 'font-heading text-3xl font-extrabold uppercase text-red-400'; }
-    if (winSub)   winSub.textContent = `${botName} виграв банк ${formatCredits(total)}. Ти втратив ${royalePlayerSkins.length} скінів.`;
-    showToast(`Поразка. ${botName} забрав банк.`, 'warn');
+    if (winSub)   winSub.textContent = `${botName} завершує раунд із добіркою ${formatCredits(total)}. Ти втратив ${royalePlayerSkins.length} скінів.`;
+    showToast(`Раунд завершено. Добірка дісталася ${botName}.`, 'warn');
   }
 
   gameState.rounds.unshift({
@@ -12353,7 +12353,7 @@ function royalePhaseLabel() {
   if (royalePhase === 'countdown') return `СТАРТ ЗА ${Math.max(1, Math.ceil((royaleCountdownEndsAt - Date.now()) / 1_000))} С`;
   if (royalePhase === 'spinning') return 'РУЛЕТКА В ЕФІРІ';
   if (royalePhase === 'settled') return 'РАУНД ЗАВЕРШЕНО';
-  return 'ЗБІР БАНКУ';
+  return 'ЗБІР УЧАСНИКІВ';
 }
 
 function drawRoyaleWheel(rotationRad = 0) {
@@ -12470,7 +12470,7 @@ function renderRoyaleParticipantList() {
     const image = entry.skins[0] ? getSkinImageSrc(entry.skins[0]) : '';
     return `<article class="royale-participant ${entry.isYou ? 'is-you' : ''}" style="--royale-color:${escapeHtml(entry.color)}">
       <div class="royale-participant-avatar">${image ? `<img src="${escapeHtml(image)}" alt="" onerror="handleSkinImageError(this)">` : `<i class="fa-solid ${entry.isYou ? 'fa-user-astronaut' : 'fa-robot'}"></i>`}</div>
-      <div class="royale-participant-copy"><b>${escapeHtml(entry.isYou ? 'Ти' : entry.name)}</b><span>${entry.skins.length ? `${entry.skins.length} ${entry.skins.length === 1 ? 'скін' : 'скіни'}` : 'Чекає твою ставку'}</span></div>
+      <div class="royale-participant-copy"><b>${escapeHtml(entry.isYou ? 'Ти' : entry.name)}</b><span>${entry.skins.length ? `${entry.skins.length} ${entry.skins.length === 1 ? 'скін' : 'скіни'}` : 'Чекає твій вибір'}</span></div>
       <div class="royale-participant-value"><b>${formatCredits(entry.value)}</b><span>${chance.toFixed(1)}%</span></div>
       <i class="royale-participant-line" style="width:${chance.toFixed(2)}%"></i>
     </article>`;
@@ -12518,12 +12518,12 @@ function updateRoyaleUI() {
   if (chanceEl) chanceEl.textContent = `${chance.toFixed(chance >= 10 ? 1 : 2)}%`;
   if (phasePill) phasePill.textContent = royalePhaseLabel();
   if (roundMode) roundMode.textContent = config.label;
-  if (roundTitle) roundTitle.textContent = royalePhase === 'collecting' ? config.title : royalePhase === 'countdown' ? `Рулетка стартує за ${remaining} с` : royalePhase === 'spinning' ? 'Банк у русі' : 'Результат зафіксовано';
-  if (wheelStatus) wheelStatus.textContent = royalePhase === 'countdown' ? 'СТАРТ ЗА' : royalePhase === 'spinning' ? 'БАНК У РУСІ' : 'ТВІЙ ШАНС';
-  if (wheelSub) wheelSub.textContent = royalePhase === 'countdown' ? `${remaining} секунд` : royalePhase === 'spinning' ? 'серверний ритм' : royalePlayerSkins.length ? 'місце у банку' : 'додай скін';
+  if (roundTitle) roundTitle.textContent = royalePhase === 'collecting' ? config.title : royalePhase === 'countdown' ? `Рулетка стартує за ${remaining} с` : royalePhase === 'spinning' ? 'Добірка в русі' : 'Результат зафіксовано';
+  if (wheelStatus) wheelStatus.textContent = royalePhase === 'countdown' ? 'СТАРТ ЗА' : royalePhase === 'spinning' ? 'ДОБІРКА В РУСІ' : 'ТВІЙ ШАНС';
+  if (wheelSub) wheelSub.textContent = royalePhase === 'countdown' ? `${remaining} секунд` : royalePhase === 'spinning' ? 'серверний ритм' : royalePlayerSkins.length ? 'місце в раунді' : 'додай скін';
   if (hint) hint.textContent = isLive
-    ? (royaleLiveRound?.participants?.length ? 'Банк синхронізовано сервером. AI у цьому режимі не бере участі.' : 'Відкрий банк із 1–10 віртуальними скінами — інші гравці можуть приєднатися.')
-    : royalePlayerSkins.length ? `Кожен бот ставить по ${royalePlayerSkins.length} ${royalePlayerSkins.length === 1 ? 'скіну' : royalePlayerSkins.length < 5 ? 'скіни' : 'скінів'} з каталогу — ціни не змінюються.` : 'Додай перший скін — боти сформують стартовий банк зі скінів каталогу.';
+    ? (royaleLiveRound?.participants?.length ? 'Раунд синхронізовано сервером. AI у цьому режимі не бере участі.' : 'Відкрий раунд із 1–10 віртуальними скінами — інші гравці можуть приєднатися.')
+    : royalePlayerSkins.length ? `Кожен бот додає по ${royalePlayerSkins.length} ${royalePlayerSkins.length === 1 ? 'скіну' : royalePlayerSkins.length < 5 ? 'скіни' : 'скінів'} з каталогу — ціни не змінюються.` : 'Додай перший скін — боти сформують стартову добірку зі скінів каталогу.';
   if (addButton) {
     const remainingSkins = Math.max(0, skinLimit - royalePlayerSkins.length);
     addButton.disabled = royaleInProgress || liveLocked || !remainingSkins;
@@ -12534,13 +12534,13 @@ function updateRoyaleUI() {
   if (startButton) {
     startButton.disabled = royaleInProgress || (!liveLocked && !royalePlayerSkins.length);
     startButton.innerHTML = royalePhase === 'countdown'
-      ? `<i class="fa-solid fa-clock"></i><span>СТАРТ ЧЕРЕЗ ${remaining}</span><small>ставки вже в банку</small>`
+      ? `<i class="fa-solid fa-clock"></i><span>СТАРТ ЧЕРЕЗ ${remaining}</span><small>предмети вже додано</small>`
       : royalePhase === 'spinning'
         ? '<i class="fa-solid fa-spinner fa-spin"></i><span>РУЛЕТКА В ЕФІРІ</span><small>визначаємо переможця</small>'
         : isLive && liveLocked
-          ? '<i class="fa-solid fa-users"></i><span>ЧЕКАЄМО ГРАВЦЯ</span><small>натисни, щоб вийти з банку</small>'
+          ? '<i class="fa-solid fa-users"></i><span>ЧЕКАЄМО ГРАВЦЯ</span><small>натисни, щоб вийти з раунду</small>'
           : isLive
-            ? '<i class="fa-solid fa-tower-broadcast"></i><span>ВІДКРИТИ БАНК</span><small>для реальних гравців</small>'
+            ? '<i class="fa-solid fa-tower-broadcast"></i><span>ВІДКРИТИ РАУНД</span><small>для гравців сайту</small>'
         : '<i class="fa-solid fa-bolt"></i><span>ЗАПУСТИТИ РАУНД</span><small>автостарт через 5 с</small>';
   }
   liveMode?.classList.toggle('is-active', royaleMode === 'live');
@@ -12792,7 +12792,7 @@ async function leaveLiveRoyale() {
     renderRoyaleDeck();
     void refreshLiveRoyale();
   } catch (error) {
-    showToast(error?.message || 'Не вдалося вийти з банку.', 'error');
+    showToast(error?.message || 'Не вдалося вийти з раунду.', 'error');
   }
 }
 
@@ -12868,7 +12868,7 @@ async function refreshLiveRoyale() {
     // Background polling should not bury the player in repeated notices.
     if (currentPage === 'royale' && !royaleLiveRound) {
       const hint = document.getElementById('royaleRosterHint');
-      if (hint) hint.textContent = 'Синхронізація банку тимчасово недоступна. Повторюємо…';
+      if (hint) hint.textContent = 'Синхронізація раунду тимчасово недоступна. Повторюємо…';
     }
   } finally {
     royaleLivePollInFlight = false;
@@ -12879,11 +12879,11 @@ async function joinLiveRoyale() {
   if (royaleLiveTicket) return leaveLiveRoyale();
   if (pendingWager || isCaseOpening || isFreeCaseOpening) return showToast('Спочатку дочекайся завершення поточного раунду.', 'warn');
   const skins = royalePlayerSkins.slice(0, ROYALE_LIVE_MAX_SKINS);
-  if (!skins.length) return showToast('Додай від 1 до 10 віртуальних скінів у відкритий банк.', 'warn');
+  if (!skins.length) return showToast('Додай від 1 до 10 віртуальних скінів до відкритого раунду.', 'warn');
   if (!skins.every(skin => userInventory.some(item => item.id === skin.id && item.accountBound !== true) && verifiedInventoryMarketPrice(skin))) {
     royalePlayerSkins = royalePlayerSkins.filter(skin => userInventory.some(item => item.id === skin.id && item.accountBound !== true) && verifiedInventoryMarketPrice(skin));
     renderRoyaleDeck();
-    return showToast('Потрібні стабільні ціни всіх скінів у банку.', 'warn');
+    return showToast('Потрібні стабільні ціни всіх обраних скінів.', 'warn');
   }
   const ticketId = makeUuid();
   const wagerId = beginPendingWager({ inventory: skins });
@@ -12898,11 +12898,11 @@ async function joinLiveRoyale() {
     document.getElementById('royaleWinBanner')?.classList.add('hidden');
     startLiveRoyalePolling();
     applyLiveRoyaleState(round);
-    showToast(round.status === 'countdown' ? 'Гравець приєднався — сервер запускає рулетку.' : `У банку ${skins.length} ${skins.length === 1 ? 'скін' : 'скінів'}. Чекаємо ще одного гравця.`, 'success');
+    showToast(round.status === 'countdown' ? 'Гравець приєднався — сервер запускає рулетку.' : `У раунді ${skins.length} ${skins.length === 1 ? 'скін' : 'скінів'}. Чекаємо ще одного гравця.`, 'success');
   } catch (error) {
     releaseLiveRoyaleReservation();
     renderRoyaleDeck();
-    showToast(error?.message || 'Не вдалося приєднатися до банку.', 'error');
+    showToast(error?.message || 'Не вдалося приєднатися до раунду.', 'error');
   }
 }
 
@@ -12913,7 +12913,7 @@ function startRoyale() {
   }
   if (royaleInProgress) return;
   if (pendingWager || isCaseOpening || isFreeCaseOpening) return showToast('Спочатку дочекайся завершення поточного раунду', 'warn');
-  if (!royalePlayerSkins.length) return showToast('Додай хоча б один скін у банк.', 'warn');
+  if (!royalePlayerSkins.length) return showToast('Додай хоча б один скін до раунду.', 'warn');
   if (!royalePlayerSkins.every(skin => userInventory.some(owned => owned.id === skin.id && owned.accountBound !== true) && verifiedInventoryMarketPrice(skin))) {
     showToast('Один зі скінів уже недоступний. Оновлюємо внесок.', 'warn');
     royalePlayerSkins = royalePlayerSkins.filter(skin => userInventory.some(owned => owned.id === skin.id && owned.accountBound !== true) && verifiedInventoryMarketPrice(skin));
@@ -13015,19 +13015,19 @@ function royaleSettle(winnerIndex, wagerId, frozenParticipants = royaleParticipa
     gameState.allTime.royaleWins = (gameState.allTime.royaleWins || 0) + 1;
     addXp(XP_ROYALE_WIN); soundWin();
     if (icon) icon.textContent = '👑';
-    if (title) { title.textContent = 'БАНК ТВОЙ!'; title.className = 'font-heading text-3xl font-extrabold uppercase text-emerald-300'; }
+    if (title) { title.textContent = 'РАУНД ЗАВЕРШЕНО!'; title.className = 'font-heading text-3xl font-extrabold uppercase text-emerald-300'; }
     if (sub) sub.textContent = `Ти забираєш ${formatCredits(total)} · ${allPotSkins.length} віртуальних скінів.`;
-    showToast(`👑 Royale: банк ${formatCredits(total)} твій!`, 'success');
+    showToast(`👑 Royale: твоя добірка — ${formatCredits(total)}.`, 'success');
   } else {
     addXp(XP_ROYALE_LOSS); soundLose();
     if (icon) icon.textContent = '◈';
-    if (title) { title.textContent = 'БАНК ЗАБРАЛИ'; title.className = 'font-heading text-3xl font-extrabold uppercase text-rose-300'; }
-    if (sub) sub.textContent = `${winner} забрав ${formatCredits(total)}. Наступний раунд може бути твоїм.`;
-    showToast(`${winner} забрав банк.`, 'warn');
+    if (title) { title.textContent = 'РАУНД ЗАВЕРШЕНО'; title.className = 'font-heading text-3xl font-extrabold uppercase text-rose-300'; }
+    if (sub) sub.textContent = `${winner} завершує раунд із добіркою ${formatCredits(total)}. Наступний раунд може бути твоїм.`;
+    showToast(`${winner} завершує раунд із добіркою.`, 'warn');
   }
   gameState.rounds.unshift({ at: Date.now(), win: userWon, targetName: `◈ Royale · ${allPotSkins.length} скінів`, targetValue: total, chance, mode: 'royale', inputValue: pv, bonus: 0 });
   gameState.rounds = gameState.rounds.slice(0, ROUND_HISTORY_LIMIT);
-  gameState.royaleRecent = [{ at: Date.now(), win: userWon, winner: userWon ? 'Ти' : winner, total, mode: royaleMode === 'bots' ? 'VS ботів' : 'Відкритий банк' }, ...(Array.isArray(gameState.royaleRecent) ? gameState.royaleRecent : [])].slice(0, 4);
+  gameState.royaleRecent = [{ at: Date.now(), win: userWon, winner: userWon ? 'Ти' : winner, total, mode: royaleMode === 'bots' ? 'VS ботів' : 'Відкритий раунд' }, ...(Array.isArray(gameState.royaleRecent) ? gameState.royaleRecent : [])].slice(0, 4);
   checkAchievements();
   if (isLiveRound) {
     // Keep a tiny local receipt so a reload after the result cannot award the
