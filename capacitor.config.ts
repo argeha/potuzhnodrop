@@ -9,7 +9,7 @@ import type { CapacitorConfig } from '@capacitor/cli'
  */
 const config: CapacitorConfig = {
   appId: 'com.argeha.potuzhnodrop',
-  appName: 'Потужно Drop',
+  appName: 'ПОТУЖНО DROP',
   webDir: 'dist',
   bundledWebRuntime: false,
   android: {
