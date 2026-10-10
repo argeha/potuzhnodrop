@@ -38,7 +38,7 @@
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Teko:wght@600;700&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-  <link rel="stylesheet" href="/css/style.css?v=7.9.0-atelier.4">
+  <link rel="stylesheet" href="/css/style.css?v=7.9.0-atelier.5">
 </head>
 <body class="pd-rebrand min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -180,23 +180,23 @@
 </section>
 
 <!-- UPGRADER -->
-<section data-page="upgrader" class="page-view hidden space-y-5">
-<div class="mode-intro mode-intro-upgrader">
+<section data-page="upgrader" class="page-view upgrader-page hidden space-y-5">
+<div class="mode-intro mode-intro-upgrader upgrade-command-intro">
   <div><span class="mode-eyebrow"><i class="fa-solid fa-bolt"></i> Лабораторія апгрейду</span><h1>Піднімай рівень <em>розумно</em></h1><p>Обери предмет або віртуальні PC, задай ціль і перевір шанс до запуску.</p></div>
   <div class="mode-intro-stats"><span><b>1–95%</b><small>діапазон шансу</small></span><span><b>ПЕРЕВІРКА</b><small>історія раунду</small></span></div>
 </div>
-<div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-<div class="lg:col-span-4 glass-panel rounded-2xl p-5 border border-brand-border flex flex-col h-[560px]">
-<div class="flex items-center justify-between mb-3 border-b border-gray-800 pb-3">
+<div class="upgrader-layout grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+<div class="upg-deck upg-deck--input lg:col-span-4 glass-panel rounded-2xl p-5 border border-brand-border flex flex-col h-[560px]">
+<div class="upg-deck-heading flex items-center justify-between mb-3 border-b border-gray-800 pb-3">
 <span class="font-bold text-gray-200 flex items-center gap-2"><i class="fa-solid fa-hand-holding-dollar text-amber-400"></i> Твій предмет</span>
 <span id="inputItemValue" class="text-amber-400 font-extrabold">0 PC</span>
 </div>
-<div class="grid grid-cols-3 gap-1 p-1 bg-black/40 rounded-xl mb-3 border border-gray-800">
+<div class="upg-input-tabs grid grid-cols-3 gap-1 p-1 bg-black/40 rounded-xl mb-3 border border-gray-800">
 <button id="tabSkinBtn" onclick="switchInputMode('skin')" class="py-2 text-[11px] font-bold rounded-lg bg-amber-500 text-black transition">Скін</button>
 <button id="tabMultiBtn" onclick="switchInputMode('multi')" class="py-2 text-[11px] font-bold rounded-lg text-gray-400 hover:text-white transition">Мульти</button>
 <button id="tabBalanceBtn" onclick="switchInputMode('balance')" class="py-2 text-[11px] font-bold rounded-lg text-gray-400 hover:text-white transition">Кредити</button>
 </div>
-<div id="inputDisplayArea" class="flex-1 flex flex-col min-h-0 border-2 border-dashed border-gray-800 rounded-xl p-3 bg-black/20 hover:border-gray-700 transition cursor-pointer" onclick="openInventoryOrFocus()">
+<div id="inputDisplayArea" class="upg-item-stage flex-1 flex flex-col min-h-0 border-2 border-dashed border-gray-800 rounded-xl p-3 bg-black/20 hover:border-gray-700 transition cursor-pointer" onclick="openInventoryOrFocus()">
 <div id="inputEmptyState" class="flex-1 flex flex-col items-center justify-center text-center">
 <div class="w-14 h-14 rounded-2xl bg-brand-card flex items-center justify-center mb-2 border border-gray-800"><i class="fa-solid fa-plus text-2xl text-amber-500/60"></i></div>
 <p class="text-sm font-semibold text-gray-300">Обери предмет з інвентарю</p>
@@ -227,11 +227,11 @@
 </div>
 </div>
 </div>
-<button onclick="openInventoryOrFocus()" class="mt-3 w-full py-3 bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl font-semibold text-sm text-gray-200 transition flex items-center justify-center gap-2"><i class="fa-solid fa-boxes-stacked text-amber-400"></i> Інвентар</button>
+<button onclick="openInventoryOrFocus()" class="upg-deck-action mt-3 w-full py-3 bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl font-semibold text-sm text-gray-200 transition flex items-center justify-center gap-2"><i class="fa-solid fa-boxes-stacked text-amber-400"></i> Інвентар</button>
 </div>
-<div class="lg:col-span-4 flex flex-col items-center glass-panel rounded-2xl p-5 border border-brand-border h-[560px] relative gap-3">
+<div class="upg-deck upg-deck--core lg:col-span-4 flex flex-col items-center glass-panel rounded-2xl p-5 border border-brand-border h-[560px] relative gap-3">
   <!-- Header: chance + quick resolve. The switch never changes the odds. -->
-  <div class="upgrader-control-head w-full border-b border-gray-800 pb-3 shrink-0">
+  <div class="upgrader-control-head upg-control-header w-full border-b border-gray-800 pb-3 shrink-0">
     <div class="upgrader-chance-readout"><span>Шанс виграшу</span><strong id="winChanceText">—</strong></div>
     <label class="speed-mode-toggle" title="Швидкий режим показує результат без анімації та не змінює шанс">
       <input type="checkbox" id="upgraderFastToggle" class="sr-only">
@@ -240,7 +240,7 @@
     </label>
   </div>
   <!-- Multiplier presets -->
-  <div class="w-full grid grid-cols-6 gap-1 shrink-0">
+  <div class="upg-preset-row w-full grid grid-cols-6 gap-1 shrink-0">
     <button class="upg-preset-btn" onclick="applyMultiplierPreset(1.5)">1.5x</button>
     <button class="upg-preset-btn" onclick="applyMultiplierPreset(2)">2x</button>
     <button class="upg-preset-btn" onclick="applyMultiplierPreset(5)">5x</button>
@@ -258,21 +258,21 @@
     </div>
   </div>
   <!-- Smart suggestions -->
-  <div id="upgraderQuickSuggestions" class="w-full grid grid-cols-3 gap-1.5 shrink-0"></div>
+  <div id="upgraderQuickSuggestions" class="upg-suggestion-rail w-full grid grid-cols-3 gap-1.5 shrink-0"></div>
   <!-- Mode + upgrade button -->
   <div class="w-full space-y-2 mt-auto shrink-0">
-    <div class="rounded-xl border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-center">
+    <div class="upg-formula rounded-xl border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-center">
       <p id="rollModeHint" class="text-[11px] font-medium text-amber-100">Чесна формула: шанс = (внесок ÷ ціль) × 90%. Без прихованих бонусів.</p>
     </div>
-    <button id="upgradeActionBtn" onclick="executeUpgrade()" class="w-full py-3.5 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-600 hover:from-amber-400 text-black font-extrabold text-base uppercase tracking-wider rounded-xl shadow-lg shadow-amber-500/30 transition flex items-center justify-center gap-2"><i class="fa-solid fa-bolt"></i> АПГРЕЙД</button>
+    <button id="upgradeActionBtn" onclick="executeUpgrade()" class="upg-execute w-full py-3.5 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-600 hover:from-amber-400 text-black font-extrabold text-base uppercase tracking-wider rounded-xl shadow-lg shadow-amber-500/30 transition flex items-center justify-center gap-2"><i class="fa-solid fa-bolt"></i> АПГРЕЙД</button>
   </div>
 </div>
-<div class="lg:col-span-4 glass-panel rounded-2xl p-5 border border-brand-border flex flex-col h-[560px]">
-<div class="flex items-center justify-between mb-3 border-b border-gray-800 pb-3">
+<div class="upg-deck upg-deck--target lg:col-span-4 glass-panel rounded-2xl p-5 border border-brand-border flex flex-col h-[560px]">
+<div class="upg-deck-heading flex items-center justify-between mb-3 border-b border-gray-800 pb-3">
 <span class="font-bold text-gray-200 flex items-center gap-2"><i class="fa-solid fa-bullseye text-amber-400"></i> Цільовий скін</span>
 <span id="targetItemValue" class="text-amber-400 font-extrabold">0 PC</span>
 </div>
-<div id="targetDisplayArea" class="flex-1 flex flex-col min-h-0 border-2 border-dashed border-gray-800 rounded-xl p-3 bg-black/20 hover:border-gray-700 transition cursor-pointer" onclick="openModal('shopModal')">
+<div id="targetDisplayArea" class="upg-item-stage flex-1 flex flex-col min-h-0 border-2 border-dashed border-gray-800 rounded-xl p-3 bg-black/20 hover:border-gray-700 transition cursor-pointer" onclick="openModal('shopModal')">
 <div id="targetEmptyState" class="flex-1 flex flex-col items-center justify-center text-center">
 <div class="w-14 h-14 rounded-2xl bg-brand-card flex items-center justify-center mb-2 border border-gray-800"><i class="fa-solid fa-plus text-2xl text-amber-500/60"></i></div>
 <p class="text-sm font-semibold text-gray-300">Обрати бажаний скін</p>
@@ -283,7 +283,7 @@
 <div class="text-center w-full shrink-0 pt-3"><h4 id="targetSkinName" class="font-bold text-sm text-gray-100 truncate">--</h4><p id="targetSkinRarity" class="text-[11px] text-amber-400 uppercase font-semibold mt-0.5">--</p></div>
 </div>
 </div>
-<button onclick="openModal('shopModal')" class="mt-3 w-full py-3 bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl font-semibold text-sm text-gray-200 transition flex items-center justify-center gap-2"><i class="fa-solid fa-store text-amber-400"></i> Каталог скінів</button>
+<button onclick="openModal('shopModal')" class="upg-deck-action mt-3 w-full py-3 bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl font-semibold text-sm text-gray-200 transition flex items-center justify-center gap-2"><i class="fa-solid fa-store text-amber-400"></i> Каталог скінів</button>
 </div>
 </div>
 </section>
