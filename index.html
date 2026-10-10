@@ -38,7 +38,7 @@
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Teko:wght@600;700&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-  <link rel="stylesheet" href="/css/style.css?v=7.9.0-atelier.5">
+  <link rel="stylesheet" href="/css/style.css?v=7.9.0-atelier.6">
 </head>
 <body class="pd-rebrand min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -286,6 +286,13 @@
 <button onclick="openModal('shopModal')" class="upg-deck-action mt-3 w-full py-3 bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl font-semibold text-sm text-gray-200 transition flex items-center justify-center gap-2"><i class="fa-solid fa-store text-amber-400"></i> Каталог скінів</button>
 </div>
 </div>
+<aside id="upgradeSessionRail" class="upg-session-rail lg:col-span-12" aria-label="Статус сесії апгрейду" aria-live="polite">
+  <div class="upg-session-step"><span class="upg-session-number">01</span><i class="fa-solid fa-box-open"></i><div><small>Внесок</small><strong id="upgradeSessionInput">Обери предмет</strong></div></div>
+  <span class="upg-session-connector" aria-hidden="true"></span>
+  <div class="upg-session-step"><span class="upg-session-number">02</span><i class="fa-solid fa-bullseye"></i><div><small>Ціль</small><strong id="upgradeSessionTarget">Обери бажаний скін</strong></div></div>
+  <span class="upg-session-connector" aria-hidden="true"></span>
+  <div class="upg-session-step upg-session-step--chance"><span class="upg-session-number">03</span><i class="fa-solid fa-shield-halved"></i><div><small>Фіксований шанс</small><strong id="upgradeSessionChance">З’явиться після вибору</strong></div></div>
+</aside>
 </section>
 
 <!-- CASE -->
@@ -747,7 +754,7 @@
 </div>
 </div>
 
-<div id="resultModal" class="modal-backdrop fixed inset-0 z-[90] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4"><div class="glass-panel rounded-3xl max-w-md w-full p-8 border border-brand-border relative text-center"><div id="resultIcon" class="flex items-center justify-center mb-4"></div><h3 id="resultTitle" class="font-heading text-4xl font-extrabold uppercase mb-2">—</h3><img id="resultImg" src="" alt="" class="h-32 mx-auto object-contain my-4 hidden" onerror="handleSkinImageError(this,'result')"><p id="resultText" class="text-sm text-gray-300 mb-6"></p><div id="resultUpgraderActions" class="hidden grid grid-cols-2 gap-2 mb-3">
+<div id="resultModal" class="modal-backdrop fixed inset-0 z-[90] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4"><div class="upg-result-shell glass-panel rounded-3xl max-w-md w-full p-8 border border-brand-border relative text-center"><div class="upg-result-orbit"><div id="resultIcon" class="flex items-center justify-center"></div></div><p id="resultEyebrow" class="upg-result-eyebrow">РЕЗУЛЬТАТ АПГРЕЙДУ</p><h3 id="resultTitle" class="font-heading text-4xl font-extrabold uppercase mb-2">—</h3><img id="resultImg" src="" alt="" class="upg-result-image h-32 mx-auto object-contain my-4 hidden" onerror="handleSkinImageError(this,'result')"><p id="resultText" class="text-sm text-gray-300 mb-4"></p><div id="resultMeta" class="upg-result-meta" aria-label="Параметри апгрейду"></div><div id="resultUpgraderActions" class="hidden grid grid-cols-2 gap-2 mb-3">
   <button onclick="chainUpgradeWonSkin()" class="py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 text-black font-extrabold rounded-xl transition text-xs uppercase tracking-wider flex items-center justify-center gap-1"><i class="fa-solid fa-bolt"></i> Подвоїти</button>
   <button onclick="quickSellUpgradedSkin()" class="py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-400 text-white font-extrabold rounded-xl transition text-xs uppercase tracking-wider flex items-center justify-center gap-1"><i class="fa-solid fa-sack-dollar"></i> Продати 90%</button>
 </div>
@@ -796,6 +803,6 @@
 
 <script src="/js/mobile-config.js" defer></script>
 <script src="/js/mobile.js?v=1" defer></script>
-<script src="/js/app.js?v=7.9.0-ops.5" defer></script>
+<script src="/js/app.js?v=7.9.0-ops.6" defer></script>
 </body>
 </html>

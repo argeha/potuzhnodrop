@@ -9130,12 +9130,38 @@ function getWinBonus() {
   return 0;
 }
 
+function renderUpgradeSessionStatus(inputValue, targetValue) {
+  const rail = document.getElementById('upgradeSessionRail');
+  const input = document.getElementById('upgradeSessionInput');
+  const target = document.getElementById('upgradeSessionTarget');
+  const chance = document.getElementById('upgradeSessionChance');
+  const hasInput = Number(inputValue) > 0;
+  const hasTarget = Number(targetValue) > 0;
+  const isReady = hasInput && hasTarget && Number(targetValue) > Number(inputValue);
+
+  if (input) input.textContent = hasInput ? formatCredits(inputValue) : 'Обери предмет';
+  if (target) target.textContent = hasTarget ? formatCredits(targetValue) : 'Обери бажаний скін';
+  if (chance) {
+    chance.textContent = isReady
+      ? calcChance(inputValue, targetValue).toFixed(2) + '% · умови підтверджено'
+      : hasInput && hasTarget
+        ? 'Ціль має бути дорожча за внесок'
+        : 'З’явиться після вибору';
+  }
+  if (rail) {
+    rail.classList.toggle('has-input', hasInput);
+    rail.classList.toggle('has-target', hasTarget);
+    rail.classList.toggle('is-ready', isReady);
+  }
+}
+
 function recalculateUpgrade() {
   const iv = getInputVal(), tv = getTargetVal();
   const iiv = document.getElementById('inputItemValue');
   if (iiv) iiv.textContent = formatCredits(iv);
   const tiv = document.getElementById('targetItemValue');
   if (tiv) tiv.textContent = formatCredits(tv);
+  renderUpgradeSessionStatus(iv, tv);
 
   const btn = document.getElementById('upgradeActionBtn');
   if (btn) {
@@ -9342,11 +9368,33 @@ function quickSellUpgradedSkin() {
   soundSell();
 }
 
-function showResultModal(win, skin, bonus = 0) {
+function showResultModal(win, skin, bonus = 0, context = {}) {
+  const modal = document.getElementById('resultModal');
   const icon = document.getElementById('resultIcon');
+  const eyebrow = document.getElementById('resultEyebrow');
   const title = document.getElementById('resultTitle');
   const text = document.getElementById('resultText');
   const img = document.getElementById('resultImg');
+  const meta = document.getElementById('resultMeta');
+  const chance = Number(context.chance);
+  const inputValue = Number(context.inputValue);
+  const targetValue = Number(context.targetValue);
+
+  if (modal) {
+    modal.classList.toggle('is-upgrade-win', Boolean(win && skin));
+    modal.classList.toggle('is-upgrade-loss', !win || !skin);
+  }
+  if (eyebrow) eyebrow.textContent = win && skin ? 'АПГРЕЙД ПІДТВЕРДЖЕНО' : 'РАУНД ЗАВЕРШЕНО';
+  if (meta) {
+    const chanceLabel = Number.isFinite(chance) && chance > 0 ? chance.toFixed(2) + '%' : '—';
+    const targetLabel = Number.isFinite(targetValue) && targetValue > 0
+      ? formatCredits(targetValue)
+      : skin ? formatCredits(skin.price || 0) : '—';
+    const inputLabel = Number.isFinite(inputValue) && inputValue > 0 ? formatCredits(inputValue) : '—';
+    meta.innerHTML = '<span><small>Внесок</small><strong>' + inputLabel + '</strong></span>' +
+      '<span><small>Шанс</small><strong>' + chanceLabel + '</strong></span>' +
+      '<span><small>Ціль</small><strong>' + targetLabel + '</strong></span>';
+  }
 
   if (win && skin) {
     if (icon) icon.innerHTML = '<i class="fa-solid fa-trophy text-5xl text-green-400"></i>';
@@ -9530,7 +9578,7 @@ function executeUpgrade() {
       recordRound({ win: true, target: tgtSkin, chance, mode: selectedInputMode === 'multi' ? 'multi' : rollMode, inputValue: iv, bonus: winBonus });
       const _rua_win = document.getElementById('resultUpgraderActions');
       if (_rua_win) _rua_win.classList.remove('hidden');
-      setTimeout(() => showResultModal(true, ni, winBonus), 220);
+      setTimeout(() => showResultModal(true, ni, winBonus, { chance, inputValue: iv, targetValue: tv }), 220);
     } else {
       if (rollStatus) rollStatus.textContent = 'НЕВДАЧА';
       soundLose();
@@ -9542,7 +9590,7 @@ function executeUpgrade() {
       recordRound({ win: false, target: tgtSkin, chance, mode: selectedInputMode === 'multi' ? 'multi' : rollMode, inputValue: iv, bonus: 0 });
       const _rua_lose = document.getElementById('resultUpgraderActions');
       if (_rua_lose) _rua_lose.classList.add('hidden');
-      setTimeout(() => showResultModal(false), 220);
+      setTimeout(() => showResultModal(false, null, 0, { chance, inputValue: iv, targetValue: tv }), 220);
     }
     recalculateUpgrade();
   }
@@ -9570,7 +9618,7 @@ function executeUpgrade() {
       recordRound({ win: true, target: tgtSkin, chance, mode: selectedInputMode === 'multi' ? 'multi' : rollMode, inputValue: iv, bonus: winBonus });
       const _rua2 = document.getElementById('resultUpgraderActions');
       if (_rua2) _rua2.classList.remove('hidden');
-      setTimeout(() => showResultModal(true, ni, winBonus), 80);
+      setTimeout(() => showResultModal(true, ni, winBonus, { chance, inputValue: iv, targetValue: tv }), 80);
     } else {
       if (rollStatus) rollStatus.textContent = 'НЕВДАЧА';
       soundLose();
@@ -9579,7 +9627,7 @@ function executeUpgrade() {
       recordRound({ win: false, target: tgtSkin, chance, mode: selectedInputMode === 'multi' ? 'multi' : rollMode, inputValue: iv, bonus: 0 });
       const _rua3 = document.getElementById('resultUpgraderActions');
       if (_rua3) _rua3.classList.add('hidden');
-      setTimeout(() => showResultModal(false), 80);
+      setTimeout(() => showResultModal(false, null, 0, { chance, inputValue: iv, targetValue: tv }), 80);
     }
     recalculateUpgrade();
     return;
