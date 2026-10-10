@@ -10066,61 +10066,41 @@ function renderCaseCatalog() {
       <b><i class="fa-solid fa-trophy"></i> ${totalTrophies} / ${filtered.length || 0}</b>
     </div>` : '';
 
-  grid.innerHTML = `${collectionIntro}${filtered.map(([id, c], index) => {
-    const previews = getPerformanceMode() === 'lite' ? [] : getCasePreviewItems(id, 4);
+  grid.innerHTML = `${collectionIntro}${filtered.map(([id, c]) => {
     const metrics = getCaseMetrics(id);
     const caseCost = getCaseCost(id);
     const collection = getCaseCollectionProgress(id);
     const wishlistMatches = getCaseWishlistMatches(id);
-    const collectionMarkup = collection.total
-      ? `<span class="${collection.claimed ? 'is-complete' : ''}" title="Збери 5 обраних скінів цього кейса"><i class="fa-solid ${collection.claimed ? 'fa-trophy' : 'fa-book-atlas'}"></i>${collection.claimed ? 'Трофей' : `${collection.count}/${collection.total} колекція`}</span>`
+    const contextParts = [
+      wishlistMatches.length ? `<span><i class="fa-solid fa-heart"></i>${wishlistMatches.length} у бажаному</span>` : '',
+      collection.total ? `<span><i class="fa-solid ${collection.claimed ? 'fa-trophy' : 'fa-book-atlas'}"></i>${collection.claimed ? 'Трофей здобуто' : `${collection.count}/${collection.total} колекція`}</span>` : ''
+    ].filter(Boolean);
+    const contextMarkup = contextParts.length
+      ? `<p class="case-catalog-context">${contextParts.join('<b aria-hidden="true">·</b>')}</p>`
       : '';
-    const wishlistMarkup = wishlistMatches.length
-      ? `<span class="is-wishlist" title="У цьому кейсі є ${wishlistMatches.length} скіни з твого списку бажаного"><i class="fa-solid fa-heart"></i>${wishlistMatches.length} з бажаного</span>`
-      : '';
-    const costMarkup = caseCost
-      ? `<i class="fa-solid fa-coins text-amber-400 text-xs"></i><span class="font-extrabold text-sm text-amber-300">${formatCredits(caseCost)}</span>`
-      : '<i class="fa-solid fa-triangle-exclamation text-amber-300 text-xs"></i><span class="font-extrabold text-[10px] text-amber-200">Каталог кейса недоступний</span>';
+    const openCost = caseCost ? formatCredits(caseCost) : 'Недоступний';
     return `
       <div class="case-catalog-card tier-${c.category || 'hot'} group">
         <span class="case-catalog-badge ${c.badgeClass || 'badge-hot'}">${c.badge || 'HOT'}</span>
-        <span class="case-catalog-serial" aria-label="Номер кейсу">CASE // ${String(index + 1).padStart(2, '0')}</span>
-        
-        <!-- Top Preview Strip -->
-        ${previews.length ? `<div class="case-catalog-preview-strip">
-          ${previews.map(s => `
-            <div class="case-catalog-preview-item" title="${escapeHtml(s.name)} · ${formatCredits(s.price)} · стабільний каталог">
-              <img src="${escapeHtml(getSkinImageSrc(s))}" alt="" data-skin-name="${escapeHtml(s.name)}" decoding="async" onerror="handleSkinImageError(this)">
-            </div>
-          `).join('')}
-        </div>` : ''}
-
-        <!-- 3D Case Preview -->
-        <div class="p-5 flex flex-col items-center justify-center text-center cursor-pointer" onclick="openPowerCase('${id}')">
+        <div class="case-catalog-art">
           <div class="w-28 h-28 sm:w-32 sm:h-32 case-preview-svg group-hover:scale-105 transition-transform duration-300">
             ${createCaseArtwork(id, c.name, c.theme, c.artwork)}
           </div>
-          <h3 class="font-heading mt-3 text-2xl font-black uppercase text-white tracking-wider truncate w-full group-hover:text-amber-300 transition-colors">${c.name}</h3>
-          <p class="text-[11px] text-gray-400 truncate w-full mt-0.5">${c.desc}</p>
-          <div class="mt-3 px-3 py-1 rounded-lg bg-black/40 border border-amber-500/30 flex items-center gap-1.5 shadow-inner">
-            ${costMarkup}
-          </div>
-          <div class="case-catalog-metrics" aria-label="Показники кейсу">
-            <span title="Кількість предметів у кейсі"><i class="fa-solid fa-layer-group"></i>${metrics.count} скінів</span>
-            <span title="Очікувана вартість дропу до продажу"><i class="fa-solid fa-scale-balanced"></i>${caseCost ? `RTP ${(metrics.returnRate * 100).toFixed(0)}%` : 'Каталог недоступний'}</span>
-            <span title="Шанс отримати предмет дешевше ціни кейсу; у кожному платному кейсі він існує"><i class="fa-solid fa-shield-halved"></i>${caseCost ? `Ризик ${formatCaseChance(metrics.lossChance)}` : '—'}</span>
-            ${collectionMarkup}
-            ${wishlistMarkup}
-          </div>
         </div>
-
-        <!-- Action Bar -->
-        <div class="grid grid-cols-5 gap-1.5 p-3 pt-0 mt-auto">
-          <button onclick="openPowerCase('${id}')" class="col-span-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:brightness-110 text-black font-extrabold text-xs uppercase tracking-wider transition flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/10">
-            <i class="fa-solid fa-box-open"></i> Відкрити
+        <div class="case-catalog-body">
+          <div class="case-catalog-title-row">
+            <h3 class="font-heading">${c.name}</h3>
+            <span>${metrics.count} скінів</span>
+          </div>
+          <p class="case-catalog-description">${c.desc}</p>
+          ${contextMarkup}
+        </div>
+        <div class="case-catalog-actions">
+          <button type="button" onclick="openPowerCase('${id}')" class="case-catalog-open" ${caseCost ? '' : 'disabled'}>
+            <span><i class="fa-solid fa-box-open"></i> Відкрити</span><strong>${openCost}</strong>
           </button>
-          <button onclick="showCaseDetails('${id}')" class="col-span-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-amber-500/40 text-gray-400 hover:text-amber-300 transition flex items-center justify-center text-xs" title="Вміст кейсу та шанси">
-            <i class="fa-solid fa-circle-info"></i>
+          <button type="button" onclick="showCaseDetails('${id}')" class="case-catalog-details" title="Склад кейсу та шанси" aria-label="Склад кейсу та шанси: ${escapeHtml(c.name)}">
+            <i class="fa-solid fa-list"></i><span>Склад</span>
           </button>
         </div>
       </div>
