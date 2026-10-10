@@ -9380,6 +9380,7 @@ function showResultModal(win, skin, bonus = 0, context = {}) {
   const chance = Number(context.chance);
   const inputValue = Number(context.inputValue);
   const targetValue = Number(context.targetValue);
+  const targetSkin = context.targetSkin || null;
 
   if (modal) {
     modal.classList.toggle('is-upgrade-win', Boolean(win && skin));
@@ -9412,6 +9413,7 @@ function showResultModal(win, skin, bonus = 0, context = {}) {
     if (img) {
       setImageSource(img, skin.img, skin.name, getSkinKey(skin));
       img.classList.remove('hidden');
+      img.classList.remove('is-missed-skin');
     }
   } else {
     if (icon) icon.innerHTML = '<i class="fa-solid fa-heart-crack text-5xl text-red-400"></i>';
@@ -9419,10 +9421,18 @@ function showResultModal(win, skin, bonus = 0, context = {}) {
       title.textContent = 'НЕВДАЧА';
       title.className = 'font-heading text-4xl font-extrabold uppercase mb-2 text-red-400';
     }
-    if (text) text.textContent = 'Предмет зник після ролу. Спробуй ще!';
-    if (img) {
+    if (text) text.textContent = targetSkin
+      ? `«${targetSkin.name}» не випав. Внесок списано.`
+      : 'Раунд не вдався. Внесок списано.';
+    const targetImage = targetSkin ? getKnownSkinImageUrl(targetSkin) : '';
+    if (img && targetSkin && targetImage) {
+      setImageSource(img, targetImage, targetSkin.name, getSkinKey(targetSkin));
+      img.classList.remove('hidden');
+      img.classList.add('is-missed-skin');
+    } else if (img) {
       img.classList.add('hidden');
-      img.src = '';
+      img.classList.remove('is-missed-skin');
+      img.removeAttribute('src');
     }
   }
   openModal('resultModal');
@@ -9591,7 +9601,7 @@ function executeUpgrade() {
       recordRound({ win: false, target: tgtSkin, chance, mode: selectedInputMode === 'multi' ? 'multi' : rollMode, inputValue: iv, bonus: 0 });
       const _rua_lose = document.getElementById('resultUpgraderActions');
       if (_rua_lose) _rua_lose.classList.add('hidden');
-      setTimeout(() => showResultModal(false, null, 0, { chance, inputValue: iv, targetValue: tv }), 220);
+      setTimeout(() => showResultModal(false, null, 0, { chance, inputValue: iv, targetValue: tv, targetSkin: tgtSkin }), 220);
     }
     recalculateUpgrade();
   }
@@ -9628,7 +9638,7 @@ function executeUpgrade() {
       recordRound({ win: false, target: tgtSkin, chance, mode: selectedInputMode === 'multi' ? 'multi' : rollMode, inputValue: iv, bonus: 0 });
       const _rua3 = document.getElementById('resultUpgraderActions');
       if (_rua3) _rua3.classList.add('hidden');
-      setTimeout(() => showResultModal(false, null, 0, { chance, inputValue: iv, targetValue: tv }), 80);
+      setTimeout(() => showResultModal(false, null, 0, { chance, inputValue: iv, targetValue: tv, targetSkin: tgtSkin }), 80);
     }
     recalculateUpgrade();
     return;
