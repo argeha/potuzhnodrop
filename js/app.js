@@ -67,6 +67,7 @@ function showPage(id) {
     id = 'hub';
     if (requestedId !== 'hub') showToast('Цей режим зараз приховано адміністрацією.', 'info');
   }
+  document.body.dataset.page = id;
   if (currentPage === id && document.querySelector(`[data-page="${id}"]:not(.hidden)`)) {
     return;
   }
@@ -10087,6 +10088,10 @@ function renderCaseCatalog() {
   // "catalog unavailable" warning on otherwise healthy connections.
   if (currentPage === 'case' && !completeSkinCatalogReady) {
     void loadCompleteSkinCatalog();
+    const summary = document.getElementById('caseCatalogSummary');
+    const count = document.getElementById('caseCatalogCount');
+    if (summary) summary.textContent = 'Синхронізуємо склад і фіксовані ціни кейсів…';
+    if (count) count.textContent = '…';
     grid.innerHTML = `<div class="col-span-full rounded-2xl border border-cyan-400/25 bg-cyan-500/5 px-5 py-10 text-center">
       <i class="fa-solid fa-boxes-stacked mb-3 text-3xl text-cyan-300 animate-pulse"></i>
       <p class="font-heading text-xl font-extrabold uppercase tracking-wide text-white">Готуємо каталоги кейсів</p>
@@ -10105,6 +10110,38 @@ function renderCaseCatalog() {
   const filtered = validEntries.filter(([id, c]) => {
     if (currentCaseCategory === 'all' || isCollectionView) return true;
     return c.category === currentCaseCategory;
+  });
+  const categoryNames = {
+    all: 'усі напрямки',
+    hot: 'лімітовані кейси',
+    knives: 'кейси з ножами',
+    gloves: 'кейси з рукавицями',
+    weapons: 'зброя та AWP',
+    budget: 'доступні кейси',
+    collections: 'колекції кейсів'
+  };
+  const categoryTitles = {
+    all: 'Усі кейси',
+    hot: 'Лімітовані кейси',
+    knives: 'Ножі',
+    gloves: 'Рукавиці',
+    weapons: 'Зброя та AWP',
+    budget: 'Доступні кейси',
+    collections: 'Колекції кейсів'
+  };
+  const summary = document.getElementById('caseCatalogSummary');
+  const title = document.getElementById('caseCatalogTitle');
+  const count = document.getElementById('caseCatalogCount');
+  if (title) title.textContent = categoryTitles[currentCaseCategory] || 'Кейси';
+  if (summary) summary.textContent = `Показано ${filtered.length} з ${validEntries.length} · ${categoryNames[currentCaseCategory] || 'кейси'} зі стабільними цінами.`;
+  if (count) count.textContent = `${validEntries.length} кейсів`;
+  document.querySelectorAll('#caseCategoryBar .case-cat-pill').forEach(button => {
+    const category = button.getAttribute('onclick')?.match(/'([^']+)'/)?.[1];
+    const categoryCount = category === 'all' || category === 'collections'
+      ? validEntries.length
+      : validEntries.filter(([, entry]) => entry.category === category).length;
+    const badge = button.querySelector('.case-cat-count');
+    if (badge) badge.textContent = String(categoryCount);
   });
 
   const totalTrophies = getCaseCollectionTrophyCount();
@@ -10140,6 +10177,7 @@ function renderCaseCatalog() {
             <h3 class="font-heading">${c.name}</h3>
             <span>${metrics.count} скінів</span>
           </div>
+          <div class="case-catalog-offer"><span><i class="fa-solid fa-shield-halved"></i> Фіксована ціна</span><strong>${openCost}</strong></div>
           <p class="case-catalog-description">${c.desc}</p>
           ${contextMarkup}
         </div>
