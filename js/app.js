@@ -4547,6 +4547,185 @@ function saveFairState() {
   if (fairState) localStorage.setItem(STORAGE.fair, JSON.stringify(fairState));
 }
 
+/* Product status: read-only presentation of the existing save and release state. */
+let localProgressSaveError = false;
+let localProgressSavedAt = 0;
+let progressManualSaveInFlight = 0;
+let progressCloudBusy = false;
+
+function getProgressSaveStatus() {
+  if (localProgressSaveError) return { state: 'error', icon: 'fa-triangle-exclamation', label: 'Локальне збереження недоступне', details: 'Не закривай вкладку: браузер не зміг записати останні зміни.' };
+  const steam = hasSteamIdentity();
+  const ready = steam && hasReadySteamAccount();
+  const error = steam ? steamAccountAutoSyncLastError : cloudAutoSyncLastError;
+  if (/іншому пристрої/i.test(error)) return { state: 'conflict', icon: 'fa-code-compare', label: 'Конфлікт прогресу', details: 'На іншому пристрої є новіша копія. Зачекай на узгодження з сервером.' };
+  if (navigator.onLine === false) return { state: 'offline', icon: 'fa-wifi', label: 'Немає зв’язку', details: 'Поточний прогрес лишається локально. Серверне збереження зараз недоступне.' };
+  if (steam && !ready) return { state: error ? 'error' : 'syncing', icon: error ? 'fa-triangle-exclamation' : 'fa-arrows-rotate', label: error ? 'Steam-збереження недоступне' : 'Підключаємо Steam-прогрес', details: 'Локальна копія не означає, що прогрес уже збережено на сервері.' };
+  const inFlight = steam ? steamAccountAutoSyncInFlight || steamAccountRemoteRefreshInFlight || progressManualSaveInFlight : cloudAutoSyncInFlight || progressCloudBusy;
+  if (inFlight) return { state: 'syncing', icon: 'fa-arrows-rotate', label: 'Синхронізація', details: 'Чекаємо підтвердження сервера. Вкладку можна залишити відкритою.' };
+  if (error) return { state: 'error', icon: 'fa-triangle-exclamation', label: 'Хмарне збереження очікує', details: 'Останні зміни ще не підтверджені сервером. Локальна копія залишається доступною.' };
+  const dirty = steam ? steamAccountAutoSyncDirty : cloudAutoSyncDirty;
+  if (dirty) return { state: 'pending', icon: 'fa-clock', label: 'Зміни очікують збереження', details: 'Локальний прогрес оновлено; серверна синхронізація ще попереду.' };
+  const savedAt = steam ? steamAccountAutoSyncLastAt || account?.steamAccount?.updatedAt : cloudAutoSyncLastAt || account?.cloud?.updatedAt;
+  // Old anonymous backup metadata does not prove that today's guest progress
+  // is being autosaved. Never show its historical timestamp as a current save.
+  const confirmed = steam ? ready : cloudAutoSyncStarted && isCloudProfile(account?.cloud);
+  const validSavedAt = Number.isFinite(Number(savedAt)) && Number(savedAt) > 0 && Number.isFinite(new Date(Number(savedAt)).getTime());
+  if (confirmed && validSavedAt) return { state: 'saved', icon: 'fa-cloud', label: steam ? 'Збережено у Steam-профілі' : 'Резервну копію збережено', details: `${formatSyncTime(savedAt)}${steam ? ' · сайт і Android' : ' · прив’яжи Steam для доступу на іншому пристрої'}` };
+  return { state: 'local', icon: 'fa-hard-drive', label: 'Локальний прогрес', details: localProgressSavedAt ? `${formatSyncTime(localProgressSavedAt)} · цей браузер` : 'Серверне збереження ще не підтверджене. Підключи Steam у налаштуваннях.' };
+}
+
+function renderProgressSaveStatus() {
+  const status = getProgressSaveStatus();
+  const button = document.getElementById('profileSaveStatus');
+  button?.setAttribute('data-state', status.state);
+  if (button) button.title = `${status.label}. ${status.details}`;
+  const icon = document.getElementById('profileSaveIcon');
+  if (icon) icon.className = `fa-solid ${status.icon}`;
+  const label = document.getElementById('profileSaveLabel');
+  const details = document.getElementById('profileSaveDetails');
+  if (label && label.textContent !== status.label) label.textContent = status.label;
+  if (details) details.textContent = status.details;
+}
+
+function normalizePublicRelease(value) {
+  if (!value || typeof value !== 'object' || typeof value.id !== 'string' || typeof value.version !== 'string'
+      || typeof value.buildId !== 'string' || typeof value.releasedOn !== 'string' || !/^[a-z0-9.-]{1,80}$/.test(value.id)
+      || !/^\d+\.\d+\.\d+$/.test(value.version) || !/^[a-f0-9]{64}$/.test(value.buildId)
+      || !/^\d{4}-\d{2}-\d{2}$/.test(value.releasedOn)) return null;
+  const notes = items => Array.isArray(items) ? items.slice(0, 12).filter(item => item && typeof item.title === 'string' && typeof item.description === 'string')
+    .map(item => ({ title: item.title.slice(0, 120), description: item.description.slice(0, 800), page: PAGES.includes(item.page) ? item.page : 'profile' })) : [];
+  return { id: value.id, version: value.version, buildId: value.buildId, releasedOn: value.releasedOn,
+    title: typeof value.title === 'string' ? value.title.slice(0, 160) : 'Оновлення продукту',
+    changes: notes(value.changes), previous: notes(value.previous) };
+}
+
+const APP_RELEASE = normalizePublicRelease(window.POTUZHNO_RELEASE);
+let appRemoteRelease = null;
+let appUpdateCheckState = 'idle';
+let appUpdateLastCheckAt = 0;
+let appUpdateCheckInFlight = false;
+let appUpdateDismissedBuild = '';
+
+function hasAppUpdate() {
+  return Boolean(APP_RELEASE && appRemoteRelease && APP_RELEASE.buildId !== appRemoteRelease.buildId);
+}
+
+function getAppReloadBlocker() {
+  if (isInventoryMutationBusy() || isCaseOpening || isFreeCaseOpening || targetArenaSession) return 'Спочатку заверши поточний раунд. Оновлення не перериватиме гру.';
+  if (localProgressSaveError) return 'Останні зміни не записано локально. Не перезавантажуй вкладку.';
+  if (steamAccountBootstrapPromise || progressManualSaveInFlight || progressCloudBusy || steamAccountRemoteRefreshInFlight
+      || (hasSteamIdentity() && (steamAccountAutoSyncDirty || steamAccountAutoSyncInFlight || steamAccountAutoSyncLastError))
+      || (!hasSteamIdentity() && (cloudAutoSyncDirty || cloudAutoSyncInFlight || cloudAutoSyncLastError))) return 'Спочатку дочекайся підтвердження збереження прогресу. Оновлення зараз відкладене.';
+  return '';
+}
+
+function releaseNotesMarkup(release) {
+  if (!release) return '<p class="product-dialog-note">Метадані цієї збірки недоступні. Спробуй перевірити оновлення пізніше.</p>';
+  const rows = items => items.map(item => `<article><span class="app-release-note-icon"><i class="fa-solid fa-check" aria-hidden="true"></i></span><div><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.description)}</p></div></article>`).join('');
+  return `<h4 class="app-release-section-title">${escapeHtml(release.title)}</h4>${rows(release.changes)}${release.previous.length ? `<details><summary>Раніше додали</summary>${rows(release.previous)}</details>` : ''}`;
+}
+
+function renderAppReleaseUI() {
+  const native = window.PotuzhnoMobile?.isNative === true;
+  const updated = hasAppUpdate();
+  const releaseLabel = APP_RELEASE ? `v${APP_RELEASE.version} · ${APP_RELEASE.buildId.slice(0, 8)}` : 'Версія недоступна';
+  const profileLabel = document.getElementById('profileReleaseLabel');
+  if (profileLabel) profileLabel.textContent = releaseLabel;
+  const footer = document.getElementById('footerReleaseButton');
+  if (footer) footer.textContent = `${releaseLabel} · Що нового`;
+  document.getElementById('profileReleaseUpdateDot')?.classList.toggle('hidden', !updated);
+  document.getElementById('appUpdateNotice')?.classList.toggle('hidden', !updated || native || appUpdateDismissedBuild === appRemoteRelease?.buildId);
+  const meta = document.getElementById('appReleaseMeta');
+  if (meta) meta.innerHTML = APP_RELEASE ? `<span><small>ЗАВАНТАЖЕНО ${native ? 'В ANDROID' : 'У ВКЛАДЦІ'}</small><b>v${APP_RELEASE.version}</b></span><span><small>ЗБІРКА</small><b>${APP_RELEASE.buildId.slice(0, 8)}</b></span><span><small>РЕЛІЗ</small><b>${APP_RELEASE.releasedOn.split('-').reverse().join('.')}</b></span>` : '<span>Метадані збірки не завантажилися.</span>';
+  const status = document.getElementById('appUpdateCheckStatus');
+  const state = native ? 'native' : appUpdateCheckState;
+  if (status) {
+    status.setAttribute('data-state', updated ? 'available' : state);
+    const text = native ? 'Android містить власну збірку інтерфейсу. Вебдеплой не оновлює встановлений застосунок.'
+      : appUpdateCheckState === 'checking' ? 'Перевіряємо версію на сайті…'
+      : updated ? `Доступна збірка ${appRemoteRelease.buildId.slice(0, 8)} · v${appRemoteRelease.version}.`
+      : appUpdateCheckState === 'current' ? 'Ця вкладка використовує актуальну збірку сайту.'
+      : appUpdateCheckState === 'error' ? 'Не вдалося перевірити версію. Це не означає, що оновлень немає.'
+      : 'Перевір останню версію та переглянь зміни.';
+    if (status.textContent !== text) status.textContent = text;
+  }
+  const check = document.getElementById('appUpdateCheckBtn');
+  if (check) { check.disabled = native || appUpdateCheckInFlight || !APP_RELEASE; check.textContent = appUpdateCheckInFlight ? 'Перевіряємо…' : 'Перевірити оновлення'; }
+  const reload = document.getElementById('appUpdateReloadBtn');
+  const blocker = getAppReloadBlocker();
+  if (reload) { reload.hidden = !updated || native; reload.disabled = Boolean(blocker) || appUpdateCheckInFlight; }
+  const note = document.getElementById('appUpdateSafetyNote');
+  if (note) note.textContent = blocker || 'Без автоматичного перезавантаження, очищення даних або зміни балансу.';
+}
+
+function renderAppReleaseNotes() {
+  const content = document.getElementById('appReleaseNotes');
+  if (!content) return;
+  content.innerHTML = releaseNotesMarkup(hasAppUpdate() ? appRemoteRelease : APP_RELEASE);
+}
+
+async function checkAppUpdate(manual = false) {
+  if (!APP_RELEASE || window.PotuzhnoMobile?.isNative === true || appUpdateCheckInFlight) return false;
+  if (!manual && Date.now() - appUpdateLastCheckAt < 60_000) return false;
+  appUpdateCheckInFlight = true;
+  appUpdateCheckState = 'checking';
+  appUpdateLastCheckAt = Date.now();
+  renderAppReleaseUI();
+  try {
+    const response = await fetch('/release.json', { cache: 'no-store', credentials: 'omit', signal: AbortSignal.timeout(8000) });
+    if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) throw new Error('Release unavailable');
+    const release = normalizePublicRelease(await response.json());
+    if (!release) throw new Error('Invalid release');
+    appRemoteRelease = release;
+    appUpdateCheckState = hasAppUpdate() ? 'available' : 'current';
+    renderAppReleaseNotes();
+    return true;
+  } catch {
+    appUpdateCheckState = 'error';
+    return false;
+  } finally {
+    appUpdateCheckInFlight = false;
+    renderAppReleaseUI();
+  }
+}
+
+function openAppUpdates() {
+  renderAppReleaseUI();
+  renderAppReleaseNotes();
+  openModal('appUpdatesModal');
+  void checkAppUpdate();
+}
+
+function dismissAppUpdateNotice() {
+  appUpdateDismissedBuild = appRemoteRelease?.buildId || '';
+  renderAppReleaseUI();
+}
+
+function reloadAppForUpdate() {
+  if (window.PotuzhnoMobile?.isNative === true || !hasAppUpdate()) return false;
+  const blocker = getAppReloadBlocker();
+  if (blocker || appUpdateCheckInFlight) {
+    showToast(blocker || 'Дочекайся завершення перевірки версії.', 'info');
+    renderAppReleaseUI();
+    return false;
+  }
+  window.location.reload();
+  return true;
+}
+
+function startProductStatus() {
+  renderProgressSaveStatus();
+  renderAppReleaseUI();
+  void checkAppUpdate();
+  window.addEventListener('offline', () => { renderProgressSaveStatus(); renderAppReleaseUI(); });
+  window.addEventListener('online', () => { renderProgressSaveStatus(); void checkAppUpdate(); });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) { renderProgressSaveStatus(); void checkAppUpdate(); }
+  });
+  window.setInterval(() => { if (!document.hidden) void checkAppUpdate(); }, 300_000);
+}
+
 function formatSyncTime(timestamp) {
   const time = Number(timestamp);
   if (!Number.isFinite(time) || time <= 0) return 'ще не збережено';
@@ -4554,6 +4733,8 @@ function formatSyncTime(timestamp) {
 }
 
 function setCloudBusy(busy) {
+  progressCloudBusy = busy;
+  renderProgressSaveStatus();
   ['cloudCreateBtn', 'cloudSaveBtn', 'cloudLoadBtn', 'cloudConnectBtn'].forEach(id => {
     const button = document.getElementById(id);
     if (button) button.disabled = busy;
@@ -4561,6 +4742,7 @@ function setCloudBusy(busy) {
 }
 
 function renderCloudSyncUI() {
+  renderProgressSaveStatus();
   const steamId = currentUser?.steamId || account?.steamId || '';
   const steamLinked = /^\d{17}$/.test(String(steamId));
   const steamReady = steamLinked && steamAccountReady && isSteamAccount(account?.steamAccount, steamId);
@@ -5011,6 +5193,8 @@ async function saveSteamAccount({ silent = false, keepalive = false } = {}) {
     return false;
   }
   const steamId = String(currentUser?.steamId || account?.steamId || '');
+  progressManualSaveInFlight += 1;
+  renderProgressSaveStatus();
   try {
     const body = buildSteamAccountSave();
     const data = await requestSteamAccount('save', {
@@ -5049,6 +5233,9 @@ async function saveSteamAccount({ silent = false, keepalive = false } = {}) {
     renderCloudSyncUI();
     if (!silent) showToast(error?.message || 'Не вдалося зберегти Steam-прогрес.', 'error');
     return false;
+  } finally {
+    progressManualSaveInFlight -= 1;
+    renderProgressSaveStatus();
   }
 }
 
@@ -5349,6 +5536,7 @@ function queueCloudAutoSync() {
   if (!cloudAutoSyncStarted || !account || hasSteamIdentity()) return;
   cloudAutoSyncDirty = true;
   cloudAutoSyncVersion += 1;
+  renderProgressSaveStatus();
   scheduleCloudAutoSync();
 }
 
@@ -5364,6 +5552,7 @@ async function syncCloudProfileAutomatically({ finalAttempt = false } = {}) {
   }
 
   cloudAutoSyncInFlight = true;
+  renderProgressSaveStatus();
   const snapshotVersion = cloudAutoSyncVersion;
   let synced = false;
   try {
@@ -5381,6 +5570,7 @@ async function syncCloudProfileAutomatically({ finalAttempt = false } = {}) {
     return false;
   } finally {
     cloudAutoSyncInFlight = false;
+    renderProgressSaveStatus();
     if (cloudAutoSyncPending) {
       cloudAutoSyncPending = false;
       scheduleCloudAutoSync({ urgent: finalAttempt });
@@ -5440,6 +5630,7 @@ function queueSteamAccountAutoSync() {
   if (!hasReadySteamAccount()) return;
   steamAccountAutoSyncDirty = true;
   steamAccountAutoSyncVersion += 1;
+  renderProgressSaveStatus();
   scheduleSteamAccountAutoSync();
 }
 
@@ -5450,6 +5641,7 @@ async function syncSteamAccountAutomatically({ finalAttempt = false } = {}) {
     return false;
   }
   steamAccountAutoSyncInFlight = true;
+  renderProgressSaveStatus();
   const snapshotVersion = steamAccountAutoSyncVersion;
   let synced = false;
   try {
@@ -5464,6 +5656,7 @@ async function syncSteamAccountAutomatically({ finalAttempt = false } = {}) {
     return false;
   } finally {
     steamAccountAutoSyncInFlight = false;
+    renderProgressSaveStatus();
     if (steamAccountAutoSyncPending) {
       steamAccountAutoSyncPending = false;
       scheduleSteamAccountAutoSync({ urgent: finalAttempt });
@@ -5917,14 +6110,22 @@ function renderCanvas(chancePercent, pointerAngle = 0) {
 }
 
 function saveState({ skipCloudAutoSync = false, skipSteamAutoSync = false, urgentSteamAutoSync = false } = {}) {
-  if (currentUser) {
-    if (currentUser.steamId) localStorage.setItem(STORAGE.steamId, currentUser.steamId);
-    localStorage.setItem(STORAGE.balance, String(currentUser.balance));
+  try {
+    if (currentUser) {
+      if (currentUser.steamId) localStorage.setItem(STORAGE.steamId, currentUser.steamId);
+      localStorage.setItem(STORAGE.balance, String(currentUser.balance));
+    }
+    localStorage.setItem(STORAGE.inventory, JSON.stringify(userInventory));
+    localStorage.setItem(STORAGE.started, '1');
+    if (gameState) localStorage.setItem(STORAGE.game, JSON.stringify(gameState));
+    if (account) localStorage.setItem(STORAGE.account, JSON.stringify(account));
+    localProgressSaveError = false;
+    localProgressSavedAt = Date.now();
+  } catch (error) {
+    localProgressSaveError = true;
+    renderProgressSaveStatus();
+    throw error;
   }
-  localStorage.setItem(STORAGE.inventory, JSON.stringify(userInventory));
-  localStorage.setItem(STORAGE.started, '1');
-  if (gameState) localStorage.setItem(STORAGE.game, JSON.stringify(gameState));
-  if (account) localStorage.setItem(STORAGE.account, JSON.stringify(account));
   queuePublicProfilePublish();
   if (!skipSteamAutoSync) {
     captureSteamProgressDuringBootstrap();
@@ -5932,6 +6133,7 @@ function saveState({ skipCloudAutoSync = false, skipSteamAutoSync = false, urgen
     if (urgentSteamAutoSync) scheduleSteamAccountAutoSync({ urgent: true });
   }
   if (!skipCloudAutoSync) queueCloudAutoSync();
+  renderProgressSaveStatus();
 }
 
 function beginPendingWager({ inventory = [], balance = 0 }) {
@@ -9268,48 +9470,68 @@ function renderProfileInventory() {
   bindInventoryProtection(grid);
 }
 
-function showItemDetail(itemId) {
-  const it = userInventory.find(x => String(x.id) === String(itemId));
-  if (!it) return;
-  if (!verifiedInventoryMarketPrice(it)) requestInventoryMarketPrice(it);
+function skinInspectionMarkup(it) {
   const wear = getWear(it);
   const rarity = getItemRarity(it);
   const marketPrice = verifiedInventoryMarketPrice(it);
   const sellPrice = roundPc(marketPrice * SELL_RATE);
   const isBound = it.accountBound === true;
-  const canSell = canSellInventoryItem(it);
+  const canSell = canSellInventoryItem(it) && marketPrice > 0 && !isInventoryMutationBusy();
   const cat = categorizeWeapon(it.name);
   const catLabel = { rifle: 'Гвинтівка', pistol: 'Пістолет', sniper: 'Снайперська', smg: 'ПП', heavy: 'Важка', knife: 'Ніж', gloves: 'Рукавиці', other: 'Зброя' }[cat] || 'Зброя';
-  const html = `
-  <div class="text-center">
-    ${it.exclusive ? `<div class="mb-2 inline-flex items-center gap-2 rounded-full border border-violet-500/40 bg-violet-500/15 px-3 py-1"><i class="fa-solid fa-star text-violet-300 text-xs"></i><span class="text-[10px] font-extrabold uppercase tracking-widest text-violet-200">Ексклюзив</span></div>` : ''}
-    <div class="mx-auto mb-3 flex justify-center"><img src="${escapeHtml(getSkinImageSrc(it))}" alt="" class="h-40 object-contain" data-skin-name="${escapeHtml(it.name)}" onerror="handleSkinImageError(this)"></div>
-    <p class="text-[10px] font-extrabold uppercase tracking-[.2em] text-amber-400">${catLabel} · ${escapeHtml(rarity.name)}</p>
-    <h3 class="font-heading mt-1 text-3xl font-extrabold uppercase text-white leading-none">${escapeHtml(it.name)}</h3>
-    <div class="mt-3 inline-flex items-center gap-2 flex-wrap justify-center">
-      <span class="wear-badge wear-${wear.code}">${wear.code} · ${escapeHtml(wear.name)}</span>
-      ${it.phase ? `<span class="wear-badge">${escapeHtml(it.phase)}</span>` : ''}
-      <span class="wear-badge rarity-detail-badge" style="--rarity-color:${rarity.color}"><i class="fa-solid fa-gem"></i>${escapeHtml(rarity.name)}</span>
-    </div>
-    <div class="mt-4 grid grid-cols-2 gap-3">
-      <div class="rounded-xl border border-gray-800 bg-black/20 p-3"><p class="text-[10px] font-bold uppercase tracking-wider text-gray-500">Стабільна вартість</p><p class="font-heading text-2xl font-extrabold text-amber-300">${formatCredits(marketPrice)}</p></div>
-      <div class="rounded-xl border border-gray-800 bg-black/20 p-3"><p class="text-[10px] font-bold uppercase tracking-wider text-gray-500">Продаж (90%)</p><p class="font-heading text-2xl font-extrabold text-emerald-300">${formatCredits(sellPrice)}</p></div>
-    </div>
-    <p class="mt-3 text-[10px] leading-4 text-gray-500">Фіксована ціна зі стабільного каталогу ПОТУЖНО. Вона однакова в інвентарі, апгрейдері, кейсах, Battle, Royale та контрактах і не є реальною грошовою вартістю.</p>
-    ${isBound ? `<p class="mt-3 text-[10px] text-violet-300 italic">${canSell ? 'Ексклюзивну нагороду можна продати за PC. Отримання нагороди залишиться в прогресі.' : 'Колекційний предмет не продається.'} Не можна ставити на апгрейд, у Battle, Royale чи контракт.</p>` : it.exclusive ? `<p class="mt-3 text-[10px] text-violet-300 italic">Ексклюзивний предмет · продаж за 90% стабільної вартості.</p>` : ''}
-    <div class="inventory-detail-protection">${inventoryProtectionButton(it)}<span>${it.inventoryProtected ? 'Захищено від продажу й усіх ставок' : 'Захист від випадкового продажу та ставок'}</span></div>
-    ${!canSell ? `<div class="mt-4 w-full py-3 rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-200 font-extrabold uppercase text-sm tracking-wider"><i class="fa-solid fa-lock mr-2"></i>${it.inventoryProtected ? 'Скін захищено' : 'Прив’язано до профілю'}</div>` : `<button type="button" data-detail-sell-id="${escapeHtml(String(it.id))}" class="mt-4 w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-400 text-black font-extrabold uppercase text-sm tracking-wider transition"><i class="fa-solid fa-sack-dollar mr-2"></i>Продати за ${formatCredits(sellPrice)}</button>`}
-    <button onclick="closeModal('itemDetailModal')" class="mt-3 w-full py-2.5 rounded-xl border border-gray-700 bg-black/20 hover:bg-gray-800 text-xs font-bold text-gray-300 transition">Закрити</button>
+  const source = { steam: 'Віртуальна Steam-копія', exclusive: 'Ексклюзивна нагорода', drop: 'Ігровий дроп' }[getInventorySource(it)];
+  const unavailable = it.inventoryProtected ? 'Скін захищено' : !canSellInventoryItem(it) ? 'Продаж недоступний для цього предмета' : isInventoryMutationBusy() ? 'Дочекайся завершення раунду' : 'Вартість уточнюється';
+  const color = /^#[a-f0-9]{3,8}$/i.test(rarity.color) ? rarity.color : '#d6ac50';
+  const rewardSellable = canSellInventoryItem({ ...it, inventoryProtected: false });
+  const rewardNote = isBound ? `${rewardSellable ? 'Ексклюзивну нагороду можна продати за PC; її отримання залишиться в прогресі.' : 'Цей предмет прив’язаний до профілю та не продається.'} Не можна використовувати в апгрейді, Battle, Royale чи контракті.` : '';
+  return `<div class="skin-inspect-layout" style="--inspect-rarity:${color}">
+    <section class="skin-inspect-visual" aria-label="Зображення скіна">
+      <div class="skin-inspect-stage" id="skinInspectStage" tabindex="0" aria-label="Зображення скіна; після наближення можна прокручувати"><div class="skin-inspect-image-wrap"><img src="${escapeHtml(getSkinImageSrc(it))}" alt="${escapeHtml(it.name)}" data-skin-name="${escapeHtml(it.name)}" onerror="handleSkinImageError(this)"></div></div>
+      <div class="skin-inspect-toolbar"><span><i class="fa-solid fa-cube" aria-hidden="true"></i> Прев’ю з каталогу</span><button type="button" id="skinInspectZoomBtn" onclick="toggleSkinInspectionZoom()" aria-pressed="false" aria-controls="skinInspectStage"><i class="fa-solid fa-magnifying-glass-plus" aria-hidden="true"></i><span>Наблизити</span></button></div>
+      <p class="skin-inspect-image-note">Віртуальний предмет · зображення, не інтерактивна 3D-модель</p>
+    </section>
+    <section class="skin-inspect-info">
+      <p class="skin-inspect-eyebrow">${catLabel} · ТВОЯ КОЛЕКЦІЯ</p><h3>${escapeHtml(it.name)}</h3>
+      <div class="skin-inspect-badges"><span class="wear-badge">${escapeHtml(wear.code)} · ${escapeHtml(wear.name)}</span>${it.phase ? `<span class="wear-badge">${escapeHtml(it.phase)}</span>` : ''}<span class="wear-badge rarity-detail-badge" style="--rarity-color:${color}"><i class="fa-solid fa-gem" aria-hidden="true"></i>${escapeHtml(rarity.name)}</span></div>
+      <p class="skin-inspect-source"><i class="fa-solid ${it.exclusive ? 'fa-star' : 'fa-box-open'}" aria-hidden="true"></i>${source}</p>
+      <div class="skin-inspect-prices"><div><span>Стабільна вартість</span><strong>${marketPrice > 0 ? formatCredits(marketPrice) : 'Уточнюється'}</strong></div><div><span>Продаж · 90%</span><strong>${marketPrice > 0 ? formatCredits(sellPrice) : 'Уточнюється'}</strong></div></div>
+      <p class="product-dialog-note">Фіксована ігрова оцінка. PC не є грошима чи ціною Steam.</p>${rewardNote ? `<p class="skin-inspect-reward-note">${rewardNote}</p>` : ''}
+      <div class="inventory-detail-protection">${inventoryProtectionButton(it)}<span>${it.inventoryProtected ? 'Захищено від продажу й усіх ставок' : 'Захист від випадкового продажу та ставок'}</span></div>
+      ${canSell ? `<button type="button" data-detail-sell-id="${escapeHtml(String(it.id))}" class="product-action-primary skin-inspect-sell"><i class="fa-solid fa-sack-dollar" aria-hidden="true"></i>Продати за ${formatCredits(sellPrice)}</button><small class="skin-inspect-confirm-note">Спочатку покажемо підтвердження. Сам перегляд нічого не продає.</small>` : `<div class="skin-inspect-unavailable"><i class="fa-solid fa-lock" aria-hidden="true"></i>${unavailable}</div>`}
+      <button type="button" onclick="closeModal('itemDetailModal')" class="product-action-secondary product-dialog-done">До інвентарю</button>
+    </section>
   </div>`;
+}
+
+function toggleSkinInspectionZoom() {
+  const stage = document.getElementById('skinInspectStage');
+  const button = document.getElementById('skinInspectZoomBtn');
+  if (!stage || !button) return;
+  const zoomed = stage.classList.toggle('is-zoomed');
+  button.setAttribute('aria-pressed', String(zoomed));
+  const label = button.querySelector('span');
+  if (label) label.textContent = zoomed ? 'Зменшити' : 'Наблизити';
+  const icon = button.querySelector('i');
+  if (icon) icon.className = `fa-solid ${zoomed ? 'fa-magnifying-glass-minus' : 'fa-magnifying-glass-plus'}`;
+  stage.scrollTop = zoomed ? stage.clientHeight * .375 : 0;
+  stage.scrollLeft = zoomed ? stage.clientWidth * .375 : 0;
+}
+
+function showItemDetail(itemId) {
+  const it = userInventory.find(x => String(x.id) === String(itemId));
+  if (!it) return;
+  if (!verifiedInventoryMarketPrice(it)) requestInventoryMarketPrice(it);
   const container = document.getElementById('itemDetailContent');
   if (container) {
-    container.innerHTML = html;
+    container.innerHTML = skinInspectionMarkup(it);
     container.querySelector('[data-detail-sell-id]')?.addEventListener('click', () => {
       requestInventorySale(it.id, true, 'itemDetailModal');
     });
     bindInventoryProtection(container);
   }
   openModal('itemDetailModal');
+  const panel = document.getElementById('itemDetailModal')?.querySelector('.skin-inspect-panel');
+  if (panel) panel.scrollTop = 0;
 }
 
 function sellInventoryItem(itemId, fromProfile = false) {
@@ -14391,6 +14613,7 @@ function renderShopGrid(skins) {
 window.addEventListener('DOMContentLoaded', () => {
   initCanvas();
   loadState();
+  startProductStatus();
   void loadRuntimeContent();
   captureReferralFromUrl();
   void enableHalloweenAdminPreview();
@@ -14472,6 +14695,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Master interval timer for reset texts, daily roll, gift and free case cooldowns
   setInterval(() => {
+    if (document.getElementById('appUpdatesModal')?.classList.contains('flex')) renderAppReleaseUI();
     if (!gameState) return;
     const halloweenDate = getHalloweenEventStatus().date;
     if (halloweenEventDateKey !== halloweenDate) {

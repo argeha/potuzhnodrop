@@ -32,13 +32,13 @@
 <link rel="preconnect" href="https://community.akamai.steamstatic.com">
 <link rel="preconnect" href="https://avatars.steamstatic.com">
 <!-- Tailwind зібраний локально: інтерфейс не залежить від зовнішнього CDN. -->
-<link rel="stylesheet" href="/css/tailwind.css?v=7.9.0-result-receipts.1">
+<link rel="stylesheet" href="/css/tailwind.css?v=7.9.0-product-polish.1">
 <!-- Font Awesome -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Teko:wght@600;700&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-<link rel="stylesheet" href="/css/style.css?v=7.9.0-result-receipts.1">
+<link rel="stylesheet" href="/css/style.css?v=7.9.0-product-polish.1">
 </head>
 <body class="pd-rebrand min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -142,6 +142,7 @@
 </div>
 </section>
 <section id="runtimeAnnouncement" class="runtime-announcement hidden" aria-live="polite"></section>
+<section id="appUpdateNotice" class="app-update-notice hidden" aria-label="Оновлення сайту"><span><i class="fa-solid fa-circle-arrow-up" aria-hidden="true"></i><b>Доступне оновлення</b><small>Можна переглянути зміни та оновити після раунду.</small></span><button type="button" onclick="openAppUpdates()">Переглянути</button><button type="button" class="app-update-dismiss" onclick="dismissAppUpdateNotice()" aria-label="Приховати сповіщення про оновлення"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></section>
 
 <!-- COMMAND HUB -->
 <section data-page="hub" class="page-view command-hub-page hidden space-y-5">
@@ -523,6 +524,7 @@
 <div class="profile-wallet"><span>ІГРОВИЙ БАЛАНС</span><strong id="profileBalance">0 PC</strong><button onclick="openModal('topupModal')" title="Заробити віртуальні Potuzhno Coin" aria-label="Заробити віртуальні Potuzhno Coin"><i class="fa-solid fa-plus"></i></button></div>
 </div>
 <div class="profile-command-progress"><div class="profile-progress-title"><span>ДОСВІД <span id="xpMultiplierLabel" class="text-amber-300"></span></span><strong id="xpText">0 / 1 200 XP</strong></div><div class="profile-progress-track"><div id="xpBar" style="width:0%"></div></div></div>
+<div class="profile-service-bar"><button type="button" class="progress-save-status" id="profileSaveStatus" data-state="local" onclick="openModal('accountModal')" aria-label="Стан збереження прогресу"><i class="fa-solid fa-hard-drive" id="profileSaveIcon" aria-hidden="true"></i><span><strong id="profileSaveLabel" role="status" aria-live="polite">Локальний прогрес</strong><small id="profileSaveDetails">Перевіряємо стан збереження…</small></span><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button><button type="button" class="profile-release-button" onclick="openAppUpdates()"><i class="fa-solid fa-code-branch" aria-hidden="true"></i><span id="profileReleaseLabel">Версія сайту</span><span id="profileReleaseUpdateDot" class="hidden" aria-label="Доступне оновлення"></span><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button></div>
 <div class="profile-quick-stats">
 <div><p id="statRounds">0</p><span>Роллів</span></div><div><p id="statWinRate">0%</p><span>Виграшів</span></div><div><p id="statStreak">0</p><span>Серія</span></div><div><p id="statBestValue">0</p><span>Найкращий PC</span></div>
 </div>
@@ -641,6 +643,7 @@
 </main>
 
 <footer class="border-t border-brand-border py-5 px-4 text-center">
+<button type="button" class="footer-release-button" id="footerReleaseButton" onclick="openAppUpdates()">Версія та оновлення</button>
 <p id="brandFooterText" class="text-xs text-gray-500">ПОТУЖНО DROP 7.9.0 — цифрова CS2-колекція без реальних грошей, скінів або призів. PC — внутрішні кредити: їхня ціна визначається стабільним каталогом ПОТУЖНО, однакова в усіх режимах і не прив’язана до Steam чи реальних грошей. PC не можна вивести або обміняти. <a href="#about" onclick="showPage('about');return false" class="text-amber-400 hover:text-amber-300">Правила й безпека</a> · <a href="privacy.html" class="text-amber-400 hover:text-amber-300">Політика приватності</a> · <a href="account-delete.html" class="text-amber-400 hover:text-amber-300">Видалення акаунта</a></p>
 </footer>
 
@@ -772,7 +775,9 @@
   </div>
 </div>
 
-<div id="itemDetailModal" class="modal-backdrop fixed inset-0 z-[95] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4"><div class="glass-panel rounded-3xl max-w-md w-full p-6 border border-amber-500/35 relative"><button onclick="closeModal('itemDetailModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button><div id="itemDetailContent"></div></div></div>
+<div id="itemDetailModal" class="modal-backdrop fixed inset-0 z-[95] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4"><div class="glass-panel skin-inspect-panel"><button type="button" onclick="closeModal('itemDetailModal')" class="product-dialog-close" aria-label="Закрити прев’ю скіна"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button><div id="itemDetailContent"></div></div></div>
+
+<div id="appUpdatesModal" class="modal-backdrop fixed inset-0 z-[105] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4"><div class="glass-panel app-updates-panel"><button type="button" onclick="closeModal('appUpdatesModal')" class="product-dialog-close" aria-label="Закрити оновлення"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button><header><p>ПОТУЖНО DROP · ОНОВЛЕННЯ</p><h3>Що нового</h3><span>Твій інтерфейс і його реальна збірка.</span></header><div id="appReleaseMeta" class="app-release-meta"></div><div id="appUpdateCheckStatus" class="app-update-check-status" role="status" aria-live="polite"></div><div class="app-update-actions"><button type="button" class="product-action-primary" id="appUpdateReloadBtn" onclick="reloadAppForUpdate()" hidden>Завантажити оновлення</button><button type="button" class="product-action-secondary" id="appUpdateCheckBtn" onclick="checkAppUpdate(true)">Перевірити оновлення</button></div><p id="appUpdateSafetyNote" class="product-dialog-note"></p><div id="appReleaseNotes" class="app-release-notes"></div><button type="button" class="product-action-secondary product-dialog-done" onclick="closeModal('appUpdatesModal')">Зрозуміло</button></div></div>
 
 <div id="collectionRewardModal" class="modal-backdrop fixed inset-0 z-[95] bg-black/90 backdrop-blur-md hidden items-center justify-center p-4">
 <div class="glass-panel rounded-3xl max-w-md w-full p-8 border border-violet-500/40 relative text-center">
@@ -832,6 +837,7 @@
 
 <script src="/js/mobile-config.js" defer></script>
 <script src="/js/mobile.js?v=1" defer></script>
-<script src="/js/app.js?v=7.9.0-result-receipts.1" defer></script>
+<script src="/js/release.js?v=7.9.0-product-polish.1" defer></script>
+<script src="/js/app.js?v=7.9.0-product-polish.1" defer></script>
 </body>
 </html>

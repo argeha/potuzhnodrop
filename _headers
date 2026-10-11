@@ -8,6 +8,9 @@
 /
   Cache-Control: public, max-age=0, must-revalidate
 
+/release.json
+  Cache-Control: no-store
+
 /css/*
   Cache-Control: public, max-age=31536000, immutable
 
