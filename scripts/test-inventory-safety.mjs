@@ -5,6 +5,7 @@ import vm from 'node:vm';
 // Disposable fixtures, never a player's save, inventory or online transaction.
 const source = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+const styles = readFileSync(new URL('../css/style.css', import.meta.url), 'utf8');
 const section = (from, to) => {
   const start = source.indexOf(from), end = source.indexOf(to, start);
   assert.ok(start >= 0 && end > start, `Missing production section: ${from}`);
@@ -271,6 +272,11 @@ ctx.renderInventorySelection(); assert.ok(element('inventorySelectionSummary').t
 assert.ok(html.includes('onclick="startInventoryBulkSale()"'), 'The upgrader inventory provides an explicit route to bulk sale');
 assert.ok(html.includes('>Продати кілька</button>'));
 assert.ok(html.indexOf('id="inventorySelectionBar"') > html.indexOf('id="profileInventoryGrid"'), 'The sticky sale bar follows inventory cards');
+assert.ok(source.includes('${inventorySelectionMode ? `<label class="inventory-select-check"><input type="checkbox"'), 'Visual checkbox polish must not change when selection controls appear or replace native inputs');
+assert.match(styles, /\.inventory-select-check\{[^}]*width:42px;height:42px/, 'The compact visual keeps its larger touch target');
+assert.match(styles, /\.inventory-select-check input:checked\{[^}]*background:url\(/, 'Selected items show a crisp custom checkmark');
+assert.match(styles, /\.inventory-select-check input:focus-visible/, 'Keyboard selection retains its visible focus outline');
+assert.match(styles, /@media\(forced-colors:active\)\{[^}]*\.inventory-select-check input:checked\{appearance:auto/, 'High-contrast mode keeps native checkbox rendering');
 ctx.verifiedInventoryMarketPrice = originalQuote;
 
 // One card per finish, separate phases, exact supported wear and target price.
