@@ -178,6 +178,33 @@ context.selectTargetItem({ name: 'AK-47 | Crossfade', img: 'test-skin.png', pric
 assert.equal(element('preset2x').classList.contains('active'), false, 'A manual target must not leave an old multiplier highlighted');
 assert.equal(context.selectedTargetSkin.price, 42.5);
 
+// Render inventory fixtures without touching the player's inventory or credits.
+const inventoryContext = vm.createContext({
+  document: { getElementById: element },
+  renderProfileInventoryCategoryChips() {}, renderProfileInventorySelects() {}, renderProfileInventoryStats() {},
+  userInventory: [{ id: 'expensive', name: 'AWP | Gungnir', price: 7000 }, { id: 'bound', name: 'FAMAS | Half Sleeve', price: 6.5, accountBound: true }],
+  getFilteredProfileInventory: () => inventoryContext.userInventory,
+  getShowcaseSelection: () => [],
+  getWear: () => ({ code: 'FT' }), getItemRarity: () => ({ color: '#eb4b4b', name: 'Covert' }),
+  verifiedInventoryMarketPrice: skin => skin.price,
+  roundPc: context.roundPc, SELL_RATE: 0.9,
+  cleanText: value => value.trim(), getInventorySource: () => 'drop',
+  escapeHtml: value => String(value), getSkinImageSrc: () => 'test-skin.png', getSkinKey: skin => skin.name,
+  formatCredits: value => `${Number(value).toLocaleString('en-US', { maximumFractionDigits: 2 })} PC`
+});
+element('profileInventoryGrid').querySelectorAll = () => [];
+vm.runInContext(extract('function rarityStripMarkup(', 'function priceWithWear('), inventoryContext);
+vm.runInContext(extract('function renderProfileInventory()', 'function showItemDetail('), inventoryContext);
+inventoryContext.renderProfileInventory();
+const inventoryMarkup = element('profileInventoryGrid').innerHTML;
+assert.equal((inventoryMarkup.match(/<article /g) || []).length, 2);
+assert.equal((inventoryMarkup.match(/<\/div><\/div>\s*<div class="profile-inv-rarity"/g) || []).length, 2,
+  'Rarity strips must be card children, not extra items in the action row');
+assert.ok(inventoryMarkup.includes('title="7,000 PC"'), 'Keep the complete expensive-skin price available');
+assert.ok(!inventoryMarkup.includes('data-profile-sell="bound"'), 'Bound skins stay unsellable');
+assert.ok(css.includes('.profile-inv-card-footer{display:grid;width:100%;min-width:0;'));
+assert.ok(css.includes('@container inventory-card (max-width:157px)'), 'Narrow card footers must stack instead of clipping controls');
+
 // Guard the chosen concept: fixes must not quietly remove its core sections.
 for (const id of ['hubLevelRing', 'hubSignalSeason', 'hubPulseStats', 'hubDailyFocus', 'hubCollectionPreview', 'steamNudge', 'caseDetailsMetrics', 'caseDetailsCollection', 'caseDetailsGrid']) {
   assert.equal(html.split(`id="${id}"`).length - 1, 1, `Preserve concept element: ${id}`);
@@ -194,4 +221,4 @@ assert.ok(hub.includes('renderSignalSeasonHub();'));
 assert.ok(extract('function renderCaseCatalog()', 'function renderCaseButtons()').includes('case-catalog-badge'));
 assert.ok(css.includes('height:596px!important'), 'Preserve original upgrader deck proportions');
 assert.ok(css.includes('.upg-wheel-box{width:230px;height:230px;'), 'Preserve original desktop wheel');
-console.log('Concept-preserving regressions passed: saved tasks, balances, ticket flow, catalogue loading, multiplier state and original layout.');
+console.log('Concept-preserving regressions passed: saved tasks, balances, ticket flow, catalogue loading, multiplier state, inventory footers and original layout.');

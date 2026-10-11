@@ -8768,11 +8768,12 @@ function renderProfileInventory() {
         <img src="${escapeHtml(getSkinImageSrc(s))}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" loading="lazy" onerror="handleSkinImageError(this)">
         <div class="profile-inv-copy"><span>${escapeHtml(weapon)}</span><p class="inv-name" title="${escapeHtml(s.name)}">${escapeHtml(skinName)}</p></div>
       </button>
-      <div class="profile-inv-card-footer"><p class="inv-price"><i class="fa-solid fa-coins"></i>${formatCredits(marketPrice)}</p><div class="inv-actions">
+      <div class="profile-inv-card-footer"><p class="inv-price" title="${formatCredits(marketPrice)}"><i class="fa-solid fa-coins"></i>${formatCredits(marketPrice)}</p><div class="inv-actions">
         ${isBound ? '<span class="info-btn text-violet-300 border-violet-500/40" title="Прив’язано до профілю"><i class="fa-solid fa-lock"></i></span>' : `<button class="sell-btn" data-profile-sell="${escapeHtml(String(s.id))}" title="Продати за ${formatCredits(sellPrice)}"><i class="fa-solid fa-sack-dollar"></i><span>Продати</span></button>`}
         <button class="info-btn ${isShowcased ? 'text-amber-300 border-amber-400/60' : ''}" data-profile-showcase="${escapeHtml(String(s.id))}" title="${isShowcased ? 'Прибрати з вітрини' : 'Додати на вітрину'}"><i class="${isShowcased ? 'fa-solid' : 'fa-regular'} fa-star"></i></button>
         <button class="info-btn" data-profile-info="${escapeHtml(String(s.id))}" title="Деталі"><i class="fa-solid fa-circle-info"></i></button>
-      </div>${rarityStripMarkup(rarity, 'profile-inv-rarity')}</div>
+      </div></div>
+      ${rarityStripMarkup(rarity, 'profile-inv-rarity')}
     </article>`;
   }).join('');
 
