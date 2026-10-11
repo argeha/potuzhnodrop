@@ -4,6 +4,7 @@ import vm from 'node:vm';
 
 const source = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+const css = readFileSync(new URL('../css/style.css', import.meta.url), 'utf8');
 const extract = (from, to) => {
   const start = source.indexOf(from);
   const end = source.indexOf(to, start);
@@ -18,7 +19,11 @@ const element = id => {
     elements.set(id, {
       id, attributes: {}, tabIndex: 0,
       setAttribute(name, value) { this.attributes[name] = value; },
-      classList: { add: name => classes.add(name), toggle(name, value) { value ? classes.add(name) : classes.delete(name); }, contains: name => classes.has(name) },
+      classList: {
+        add: name => classes.add(name), remove: name => classes.delete(name),
+        toggle(name, value = !classes.has(name)) { value ? classes.add(name) : classes.delete(name); return value; },
+        contains: name => classes.has(name)
+      },
       focus() { context.focusedId = id; }
     });
   }
@@ -32,7 +37,7 @@ const context = vm.createContext({
   getPlayerLevel: () => context.playerLevel,
   ensureDailyState: () => {},
   updateTaskRewardSignal: () => { context.signalUpdates++; },
-  document: { getElementById: element, querySelectorAll: () => [] },
+  document: { getElementById: element, querySelectorAll: selector => selector === '.upg-preset-btn' ? [element('preset2x')] : [] },
   getCaseCost: () => context.caseCost,
   getCaseTicketCount: () => context.tickets,
   getVisibleCaseEntries: () => [],
@@ -43,6 +48,14 @@ const context = vm.createContext({
   setCaseTicketMode: value => { context.ticketMode = value; },
   openPowerCase: async id => { context.currentActiveCaseId = id; element('caseReelModal').classList.add('flex'); },
   openModal: id => { context.openedModal = id; },
+  closeModal: id => { context.closedModal = id; },
+  showToast: message => { context.toast = message; },
+  getSkinByKey: () => ({ name: 'AWP | Atheris', img: 'test-skin.png', price: 12 }),
+  getSkinKey: skin => skin.name,
+  marketReadyCatalogSkin: skin => skin,
+  getInputVal: () => 3.5,
+  setImageSource: () => {},
+  recalculateUpgrade: () => {},
   roundPc: value => Math.round(value * 100) / 100,
   currentUser: { balance: 4.01 },
   playerLevel: 2, caseCost: 5.08, tickets: 0, signalUpdates: 0
@@ -51,7 +64,9 @@ vm.runInContext(extract('const TASK_POOL = [', 'const WEEKLY_TASK_POOL = ['), co
 vm.runInContext(extract('function createDefaultDaily()', 'function createDefaultWeekly()'), context);
 vm.runInContext(extract('function getCaseAvailability(', 'async function openCatalogCase('), context);
 vm.runInContext(extract('async function openCatalogCase(', 'function renderCaseButtons()'), context);
-vm.runInContext(extract('function setCaseDetailsTab(', 'function updateCaseDetailsAction('), context);
+vm.runInContext(extract('function toggleMobileMenu()', 'const modalReturnFocus ='), context);
+vm.runInContext(extract('function applySuggestion(', 'function chainUpgradeWonSkin('), context);
+vm.runInContext(extract('function selectTargetItem(', 'function addToMulti('), context);
 
 const resetDaily = () => {
   context.gameState = { daily: context.createDefaultDaily(), stats: { rounds: 0, cases: 0 }, allTime: { rounds: 0, cases: 0 } };
@@ -109,6 +124,7 @@ context.caseCost = 5.08;
 assert.equal(context.getCaseAvailability('farm').balance, 0);
 await context.openCatalogCase('farm');
 assert.equal(context.openedModal, 'topupModal');
+assert.equal(context.toast, 'Для цього кейсу бракує 5.08 PC');
 
 context.currentPage = 'case';
 context.currentCaseCategory = 'all';
@@ -128,21 +144,54 @@ context.renderCaseCatalog();
 await Promise.resolve();
 assert.ok(element('casesCatalogGrid').innerHTML.includes('Спробувати ще раз'), 'Failed catalogue load must offer a retry');
 
-context.setCaseDetailsTab('stats');
-assert.equal(element('caseTabStats').attributes['aria-selected'], 'true');
-assert.equal(element('caseTabStats').tabIndex, 0);
-assert.equal(element('caseTabSkins').tabIndex, -1);
-assert.equal(element('casePanelSkins').classList.contains('hidden'), true);
-assert.equal(element('casePanelStats').classList.contains('hidden'), false);
-context.handleCaseDetailsTabKey({ target: { id: 'caseTabCollection' }, key: 'ArrowRight', preventDefault() {} });
-assert.equal(context.focusedId, 'caseTabSkins');
-context.handleCaseDetailsTabKey({ target: { id: 'caseTabSkins' }, key: 'End', preventDefault() {} });
-assert.equal(context.focusedId, 'caseTabCollection');
-assert.equal(element('caseTabCollection').attributes['aria-selected'], 'true');
+context.completeSkinCatalogReady = true;
+context.getVisibleCaseEntries = () => [['farm', { name: 'Farm Rush', category: 'budget', desc: 'Fixture case' }]];
+context.getCaseMetrics = () => ({ count: 1 });
+context.getCaseCollectionProgress = () => ({ total: 5, count: 0, claimed: false });
+context.getCaseWishlistMatches = () => [];
+context.createCaseArtwork = () => '<svg></svg>';
+context.escapeHtml = value => String(value);
+context.renderCaseCatalog();
+const openTag = element('casesCatalogGrid').innerHTML.match(/<button[^>]+class="case-catalog-open"[^>]*>/)[0];
+assert.ok(!openTag.includes('disabled'), 'Keep the original usable gold action; explain shortfall on click');
+assert.ok(openTag.includes('Farm Rush: Бракує 5.08 PC'));
+assert.ok(element('casesCatalogGrid').innerHTML.includes('case-catalog-badge'));
+assert.ok(element('casesCatalogGrid').innerHTML.includes('fa-box-open"></i> Відкрити'));
+context.caseCost = 0;
+context.renderCaseCatalog();
+const unavailableTag = element('casesCatalogGrid').innerHTML.match(/<button[^>]+class="case-catalog-open"[^>]*>/)[0];
+assert.ok(unavailableTag.includes('disabled'));
+assert.ok(unavailableTag.includes('Ціна недоступна'));
 
-for (const id of ['caseTabSkins', 'caseTabStats', 'caseTabCollection', 'casePanelSkins', 'casePanelStats', 'casePanelCollection']) {
-  assert.equal(html.split(`id="${id}"`).length - 1, 1, `Exactly one accessible element: ${id}`);
+element('mobileMenu').classList.add('hidden');
+context.toggleMobileMenu();
+assert.equal(element('menuToggle').attributes['aria-expanded'], 'true');
+context.toggleMobileMenu();
+assert.equal(element('menuToggle').attributes['aria-expanded'], 'false');
+
+element('preset2x').classList.add('active');
+context.applySuggestion('AWP | Atheris');
+assert.equal(element('preset2x').classList.contains('active'), false, 'A quick target must not leave an old multiplier highlighted');
+assert.equal(context.selectedTargetSkin.price, 12);
+element('preset2x').classList.add('active');
+context.selectTargetItem({ name: 'AK-47 | Crossfade', img: 'test-skin.png', price: 42.5 });
+assert.equal(element('preset2x').classList.contains('active'), false, 'A manual target must not leave an old multiplier highlighted');
+assert.equal(context.selectedTargetSkin.price, 42.5);
+
+// Guard the chosen concept: fixes must not quietly remove its core sections.
+for (const id of ['hubLevelRing', 'hubSignalSeason', 'hubPulseStats', 'hubDailyFocus', 'hubCollectionPreview', 'steamNudge', 'caseDetailsMetrics', 'caseDetailsCollection', 'caseDetailsGrid']) {
+  assert.equal(html.split(`id="${id}"`).length - 1, 1, `Preserve concept element: ${id}`);
 }
-assert.ok(!html.includes('id="steamNudge"'));
-assert.ok(!extract('function renderCaseCatalog()', 'function renderCaseButtons()').includes('case-catalog-badge'));
-console.log('Product UX regressions passed: daily tasks, balances, ticket flow, cached/failed catalogue loads and accessible tabs.');
+assert.ok(html.includes('class="command-hub-level-orbit"'));
+assert.ok(!html.includes('case-details-tabs'), 'Do not replace the original contents layout');
+assert.ok(!html.includes('case-balance-hint'), 'Do not add a new catalogue layout');
+assert.deepEqual(Array.from(html.matchAll(/data-nav="([^"]+)"/g), match => match[1]),
+  ['hub', 'upgrader', 'case', 'battle', 'royale', 'contract', 'tasks', 'profile', 'about']);
+const hub = extract('function renderCommandHub()', 'function getSignalCampaignProgress()');
+for (const label of ['Баланс', 'Вартість колекції', 'Серія', 'Дублі']) assert.ok(hub.includes(`label: '${label}'`));
+assert.ok(hub.includes('command-hub-collection-progress'));
+assert.ok(hub.includes('renderSignalSeasonHub();'));
+assert.ok(extract('function renderCaseCatalog()', 'function renderCaseButtons()').includes('case-catalog-badge'));
+assert.ok(css.includes('height:596px!important'), 'Preserve original upgrader deck proportions');
+assert.ok(css.includes('.upg-wheel-box{width:230px;height:230px;'), 'Preserve original desktop wheel');
+console.log('Concept-preserving regressions passed: saved tasks, balances, ticket flow, catalogue loading, multiplier state and original layout.');

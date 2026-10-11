@@ -4013,6 +4013,7 @@ function updateAccountUI() {
   renderCloudSyncUI();
   renderFairUI();
   renderSteamProfileCard();
+  renderSteamNudge();
   renderLegendProfile();
 }
 
@@ -6002,7 +6003,6 @@ function updateBalanceUI() {
     const upgraderBalance = document.getElementById('upgraderBalance');
     if (upgraderBalance) upgraderBalance.textContent = formatCredits(currentUser.balance);
     if (currentPage === 'case') renderCaseCatalog();
-    if (document.getElementById('caseDetailsModal')?.classList.contains('flex')) updateCaseDetailsAction();
   }
 }
 
@@ -6648,15 +6648,12 @@ function renderCommunityFeed(events) {
   const feed = document.getElementById('liveFeed');
   if (!feed || !Array.isArray(events)) return;
   const key = events.map(event => event?.id || '').join('|');
-  if (key === communityFeedKey) {
-    updateCommunityStripVisibility();
-    return;
-  }
+  if (key === communityFeedKey) return;
   communityFeedKey = key;
   feed.replaceChildren();
   const validEvents = events.filter(event => event?.skin?.name && event?.name);
   if (!validEvents.length) {
-    updateCommunityStripVisibility();
+    feed.innerHTML = '<p class="px-2 text-[11px] font-bold text-gray-500">Поки тихо — відкрий кейс першим.</p>';
     return;
   }
   [...validEvents].reverse().forEach(event => {
@@ -7088,6 +7085,8 @@ function renderCommandHub() {
     return { task, current, done: current >= task.goal, claimed: claimed.has(task.id), percent: task.goal ? Math.round((current / task.goal) * 100) : 0 };
   }).filter(entry => !entry.claimed).sort((left, right) => Number(right.done) - Number(left.done) || right.percent - left.percent).slice(0, 3);
   const pendingClaims = openTasks.filter(entry => entry.done).length;
+  const duplicateCount = [...getInventoryDuplicateCounts().values()].reduce((sum, count) => sum + Math.max(0, count - 1), 0);
+  const completedCollections = COLLECTION_DEFINITIONS.filter(collection => getCollectionProgress(collection).complete).length;
 
   const greeting = document.getElementById('hubGreeting');
   if (greeting) greeting.textContent = pendingClaims
@@ -7102,15 +7101,17 @@ function renderCommandHub() {
   const ring = document.getElementById('hubLevelRing');
   if (ring) ring.style.setProperty('--hub-progress', `${progress.percent}%`);
 
+  renderNewcomerGuide();
+
   const pulse = document.getElementById('hubPulseStats');
   if (pulse) pulse.innerHTML = [
     { icon: 'fa-coins', label: 'Баланс', value: formatCredits(currentUser?.balance || 0), accent: 'amber' },
-    { icon: 'fa-gem', label: 'Вартість колекції', value: formatCredits(collectionValue), accent: 'cyan' }
+    { icon: 'fa-gem', label: 'Вартість колекції', value: formatCredits(collectionValue), accent: 'cyan' },
+    { icon: 'fa-fire', label: 'Серія', value: `${Math.max(0, Number(gameState.dailyStreak?.current) || 0)} дн.`, accent: 'orange' },
+    { icon: 'fa-copy', label: 'Дублі', value: duplicateCount ? `×${duplicateCount}` : '—', accent: 'violet' }
   ].map(stat => `<div class="command-hub-pulse-card is-${stat.accent}"><i class="fa-solid ${stat.icon}"></i><span>${stat.label}</span><strong>${stat.value}</strong></div>`).join('');
 
   const focus = document.getElementById('hubDailyFocus');
-  const focusTitle = document.getElementById('hubFocusTitle');
-  if (focusTitle) focusTitle.textContent = gameState.daily.taskTier === 'starter' ? 'Перші кроки' : 'Сьогодні';
   if (focus) {
     focus.innerHTML = !tasksEnabled
       ? '<div class="command-hub-empty"><i class="fa-solid fa-eye-slash"></i><strong>Завдання тимчасово приховано</strong><span>Адміністрація готує наступну добірку цілей.</span></div>'
@@ -7128,10 +7129,16 @@ function renderCommandHub() {
   const collection = document.getElementById('hubCollectionPreview');
   if (collection) {
     const highlights = [...userInventory].sort((left, right) => verifiedInventoryMarketPrice(right) - verifiedInventoryMarketPrice(left)).slice(0, 3);
-    collection.innerHTML = `<div class="command-hub-showcase">${highlights.length ? highlights.map(item => `<button type="button" data-hub-skin="${escapeHtml(String(item.id))}" title="Деталі: ${escapeHtml(item.name)}"><img src="${escapeHtml(getSkinImageSrc(item))}" alt="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><span>${escapeHtml(item.name)}</span><small>${formatCredits(verifiedInventoryMarketPrice(item))}</small></button>`).join('') : '<div class="command-hub-empty"><i class="fa-solid fa-box-open"></i><strong>Інвентар ще порожній</strong><span>Перший предмет з’явиться тут.</span></div>'}</div>`;
+    const collectionRows = COLLECTION_DEFINITIONS.map(definition => {
+      const state = getCollectionProgress(definition);
+      const percent = state.total ? Math.round((state.count / state.total) * 100) : 0;
+      return `<div class="command-hub-collection-progress"><span>${escapeHtml(definition.title)}</span><strong>${state.count}/${state.total}</strong><i><b style="width:${percent}%"></b></i></div>`;
+    }).join('');
+    collection.innerHTML = `<div class="command-hub-showcase">${highlights.length ? highlights.map(item => `<button type="button" data-hub-skin="${escapeHtml(String(item.id))}" title="Деталі: ${escapeHtml(item.name)}"><img src="${escapeHtml(getSkinImageSrc(item))}" alt="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><span>${escapeHtml(item.name)}</span><small>${formatCredits(verifiedInventoryMarketPrice(item))}</small></button>`).join('') : '<div class="command-hub-empty"><i class="fa-solid fa-box-open"></i><strong>Інвентар ще порожній</strong><span>Перший предмет з’явиться тут.</span></div>'}</div><div class="command-hub-collection-summary"><span>Завершено колекцій</span><strong>${completedCollections} / ${COLLECTION_DEFINITIONS.length}</strong></div><div class="command-hub-collection-list">${collectionRows}</div>`;
     collection.querySelectorAll('[data-hub-skin]').forEach(button => button.addEventListener('click', () => showItemDetail(button.dataset.hubSkin)));
   }
   renderRuntimePromos();
+  renderSignalSeasonHub();
 }
 
 function getSignalCampaignProgress() {
@@ -7899,6 +7906,24 @@ function acceptRiskNotice() {
   el?.classList.add('hidden');
   el?.classList.remove('flex');
   unlockGameMusic();
+  // Steam-login suggestions appear only after the safety notice is acknowledged.
+  setTimeout(() => {
+    renderSteamNudge();
+  }, 250);
+}
+
+function renderSteamNudge() {
+  const nudge = document.getElementById('steamNudge');
+  if (!nudge) return;
+  const shouldShow = localStorage.getItem(STORAGE.consent) === 'accepted'
+    && !currentUser?.steamId
+    && localStorage.getItem(STORAGE.steamNudge) !== 'dismissed';
+  nudge.classList.toggle('hidden', !shouldShow);
+}
+
+function dismissSteamNudge() {
+  localStorage.setItem(STORAGE.steamNudge, 'dismissed');
+  renderSteamNudge();
 }
 
 function toggleMobileMenu() {
@@ -8987,6 +9012,7 @@ function selectTargetItem(it) {
     return;
   }
   selectedTargetSkin = it;
+  document.querySelectorAll('.upg-preset-btn').forEach(button => button.classList.remove('active'));
   setImageSource(document.getElementById('targetSkinImg'), it.img, it.name, getSkinKey(it));
   const nameEl = document.getElementById('targetSkinName');
   if (nameEl) nameEl.textContent = it.name;
@@ -9339,6 +9365,7 @@ function applySuggestion(skinKey) {
     return;
   }
   selectedTargetSkin = marketSkin;
+  document.querySelectorAll('.upg-preset-btn').forEach(button => button.classList.remove('active'));
   const tei = document.getElementById('targetEmptyState');
   const tsi = document.getElementById('targetSkinState');
   const timg = document.getElementById('targetSkinImg');
@@ -10152,6 +10179,7 @@ async function openCatalogCase(caseId) {
   const state = getCaseAvailability(caseId);
   if (!state.cost) return;
   if (!state.available) {
+    showToast(`Для цього кейсу бракує ${formatCredits(state.missing)}`, 'info');
     openModal('topupModal');
     return;
   }
@@ -10164,7 +10192,6 @@ async function openCatalogCase(caseId) {
 function renderCaseCatalog() {
   const grid = document.getElementById('casesCatalogGrid');
   if (!grid) return;
-  document.getElementById('caseBalanceHint')?.classList.add('hidden');
 
   // Keep the page responsive during the first compact catalogue fetch. The
   // previous starter list did not contain each theme and produced a misleading
@@ -10179,8 +10206,7 @@ function renderCaseCatalog() {
       <p class="font-heading text-xl font-extrabold uppercase tracking-wide text-white">Готуємо каталоги кейсів</p>
       <p class="mt-2 text-sm text-slate-400">Завантажуємо компактний склад без блокування гри…</p>
     </div>`;
-    // A session-cache hit can finish synchronously. Paint loading first so it
-    // cannot overwrite the catalogue rendered by loadCompleteSkinCatalog().
+    // Paint loading before fetching: a synchronous cache hit must not be overwritten.
     void loadCompleteSkinCatalog().then(() => {
       if (currentPage !== 'case') return;
       if (completeSkinCatalogReady) {
@@ -10188,7 +10214,7 @@ function renderCaseCatalog() {
       } else {
         if (summary) summary.textContent = 'Каталог не завантажився. Баланс не списано.';
         if (count) count.textContent = '—';
-        grid.innerHTML = '<div class="col-span-full rounded-2xl border border-brand-border p-6 text-center"><p class="text-sm text-gray-300">Не вдалося завантажити склад кейсів.</p><button type="button" onclick="renderCaseCatalog()" class="mt-3 rounded-lg border border-amber-500/40 px-4 py-2 text-sm text-amber-300">Спробувати ще раз</button></div>';
+        grid.innerHTML = '<div class="col-span-full rounded-2xl border border-brand-border p-6 text-center"><p class="text-sm text-gray-300">Не вдалося завантажити склад кейсів.</p><button type="button" onclick="renderCaseCatalog()" class="mt-3 rounded-lg border border-cyan-400/40 px-4 py-2 text-sm text-cyan-300">Спробувати ще раз</button></div>';
       }
     });
     return;
@@ -10205,23 +10231,13 @@ function renderCaseCatalog() {
     if (currentCaseCategory === 'all' || isCollectionView) return true;
     return c.category === currentCaseCategory;
   });
-  const balanceHint = document.getElementById('caseBalanceHint');
-  if (balanceHint) {
-    const states = filtered.map(([id]) => getCaseAvailability(id)).filter(state => state.cost > 0);
-    const availableCount = states.filter(state => state.available).length;
-    const missing = states.length ? Math.min(...states.map(state => state.missing)) : 0;
-    balanceHint.classList.toggle('hidden', !states.length || availableCount === states.length);
-    balanceHint.innerHTML = `<div><strong>Баланс ${formatCredits(currentUser?.balance || 0)}</strong><span>${availableCount
-      ? `Доступно ${availableCount} з ${states.length} кейсів у цій добірці`
-      : `Для найдешевшого кейсу бракує ${formatCredits(missing)}`}</span></div><button type="button" onclick="openModal('topupModal')">Отримати PC <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>`;
-  }
   const categoryTitles = {
     all: 'Каталог',
-    hot: 'Тематичні кейси',
+    hot: 'Лімітовані кейси',
     knives: 'Ножі',
     gloves: 'Рукавиці',
     weapons: 'Зброя та AWP',
-    budget: 'Бюджетні кейси',
+    budget: 'Доступні кейси',
     collections: 'Колекції кейсів'
   };
   const summary = document.getElementById('caseCatalogSummary');
@@ -10253,17 +10269,18 @@ function renderCaseCatalog() {
     const wishlistMatches = getCaseWishlistMatches(id);
     const contextParts = [
       wishlistMatches.length ? `<span><i class="fa-solid fa-heart"></i>${wishlistMatches.length} у бажаному</span>` : '',
-      collection.total && (isCollectionView || collection.count > 0 || collection.claimed) ? `<span><i class="fa-solid ${collection.claimed ? 'fa-trophy' : 'fa-book-atlas'}"></i>${collection.claimed ? 'Трофей здобуто' : `${collection.count}/${collection.total} колекція`}</span>` : ''
+      collection.total ? `<span><i class="fa-solid ${collection.claimed ? 'fa-trophy' : 'fa-book-atlas'}"></i>${collection.claimed ? 'Трофей здобуто' : `${collection.count}/${collection.total} колекція`}</span>` : ''
     ].filter(Boolean);
     const contextMarkup = contextParts.length
       ? `<p class="case-catalog-context">${contextParts.join('<b aria-hidden="true">·</b>')}</p>`
       : '';
     const openCost = caseCost ? formatCredits(caseCost) : 'Недоступний';
     const availability = getCaseAvailability(id);
-    const actionLabel = !caseCost ? 'Недоступний' : !availability.available ? 'Бракує PC' : availability.useTicket ? 'Квитком' : 'Відкрити';
-    const unavailableReason = !caseCost ? 'Ціна недоступна' : `Бракує ${formatCredits(availability.missing)}`;
+    const openHint = !caseCost ? 'Ціна недоступна' : availability.useTicket ? 'Відкрити квитком'
+      : availability.available ? `Відкрити за ${openCost}` : `Бракує ${formatCredits(availability.missing)}`;
     return `
       <div class="case-catalog-card tier-${c.category || 'hot'} group">
+        <span class="case-catalog-badge ${c.badgeClass || 'badge-hot'}">${c.badge || 'HOT'}</span>
         <div class="case-catalog-art">
           <div class="w-28 h-28 sm:w-32 sm:h-32 case-preview-svg group-hover:scale-105 transition-transform duration-300">
             ${createCaseArtwork(id, c.name, c.theme, c.artwork)}
@@ -10279,8 +10296,8 @@ function renderCaseCatalog() {
           ${contextMarkup}
         </div>
         <div class="case-catalog-actions">
-          <button type="button" onclick="openCatalogCase('${id}')" class="case-catalog-open" aria-label="${availability.available ? `Відкрити ${escapeHtml(c.name)} ${availability.useTicket ? 'квитком' : `за ${escapeHtml(openCost)}`}` : `${escapeHtml(c.name)}: ${escapeHtml(unavailableReason)}`}" title="${availability.available ? actionLabel : unavailableReason}" ${availability.available ? '' : 'disabled'}>
-            <span><i class="fa-solid ${availability.available ? 'fa-box-open' : 'fa-lock'}" aria-hidden="true"></i> ${actionLabel}</span>
+          <button type="button" onclick="openCatalogCase('${id}')" class="case-catalog-open" title="${escapeHtml(openHint)}" aria-label="${escapeHtml(c.name)}: ${escapeHtml(openHint)}" ${caseCost ? '' : 'disabled'}>
+            <span><i class="fa-solid fa-box-open"></i> Відкрити</span>
           </button>
           <button type="button" onclick="showCaseDetails('${id}')" class="case-catalog-details" title="Склад кейсу та шанси" aria-label="Склад кейсу та шанси: ${escapeHtml(c.name)}">
             <i class="fa-solid fa-list"></i><span>Склад</span>
@@ -10986,7 +11003,7 @@ async function showCaseDetails(caseType) {
       <div class="bg-brand-card border border-brand-border rounded-xl p-2.5 flex flex-col items-center hover:border-amber-500/40 transition">
         <div class="relative w-full">
           <img src="${escapeHtml(getSkinImageSrc(s))}" alt="${escapeHtml(s.name)}" class="h-16 w-full object-contain" onerror="handleSkinImageError(this)">
-          <span class="case-chance-badge" style="color:${badgeColor};border-color:${badgeColor}40">${chanceStr}</span>
+          <span class="case-chance-badge" style="color:${badgeColor};border-color:${badgeColor}40">CHANCE ${chanceStr}</span>
         </div>
         <p class="mt-2 text-[10px] font-extrabold text-white truncate w-full text-center" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</p>
         <p class="text-amber-300 font-extrabold text-xs mt-0.5">${formatCredits(s.price)}</p>
@@ -10994,57 +11011,11 @@ async function showCaseDetails(caseType) {
     `;
   }).join('');
 
-  setCaseDetailsTab('skins');
-  updateCaseDetailsAction();
-  recordStarterTaskVisit('oddsViews');
   openModal('caseDetailsModal');
-}
-
-function setCaseDetailsTab(tab) {
-  const tabs = { skins: 'Skins', stats: 'Stats', collection: 'Collection' };
-  if (!tabs[tab]) return;
-  Object.entries(tabs).forEach(([key, suffix]) => {
-    const button = document.getElementById(`caseTab${suffix}`);
-    const panel = document.getElementById(`casePanel${suffix}`);
-    const active = key === tab;
-    button?.setAttribute('aria-selected', String(active));
-    if (button) button.tabIndex = active ? 0 : -1;
-    panel?.classList.toggle('hidden', !active);
-  });
-}
-
-function handleCaseDetailsTabKey(event) {
-  const tabs = ['skins', 'stats', 'collection'];
-  const ids = ['caseTabSkins', 'caseTabStats', 'caseTabCollection'];
-  const index = ids.indexOf(event.target.id);
-  if (index < 0 || !['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
-  event.preventDefault();
-  const next = event.key === 'Home' ? 0 : event.key === 'End' ? 2
-    : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
-  setCaseDetailsTab(tabs[next]);
-  document.getElementById(ids[next])?.focus();
-}
-
-function updateCaseDetailsAction() {
-  const state = getCaseAvailability(currentDetailsCaseId);
-  const button = document.getElementById('caseDetailsAction');
-  const hint = document.getElementById('caseDetailsBalanceHint');
-  if (button) {
-    button.disabled = !state.cost;
-    button.textContent = !state.cost ? 'Недоступний' : !state.available ? 'Отримати PC' : state.useTicket ? 'Відкрити квитком' : 'Відкрити кейс';
-  }
-  if (hint) {
-    hint.classList.toggle('hidden', !state.cost || state.available);
-    hint.textContent = `Баланс ${formatCredits(state.balance)} · бракує ${formatCredits(state.missing)}. PC — лише віртуальні кредити.`;
-  }
+  recordStarterTaskVisit('oddsViews');
 }
 
 function openCurrentCaseFromDetails() {
-  if (!getCaseAvailability(currentDetailsCaseId).available) {
-    closeModal('caseDetailsModal');
-    openModal('topupModal');
-    return;
-  }
   closeModal('caseDetailsModal');
   void openCatalogCase(currentDetailsCaseId || 'budget_covert');
 }
@@ -13486,12 +13457,6 @@ function addActivityEvent({ player, skin, outcome = 'attempt', profile = null, c
   el.addEventListener('click', openLiveFeedProfile);
   feed.prepend(el);
   while (feed.children.length > 14) feed.removeChild(feed.lastElementChild);
-  updateCommunityStripVisibility();
-}
-
-function updateCommunityStripVisibility() {
-  const hasEvents = Boolean(document.querySelector('#liveFeed .live-feed-item'));
-  document.getElementById('communityStrip')?.classList.toggle('hidden', !hasEvents);
 }
 
 let liveFeedStarted = false;
@@ -14095,6 +14060,7 @@ window.continueSteamLogin = continueSteamLogin;
 window.syncSteamInventory = syncSteamInventory;
 window.disconnectSteam = disconnectSteam;
 window.deleteSteamAccount = deleteSteamAccount;
+window.dismissSteamNudge = dismissSteamNudge;
 window.handleSteamAvatarError = handleSteamAvatarError;
 window.handleCaseArtworkError = handleCaseArtworkError;
 window.saveAccountNick = saveAccountNick;
