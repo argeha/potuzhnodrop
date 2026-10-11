@@ -215,6 +215,48 @@ for (const id of ['hubLevelRing', 'hubSignalSeason', 'hubPulseStats', 'hubDailyF
 assert.ok(html.includes('class="command-hub-level-orbit"'));
 assert.ok(!html.includes('case-details-tabs'), 'Do not replace the original contents layout');
 assert.ok(!html.includes('case-balance-hint'), 'Do not add a new catalogue layout');
+// Large pools must scroll, not compress overflow-hidden rarity cards into strips.
+const caseDetails = html.slice(html.indexOf('<div id="caseDetailsModal"'), html.indexOf('<div id="itemDetailModal"'));
+assert.ok(caseDetails.includes('class="case-details-heading '), 'Keep the desktop heading outside the scroll body');
+assert.ok(caseDetails.includes('<div class="case-details-body">'), 'Scroll the metrics, passport and skin list together');
+assert.ok(caseDetails.indexOf('class="case-details-body"') < caseDetails.indexOf('id="caseDetailsMetrics"'));
+const caseGridTag = caseDetails.match(/<div id="caseDetailsGrid"[^>]*>/)[0];
+assert.ok(!/flex-1|overflow-y-auto/.test(caseGridTag), 'Do not constrain the skin grid to leftover flex height');
+assert.ok(css.includes('.case-details-body{flex:1 1 auto;min-height:0;overflow-y:auto;'));
+assert.ok(css.includes('#caseDetailsGrid{grid-auto-rows:minmax(180px,max-content);align-content:start}'),
+  'Rows must grow with wear odds, while closed cards stay at full height');
+assert.ok(css.includes('#caseDetailsGrid>.rarity-surface{min-width:0;min-height:180px;overflow:clip}'),
+  'Focusing wear odds must not scroll a hidden-overflow card and hide its image');
+assert.ok(css.includes('#caseDetailsGrid>.rarity-surface>*{flex-shrink:0}'));
+assert.ok(css.includes('.case-details-body{overflow:visible;padding-right:0}'), 'Use only the outer scrollbar on mobile');
+const caseScrollBody = { scrollTop: 897 };
+const caseScrollPanel = { scrollTop: 10681 };
+const caseScrollGrid = {
+  innerHTML: '',
+  closest: selector => selector === '.case-details-body' ? caseScrollBody : caseScrollPanel
+};
+const caseDetailsContext = vm.createContext({
+  document: { getElementById: id => id === 'caseDetailsGrid' ? caseScrollGrid : null },
+  isRuntimeCaseVisible: () => true,
+  resolveCaseConfig: id => ({ id, name: 'Fixture case' }),
+  getCaseSkinPool: () => Array.from({ length: 8 }, () => ({ name: 'Fixture skin' })),
+  getCaseMetrics: () => ({}), getCaseCost: () => 10, formatCredits: () => '10 PC',
+  renderCaseWishlistSignal() {}, renderCaseCollectionPassport() {},
+  getItemDropChance: () => 12.5, getItemRarity: () => ({ color: '#eb4b4b', name: 'Covert' }),
+  getSkinWearValues: () => [], formatCaseChance: () => '12.5%',
+  escapeHtml: value => String(value), getSkinImageSrc: () => 'test-skin.png',
+  skinWearPriceRange: () => '10 PC', rarityStripMarkup: () => '', recordStarterTaskVisit() {},
+  openModal: () => {
+    // Simulate the browser restoring hidden elements' previous scroll positions.
+    caseScrollBody.scrollTop = 897;
+    caseScrollPanel.scrollTop = 10681;
+  }
+});
+vm.runInContext(extract('async function showCaseDetails(', 'function openCurrentCaseFromDetails('), caseDetailsContext);
+await caseDetailsContext.showCaseDetails('fixture');
+assert.equal(caseScrollBody.scrollTop, 0, 'Reset desktop scroll after revealing a newly opened case');
+assert.equal(caseScrollPanel.scrollTop, 0, 'Reset the outer mobile scrollbar too');
+assert.equal((caseScrollGrid.innerHTML.match(/class="rarity-surface /g) || []).length, 8);
 assert.deepEqual(Array.from(html.matchAll(/data-nav="([^"]+)"/g), match => match[1]),
   ['hub', 'upgrader', 'case', 'battle', 'royale', 'contract', 'tasks', 'profile', 'about']);
 const hub = extract('function renderCommandHub()', 'function getSignalCampaignProgress()');

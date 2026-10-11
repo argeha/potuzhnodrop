@@ -11171,6 +11171,10 @@ async function showCaseDetails(caseType) {
   }).join('');
 
   openModal('caseDetailsModal');
+  // Hidden elements cannot reliably accept a scroll reset; reveal first.
+  for (const container of [grid.closest('.case-details-body'), grid.closest('.glass-panel')]) {
+    if (container) container.scrollTop = 0;
+  }
   recordStarterTaskVisit('oddsViews');
 }
 
