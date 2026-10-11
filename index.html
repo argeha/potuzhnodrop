@@ -32,13 +32,13 @@
 <link rel="preconnect" href="https://community.akamai.steamstatic.com">
 <link rel="preconnect" href="https://avatars.steamstatic.com">
 <!-- Tailwind зібраний локально: інтерфейс не залежить від зовнішнього CDN. -->
-<link rel="stylesheet" href="/css/tailwind.css?v=7.9.0-inventory-safety.2">
+<link rel="stylesheet" href="/css/tailwind.css?v=7.9.0-inventory-history.2">
 <!-- Font Awesome -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Teko:wght@600;700&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-<link rel="stylesheet" href="/css/style.css?v=7.9.0-inventory-safety.2">
+<link rel="stylesheet" href="/css/style.css?v=7.9.0-inventory-history.2">
 </head>
 <body class="pd-rebrand min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -558,6 +558,7 @@
 <h3><i class="fa-solid fa-boxes-stacked"></i>Мої скіни</h3>
 </div>
 <div class="profile-inventory-actions">
+<button type="button" id="inventorySelectionToggle" class="inventory-selection-toggle" onclick="toggleInventorySelectionMode()" aria-pressed="false">Обрати скіни</button>
 <button onclick="sellAllDuplicates()" class="px-4 py-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20 text-xs font-bold transition"><i class="fa-solid fa-sack-dollar mr-1"></i>Продати дублі</button>
 </div>
 </div>
@@ -596,6 +597,7 @@
 </select>
 </div><label class="profile-inventory-search"><i class="fa-solid fa-magnifying-glass"></i><input id="invSearch" type="search" oninput="renderProfileInventory()" placeholder="Пошук у інвентарі…"></label>
 </div>
+<div id="inventorySelectionBar" class="inventory-selection-bar" hidden><div><strong id="inventorySelectionSummary" role="status" aria-live="polite">Обрано 0</strong><small>Захищені та недоступні для продажу предмети пропускаємо.</small></div><div class="inventory-selection-actions"><button type="button" onclick="selectVisibleInventory()">Обрати видимі</button><button type="button" onclick="clearInventorySelection()">Скинути вибір</button><button type="button" id="inventorySelectionSell" class="selection-sell" onclick="requestSelectedInventorySale()" disabled>Продати вибране</button></div></div>
 <div id="profileInventoryGrid" class="profile-inventory-grid"></div>
 <div id="profileInventoryEmpty" class="hidden rounded-xl border border-dashed border-gray-700 p-12 text-center">
 <i class="fa-solid fa-box-open text-3xl text-gray-600"></i>
@@ -833,6 +835,6 @@
 
 <script src="/js/mobile-config.js" defer></script>
 <script src="/js/mobile.js?v=1" defer></script>
-<script src="/js/app.js?v=7.9.0-inventory-safety.2" defer></script>
+<script src="/js/app.js?v=7.9.0-inventory-history.2" defer></script>
 </body>
 </html>

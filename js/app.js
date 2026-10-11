@@ -921,7 +921,7 @@ const XP_BATTLE_LOSS = 25;
 const XP_ROYALE_WIN = 330;
 const XP_ROYALE_LOSS = 40;
 const XP_CONTRACT = 80;
-const ROUND_HISTORY_LIMIT = 20;
+const ROUND_HISTORY_LIMIT = 60;
 const SELL_RATE = 0.9;
 const CHANCE_MAX = 80;
 const CHANCE_MIN = 0.50;
@@ -7164,22 +7164,13 @@ function renderProfileSocial() {
   }
   renderProfileWishlist();
 
-  const history = document.getElementById('profileRoundHistory');
-  const summary = document.getElementById('profileHistorySummary');
-  const rounds = Array.isArray(gameState?.rounds) ? gameState.rounds.slice(0, 5) : [];
-  if (summary) summary.textContent = `краща серія ${Math.max(0, Number(gameState?.stats?.bestStreak) || 0)}`;
-  if (history) {
-    history.innerHTML = rounds.length
-      ? rounds.map(round => `<div class="profile-history-item ${round.win ? 'is-win' : 'is-loss'}"><i class="fa-solid ${round.win ? 'fa-circle-check' : 'fa-circle-xmark'}"></i><div><strong>${escapeHtml(cleanText(round.targetName, 70) || 'Раунд')}</strong><small>${escapeHtml(cleanText(round.mode, 20) || 'гра')} · ${new Date(round.at || Date.now()).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}</small></div><em>${round.win ? '+' : ''}${formatCredits(round.targetValue || 0)}</em></div>`).join('')
-      : '<div class="profile-showcase-empty">Зіграний раунд з’явиться тут.</div>';
-  }
+  renderRoundHistory();
 }
 
 function getInventoryDuplicateCounts(items = userInventory) {
   const counts = new Map();
   (Array.isArray(items) ? items : []).forEach(item => {
-    const wear = getWear(item);
-    const key = `${normalizeSkinName(item?.name)}|${wear.code || ''}`;
+    const key = getInventoryDuplicateKey(item);
     if (!key || key === '|') return;
     counts.set(key, (counts.get(key) || 0) + 1);
   });
@@ -7456,6 +7447,80 @@ function renderSignalSeason() {
   }));
 }
 
+let roundHistoryMode = 'all';
+let roundHistoryOutcome = 'all';
+let roundHistoryVisible = 5;
+const ROUND_MODE_LABELS = { upgrade: 'Апгрейд', case: 'Кейс', contract: 'Контракт', battle: 'Бій', royale: 'Royale' };
+
+function getRoundMode(round) {
+  return ['case', 'contract', 'battle', 'royale'].includes(round?.mode) ? round.mode : 'upgrade';
+}
+
+function historySkinSnapshot(item) {
+  return { name: cleanText(item?.name, 140), wear: item?.wear ? getWear(item).code : '', phase: cleanText(item?.phase, 32) };
+}
+
+function appendRoundHistory(round) {
+  if (!gameState) return;
+  gameState.rounds = [{ ...round, at: Date.now() }, ...(Array.isArray(gameState.rounds) ? gameState.rounds : [])].slice(0, ROUND_HISTORY_LIMIT);
+}
+
+function getFilteredRoundHistory() {
+  return (Array.isArray(gameState?.rounds) ? gameState.rounds : []).filter(round => round && typeof round === 'object'
+    && (roundHistoryMode === 'all' || getRoundMode(round) === roundHistoryMode)
+    && (roundHistoryOutcome === 'all' || Boolean(round.win) === (roundHistoryOutcome === 'win')));
+}
+
+function setRoundHistoryFilter(kind, value) {
+  const hostId = document.activeElement?.closest('#profileRoundHistory,#statsRecentRounds')?.id;
+  if (kind === 'mode') roundHistoryMode = value === 'all' || Object.hasOwn(ROUND_MODE_LABELS, value) ? value : 'all';
+  if (kind === 'outcome') roundHistoryOutcome = ['all', 'win', 'loss'].includes(value) ? value : 'all';
+  roundHistoryVisible = 5;
+  renderRoundHistory();
+  document.getElementById(hostId)?.querySelector(kind === 'mode' ? '[data-history-mode]' : '[data-history-outcome]')?.focus();
+}
+
+function showMoreRoundHistory() {
+  roundHistoryVisible += 5;
+  renderRoundHistory();
+}
+
+function roundHistoryControlsMarkup() {
+  return `<div class="round-history-filters"><label>Режим<select data-history-mode onchange="setRoundHistoryFilter('mode',this.value)"><option value="all">Усі режими</option>${Object.entries(ROUND_MODE_LABELS).map(([key, name]) => `<option value="${key}" ${roundHistoryMode === key ? 'selected' : ''}>${name}</option>`).join('')}</select></label><label>Результат<select data-history-outcome onchange="setRoundHistoryFilter('outcome',this.value)"><option value="all">Усі результати</option><option value="win" ${roundHistoryOutcome === 'win' ? 'selected' : ''}>Виграш / отримано</option><option value="loss" ${roundHistoryOutcome === 'loss' ? 'selected' : ''}>Невдача</option></select></label></div>`;
+}
+
+function roundHistoryRowMarkup(round) {
+  const mode = getRoundMode(round);
+  const finite = value => typeof value === 'number' && Number.isFinite(value);
+  const money = value => finite(value) ? formatCredits(value) : 'Не збережено';
+  const skinText = item => [cleanText(item?.name, 140), cleanText(item?.phase, 32), cleanText(item?.wear, 4)].filter(Boolean).join(' · ');
+  const inputs = Array.isArray(round.inputItems) ? round.inputItems : [];
+  const outputs = Array.isArray(round.outputItems) ? round.outputItems : [];
+  const date = Number(round.at) > 0 ? new Date(Number(round.at)).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'Час не збережено';
+  const delta = finite(round.balanceDelta) ? `${round.balanceDelta > 0 ? '+' : round.balanceDelta < 0 ? '−' : ''}${formatCredits(Math.abs(round.balanceDelta))}` : 'Не збережено';
+  const result = mode === 'case' || mode === 'contract' ? 'Отримано' : round.win ? 'Виграш' : 'Невдача';
+  const valueLabel = mode === 'battle' && !Array.isArray(round.outputItems) ? 'Вартість цілі · старий запис'
+    : round.win ? 'Вартість отриманих скінів' : 'Вартість цілі';
+  return `<article class="round-history-entry ${round.win ? 'is-win' : 'is-loss'}"><header><span>${ROUND_MODE_LABELS[mode]} · ${escapeHtml(date)}</span><b>${result}</b></header><strong>${escapeHtml(cleanText(round.targetName, 140) || 'Раунд')}</strong>
+    <dl><div><dt>Внесок</dt><dd>${money(round.inputValue)}</dd></div><div><dt>${valueLabel}</dt><dd>${money(round.targetValue)}</dd></div><div><dt>Шанс</dt><dd>${finite(round.chance) ? `${round.chance.toFixed(2)}%` : '—'}</dd></div><div><dt>Баланс PC · раунд</dt><dd class="${finite(round.balanceDelta) && round.balanceDelta < 0 ? 'is-negative' : ''}">${delta}</dd></div></dl>
+    <details><summary>Деталі предметів</summary><p>Внесок: ${escapeHtml(inputs.length ? inputs.map(skinText).join('; ') : round.inputKind === 'balance' ? 'Віртуальні PC' : mode === 'case' ? round.ticketOpen ? 'Квиток' : round.inputValue === 0 ? 'Безкоштовний кейс' : 'Віртуальні PC' : 'Предмети / знос не збережено')}</p><p>${round.win ? 'Отримано' : 'Ціль'}: ${escapeHtml(outputs.length ? outputs.map(skinText).join('; ') : 'Предмети / знос не збережено')}</p></details></article>`;
+}
+
+function renderRoundHistory() {
+  const rounds = getFilteredRoundHistory();
+  const markup = roundHistoryControlsMarkup() + (rounds.length
+    ? rounds.slice(0, roundHistoryVisible).map(roundHistoryRowMarkup).join('')
+    : '<p class="round-history-empty">За цими фільтрами записів немає. Нові раунди з’являться тут.</p>')
+    + (rounds.length > roundHistoryVisible ? '<button type="button" class="round-history-more" onclick="showMoreRoundHistory()">Показати ще 5</button>' : '')
+    + '<p class="round-history-note">Зберігаємо останні 60 раундів. Скіни не є поповненням балансу. PC у раунді — списання та бонус цього режиму, без окремих нагород за досягнення. Для старих записів відсутні дані не відновлюємо навмання.</p>';
+  for (const id of ['profileRoundHistory', 'statsRecentRounds']) {
+    const container = document.getElementById(id);
+    if (container) container.innerHTML = markup;
+  }
+  const summary = document.getElementById('profileHistorySummary');
+  if (summary) summary.textContent = `Записів: ${rounds.length}`;
+}
+
 function getRecentRoundLedger(rounds = gameState?.rounds) {
   const list = Array.isArray(rounds) ? rounds : [];
   return list.reduce((summary, round) => {
@@ -7472,7 +7537,7 @@ function renderStatsPage() {
   if (!gameState) return;
   const stats = gameState.stats || {};
   const allTime = gameState.allTime || createDefaultAllTime();
-  const rounds = Array.isArray(gameState.rounds) ? gameState.rounds.slice(0, 12) : [];
+  const rounds = (Array.isArray(gameState.rounds) ? gameState.rounds : []).filter(round => getRoundMode(round) === 'upgrade').slice(0, 12);
   const ledger = getRecentRoundLedger(rounds);
   const inventoryValue = userInventory.reduce((sum, item) => sum + verifiedInventoryMarketPrice(item), 0);
   const winRate = Number(stats.rounds) ? Math.round((Number(stats.wins) / Number(stats.rounds)) * 100) : 0;
@@ -7499,16 +7564,13 @@ function renderStatsPage() {
     { icon: 'fa-layer-group', label: 'Колекції', value: `${completedCollections}/${COLLECTION_DEFINITIONS.length}`, note: 'завершено' }
   ].map(row => `<div class="stats-mode-row"><i class="fa-solid ${row.icon}"></i><span>${row.label}<small>${row.note}</small></span><strong>${row.value}</strong></div>`).join('');
 
-  const recent = document.getElementById('statsRecentRounds');
-  if (recent) recent.innerHTML = rounds.length
-    ? rounds.slice(0, 7).map(round => `<div class="stats-round-row ${round.win ? 'is-win' : 'is-loss'}"><i class="fa-solid ${round.win ? 'fa-circle-check' : 'fa-circle-xmark'}"></i><div><strong>${escapeHtml(cleanText(round.targetName, 62) || 'Раунд')}</strong><small>${escapeHtml(cleanText(round.mode, 24) || 'гра')} · ${new Date(round.at || Date.now()).toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit' })}</small></div><em>${round.win ? '+' : '—'}${formatCredits(round.win ? round.targetValue : round.inputValue || 0)}</em></div>`).join('')
-    : '<div class="stats-empty"><i class="fa-solid fa-clock"></i><strong>Журнал ще порожній</strong><span>Перший раунд з’явиться тут.</span></div>';
+  renderRoundHistory();
 
   const roundSummary = document.getElementById('statsRoundSummary');
   const windowLabel = document.getElementById('statsRoundWindow');
   if (windowLabel) windowLabel.textContent = rounds.length ? `останні ${rounds.length} записів` : 'ще немає записів';
   if (roundSummary) roundSummary.innerHTML = rounds.length
-    ? `<div><span>Вкладено</span><strong>${formatCredits(ledger.staked)}</strong></div><div><span>Отримано при перемогах</span><strong>${formatCredits(ledger.payout)}</strong></div><div class="${ledger.payout - ledger.staked >= 0 ? 'is-positive' : 'is-negative'}"><span>Різниця</span><strong>${ledger.payout - ledger.staked >= 0 ? '+' : '−'}${formatCredits(Math.abs(ledger.payout - ledger.staked))}</strong></div><p>Підрахунок лише за збереженими раундами апгрейду; він не змінює фіксовані ціни каталогу та не впливає на шанси.</p>`
+    ? `<div><span>Вартість внесків</span><strong>${formatCredits(ledger.staked)}</strong></div><div><span>Вартість виграних скінів</span><strong>${formatCredits(ledger.payout)}</strong></div><div class="${ledger.payout - ledger.staked >= 0 ? 'is-positive' : 'is-negative'}"><span>Різниця вартості</span><strong>${ledger.payout - ledger.staked >= 0 ? '+' : '−'}${formatCredits(Math.abs(ledger.payout - ledger.staked))}</strong></div><p>Вартість предметів, не рух балансу PC. Лише збережені раунди апгрейду; ціни та шанси не змінюються.</p>`
     : '<div class="stats-empty"><i class="fa-solid fa-chart-line"></i><strong>Поки без підсумку</strong><span>Зіграний апгрейд з’явиться тут.</span></div>';
 
   const collection = document.getElementById('statsCollectionProgress');
@@ -7655,7 +7717,7 @@ function updateAllTimeOnFreeCase() {
   a.freeCases = (a.freeCases || 0) + 1;
 }
 
-function recordRound({ win, target, chance, mode, inputValue, bonus }) {
+function recordRound({ win, target, chance, mode, inputValue, bonus, history = {} }) {
   if (!gameState || !target) return;
   ensureDailyState();
   ensureWeeklyState();
@@ -7692,17 +7754,16 @@ function recordRound({ win, target, chance, mode, inputValue, bonus }) {
   }
   addXp(XP_PER_ROUND + (win ? XP_WIN_BONUS : 0));
   updateAllTimeOnRound(win, Number(target.price) || 0);
-  gameState.rounds.unshift({
-    at: Date.now(),
+  appendRoundHistory({
     win,
     targetName: target.name,
     targetValue: target.price,
     chance,
     mode,
     inputValue,
-    bonus
+    bonus,
+    ...history
   });
-  gameState.rounds = gameState.rounds.slice(0, ROUND_HISTORY_LIMIT);
   checkAchievements();
   saveState();
   renderGameHub();
@@ -8810,6 +8871,135 @@ function toggleInventoryProtection(itemId) {
 }
 
 let pendingInventorySale = null;
+let inventorySelectionMode = false;
+const inventorySelection = new Set();
+
+function getInventorySaleQuote(ids) {
+  const unique = [...new Set(ids.map(String))];
+  const items = unique.map(id => userInventory.find(item => String(item.id) === id))
+    .filter(item => item && canSellInventoryItem(item) && verifiedInventoryMarketPrice(item) > 0);
+  return {
+    items,
+    total: roundPc(items.reduce((sum, item) => sum + roundPc(verifiedInventoryMarketPrice(item) * SELL_RATE), 0)),
+    skipped: unique.length - items.length,
+  };
+}
+
+function toggleInventorySelectionMode() {
+  inventorySelectionMode = !inventorySelectionMode;
+  inventorySelection.clear();
+  renderProfileInventory();
+}
+
+function setInventorySelection(itemId, selected) {
+  const id = String(itemId);
+  if (!inventorySelectionMode) return;
+  if (selected && getInventorySaleQuote([id]).items.length) inventorySelection.add(id);
+  else inventorySelection.delete(id);
+  renderProfileInventory();
+  [...(document.getElementById('profileInventoryGrid')?.querySelectorAll('[data-inventory-select]') || [])]
+    .find(input => input.dataset.inventorySelect === id)?.focus();
+}
+
+function selectVisibleInventory() {
+  if (!inventorySelectionMode) return;
+  getInventorySaleQuote(getFilteredProfileInventory().map(item => item.id)).items
+    .forEach(item => inventorySelection.add(String(item.id)));
+  renderProfileInventory();
+}
+
+function clearInventorySelection() {
+  inventorySelection.clear();
+  renderProfileInventory();
+}
+
+function renderInventorySelection() {
+  const quote = getInventorySaleQuote([...inventorySelection]);
+  inventorySelection.clear();
+  quote.items.forEach(item => inventorySelection.add(String(item.id)));
+  const toggle = document.getElementById('inventorySelectionToggle');
+  if (toggle) {
+    toggle.setAttribute('aria-pressed', String(inventorySelectionMode));
+    toggle.textContent = inventorySelectionMode ? 'Завершити вибір' : 'Обрати скіни';
+  }
+  const bar = document.getElementById('inventorySelectionBar');
+  if (bar) bar.hidden = !inventorySelectionMode;
+  const summary = document.getElementById('inventorySelectionSummary');
+  if (summary) summary.textContent = `Обрано ${quote.items.length} · отримаєш ${formatCredits(quote.total)}`;
+  const sell = document.getElementById('inventorySelectionSell');
+  if (sell) sell.disabled = !quote.items.length || isInventoryMutationBusy();
+}
+
+function requestSelectedInventorySale() {
+  requestInventoryBatchSale([...inventorySelection]);
+}
+
+function requestInventoryBatchSale(ids) {
+  if (isInventoryMutationBusy()) return showToast('Дочекайся завершення поточного раунду.', 'info');
+  const quote = getInventorySaleQuote(ids);
+  if (!quote.items.length) return showToast('Обери доступні для продажу скіни зі стабільною ціною.', 'info');
+  const content = document.getElementById('inventorySaleContent');
+  if (!content) return;
+  pendingInventorySale = { items: quote.items.map(item => ({ itemId: String(item.id), price: verifiedInventoryMarketPrice(item), fingerprint: getInventoryDuplicateKey(item) })) };
+  content.innerHTML = `<p class="sale-eyebrow">ПІДТВЕРДЖЕННЯ ПРОДАЖУ · ${quote.items.length}</p><h3>Продати обрані скіни?</h3>
+    <ul class="sale-batch-list">${quote.items.map(item => `<li><img src="${escapeHtml(getSkinImageSrc(item))}" alt="" data-skin-name="${escapeHtml(item.name)}" onerror="handleSkinImageError(this)"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.phase || '')}${item.phase ? ' · ' : ''}${getWear(item).code}</small></div><b>${formatCredits(roundPc(verifiedInventoryMarketPrice(item) * SELL_RATE))}</b></li>`).join('')}</ul>
+    <div class="sale-quote"><span>Разом · 90% вартості кожного</span><strong>${formatCredits(quote.total)}</strong></div>
+    <p class="sale-note">${quote.skipped ? `${quote.skipped} недоступних предметів залишаться в інвентарі. ` : ''}Обрані скіни зникнуть з інвентарю. PC — віртуальні ігрові монети, не гроші.</p>
+    <div class="sale-actions"><button type="button" onclick="closeModal('inventorySaleModal')">Залишити скіни</button><button type="button" class="sale-confirm" onclick="confirmInventorySale()">Підтвердити продаж</button></div>`;
+  openModal('inventorySaleModal');
+}
+
+function sellInventoryBatch(snapshots) {
+  if (!snapshots.length) return false;
+  if (isInventoryMutationBusy()) { showToast('Дочекайся завершення поточного раунду. Нічого не продано.', 'info'); return false; }
+  const ids = new Set(snapshots.map(item => item.itemId));
+  const quote = getInventorySaleQuote([...ids]);
+  if (ids.size !== snapshots.length || quote.items.length !== snapshots.length
+    || snapshots.some(snapshot => {
+      const item = quote.items.find(entry => String(entry.id) === snapshot.itemId);
+      return !item || verifiedInventoryMarketPrice(item) !== snapshot.price || getInventoryDuplicateKey(item) !== snapshot.fingerprint;
+    })) {
+    showToast('Вибір або ціни змінилися. Нічого не продано — перевір суму ще раз.', 'warn');
+    return false;
+  }
+  // Validate the complete quote first, then mutate once: no partial sales.
+  userInventory = userInventory.filter(item => !ids.has(String(item.id)));
+  currentUser.balance = roundPc(currentUser.balance + quote.total);
+  ensureDailyState(); ensureWeeklyState();
+  gameState.stats.sells = (gameState.stats.sells || 0) + quote.items.length;
+  gameState.daily.sells = (gameState.daily.sells || 0) + quote.items.length;
+  gameState.daily.sellValue = (gameState.daily.sellValue || 0) + quote.total;
+  gameState.weekly.sells = (gameState.weekly.sells || 0) + quote.items.length;
+  if (ids.has(String(selectedInputSkin?.id))) {
+    selectedInputSkin = null;
+    document.getElementById('inputSkinState')?.classList.add('hidden');
+    document.getElementById('inputEmptyState')?.classList.remove('hidden');
+  }
+  if (ids.has(String(selectedTargetSkin?.id))) {
+    selectedTargetSkin = null;
+    document.getElementById('targetSkinState')?.classList.add('hidden');
+    document.getElementById('targetEmptyState')?.classList.remove('hidden');
+  }
+  multiInputSkins = multiInputSkins.filter(item => !ids.has(String(item.id)));
+  contractItems = contractItems.map(item => ids.has(String(item?.id)) ? null : item);
+  royalePlayerSkins = royalePlayerSkins.filter(item => !ids.has(String(item.id)));
+  if (ids.has(String(battlePlayerItem?.id))) {
+    battlePlayerItem = null;
+    document.getElementById('battlePlayerEmpty')?.classList.remove('hidden');
+    document.getElementById('battlePlayerFilled')?.classList.add('hidden');
+    document.getElementById('battlePlayerSlot')?.classList.remove('filled');
+    clearBattleOpponent();
+  }
+  // allTime.sells counts items, not confirmation dialogs.
+  quote.items.forEach(item => updateAllTimeOnSell(roundPc(verifiedInventoryMarketPrice(item) * SELL_RATE)));
+  inventorySelection.clear();
+  checkAchievements(); updateBalanceUI(); saveState();
+  renderInventoryGrid(); renderProfileInventory(); updateAvatarBadge();
+  renderMultiSlots(); renderContractSlots(); renderRoyaleDeck(); recalculateUpgrade(); renderGameHub();
+  showToast(`Продано ${quote.items.length} за ${formatCredits(quote.total)}`, 'success');
+  soundSell();
+  return true;
+}
 
 function requestInventorySale(itemId, fromProfile = false, closeAfter = '') {
   const item = userInventory.find(entry => String(entry.id) === String(itemId));
@@ -8838,6 +9028,7 @@ function confirmInventorySale() {
   // Consume confirmation first, then validate live ownership and quote again.
   closeModal('inventorySaleModal');
   pendingInventorySale = null;
+  if (sale.items) { sellInventoryBatch(sale.items); return; }
   const item = userInventory.find(entry => String(entry.id) === sale.itemId);
   if (!item || !canSellInventoryItem(item) || isInventoryMutationBusy()
     || verifiedInventoryMarketPrice(item) !== sale.price || getInventoryDuplicateKey(item) !== sale.fingerprint) {
@@ -8991,6 +9182,7 @@ function renderProfileInventoryStats() {
 }
 
 function renderProfileInventory() {
+  renderInventorySelection();
   renderProfileInventoryCategoryChips();
   renderProfileInventorySelects();
   renderProfileInventoryStats();
@@ -9025,9 +9217,12 @@ function renderProfileInventory() {
     const skinName = cleanText(skinParts.join('|'), 110) || weapon;
     const source = getInventorySource(s);
     const origin = source === 'steam' ? 'STEAM' : source === 'exclusive' ? 'EXCLUSIVE' : 'DROP';
-    return `<article class="profile-inv-card rarity-surface ${s.exclusive ? 'is-exclusive' : ''}" style="--rarity-color:${rarity.color}">
+    const selectable = canSell && marketPrice > 0;
+    const selected = inventorySelection.has(String(s.id));
+    return `<article class="profile-inv-card rarity-surface ${s.exclusive ? 'is-exclusive' : ''} ${inventorySelectionMode ? 'is-selecting' : ''} ${selected ? 'is-selected' : ''}" style="--rarity-color:${rarity.color}">
       <div class="profile-inv-card-top"><span class="wear-badge wear-${wear.code}">${wear.code}</span><span class="profile-inv-origin">${isBound && !canSell ? 'BOUND' : origin}</span></div>
-      <button type="button" class="profile-inv-inspect" data-profile-inspect="${escapeHtml(String(s.id))}" title="Відкрити деталі: ${escapeHtml(s.name)}">
+      ${inventorySelectionMode ? `<label class="inventory-select-check"><input type="checkbox" data-inventory-select="${escapeHtml(String(s.id))}" ${selected ? 'checked' : ''} ${!selectable ? 'disabled' : ''} aria-label="Обрати для продажу: ${escapeHtml(s.name)} · ${wear.code}"><span>${!selectable ? 'Недоступний для продажу' : 'Обрати'}</span></label>` : ''}
+      <button type="button" class="profile-inv-inspect" data-profile-inspect="${escapeHtml(String(s.id))}" title="${inventorySelectionMode && selectable ? selected ? 'Зняти вибір' : 'Обрати для продажу' : 'Відкрити деталі'}: ${escapeHtml(s.name)}">
         <img src="${escapeHtml(getSkinImageSrc(s))}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" loading="lazy" onerror="handleSkinImageError(this)">
         <div class="profile-inv-copy"><span>${escapeHtml(weapon)}</span><p class="inv-name" title="${escapeHtml(s.name)}${s.phase ? ` · ${escapeHtml(s.phase)}` : ''}">${escapeHtml(skinName)}${s.phase ? ` · ${escapeHtml(s.phase)}` : ''}</p></div>
       </button>
@@ -9041,8 +9236,11 @@ function renderProfileInventory() {
   }).join('');
 
   grid.querySelectorAll('[data-profile-inspect]').forEach(button => {
-    button.addEventListener('click', () => showItemDetail(button.dataset.profileInspect));
+    button.addEventListener('click', () => inventorySelectionMode && getInventorySaleQuote([button.dataset.profileInspect]).items.length
+      ? setInventorySelection(button.dataset.profileInspect, !inventorySelection.has(button.dataset.profileInspect))
+      : showItemDetail(button.dataset.profileInspect));
   });
+  grid.querySelectorAll('[data-inventory-select]').forEach(input => input.addEventListener('change', () => setInventorySelection(input.dataset.inventorySelect, input.checked)));
   grid.querySelectorAll('[data-profile-sell]').forEach(b => {
     b.addEventListener('click', e => {
       e.stopPropagation();
@@ -9813,6 +10011,12 @@ function executeUpgrade() {
 
   const chance = calcChance(iv, tv);
   const winBonus = getWinBonus(tv);
+  const historyInputKind = selectedInputMode;
+  const historyMode = selectedInputMode === 'multi' ? 'multi' : rollMode;
+  const historyInputItems = (selectedInputMode === 'skin' ? [inSkin] : selectedInputMode === 'multi' ? multiAtStart : []).map(historySkinSnapshot);
+  const historyBalanceCost = selectedInputMode === 'balance' ? balanceStake : 0;
+  const historyDetails = output => ({ inputKind: historyInputKind, inputItems: historyInputItems,
+    outputItems: [historySkinSnapshot(output || tgtSkin)], balanceDelta: roundPc((output ? winBonus : 0) - historyBalanceCost) });
   const roll = Math.random() * 100;
   const isWin = roll <= chance;
   const wagerId = beginPendingWager({
@@ -9902,7 +10106,7 @@ function executeUpgrade() {
       updateAvatarBadge();
       saveState();
       addActivityEvent({ player: currentUser.name || 'Ти', skin: ni, outcome: 'win', communityKind: 'upgrade' });
-      recordRound({ win: true, target: tgtSkin, chance, mode: selectedInputMode === 'multi' ? 'multi' : rollMode, inputValue: iv, bonus: winBonus });
+      recordRound({ win: true, target: tgtSkin, chance, mode: historyMode, inputValue: iv, bonus: winBonus, history: historyDetails(ni) });
       const _rua_win = document.getElementById('resultUpgraderActions');
       if (_rua_win) _rua_win.classList.remove('hidden');
       setTimeout(() => showResultModal(true, ni, winBonus, { chance, inputValue: iv, targetValue: tv }), 220);
@@ -9914,7 +10118,7 @@ function executeUpgrade() {
       updateAvatarBadge();
       saveState();
       addActivityEvent({ player: currentUser.name || 'Ти', skin: tgtSkin, outcome: 'loss' });
-      recordRound({ win: false, target: tgtSkin, chance, mode: selectedInputMode === 'multi' ? 'multi' : rollMode, inputValue: iv, bonus: 0 });
+      recordRound({ win: false, target: tgtSkin, chance, mode: historyMode, inputValue: iv, bonus: 0, history: historyDetails(null) });
       const _rua_lose = document.getElementById('resultUpgraderActions');
       if (_rua_lose) _rua_lose.classList.add('hidden');
       setTimeout(() => showResultModal(false, null, 0, { chance, inputValue: iv, targetValue: tv, targetSkin: tgtSkin }), 220);
@@ -9942,7 +10146,7 @@ function executeUpgrade() {
       if (winBonus) { currentUser.balance += winBonus; updateBalanceUI(); }
       renderInventoryGrid(); renderProfileInventory(); updateAvatarBadge(); saveState();
       addActivityEvent({ player: currentUser.name || 'Ти', skin: ni, outcome: 'win', communityKind: 'upgrade' });
-      recordRound({ win: true, target: tgtSkin, chance, mode: selectedInputMode === 'multi' ? 'multi' : rollMode, inputValue: iv, bonus: winBonus });
+      recordRound({ win: true, target: tgtSkin, chance, mode: historyMode, inputValue: iv, bonus: winBonus, history: historyDetails(ni) });
       const _rua2 = document.getElementById('resultUpgraderActions');
       if (_rua2) _rua2.classList.remove('hidden');
       setTimeout(() => showResultModal(true, ni, winBonus, { chance, inputValue: iv, targetValue: tv }), 80);
@@ -9951,7 +10155,7 @@ function executeUpgrade() {
       soundLose();
       renderInventoryGrid(); renderProfileInventory(); updateAvatarBadge(); saveState();
       addActivityEvent({ player: currentUser.name || 'Ти', skin: tgtSkin, outcome: 'loss' });
-      recordRound({ win: false, target: tgtSkin, chance, mode: selectedInputMode === 'multi' ? 'multi' : rollMode, inputValue: iv, bonus: 0 });
+      recordRound({ win: false, target: tgtSkin, chance, mode: historyMode, inputValue: iv, bonus: 0, history: historyDetails(null) });
       const _rua3 = document.getElementById('resultUpgraderActions');
       if (_rua3) _rua3.classList.add('hidden');
       setTimeout(() => showResultModal(false, null, 0, { chance, inputValue: iv, targetValue: tv, targetSkin: tgtSkin }), 80);
@@ -10967,6 +11171,9 @@ async function startCaseReel() {
   wonItems.forEach(it => userInventory.push(it));
   lastWonCaseItems = wonItems;
   lastOpenedCaseId = currentActiveCaseId;
+  appendRoundHistory({ win: true, mode: 'case', targetName: `${cfg.name} · ×${mult}`, targetValue: roundPc(wonItems.reduce((sum, item) => sum + item.price, 0)),
+    inputValue: roundPc(totalCost), balanceDelta: -roundPc(totalCost), ticketOpen,
+    outputItems: wonItems.map(historySkinSnapshot) });
 
   // Update stats
   ensureDailyState();
@@ -12171,6 +12378,7 @@ function startBattle() {
     gameState.stats.battles = (gameState.stats.battles || 0) + 1;
     updateAllTimeOnBattle(isPlayerWin);
 
+    let battleWonItem = null;
     if (isPlayerWin) {
       if (outcome) outcome.innerHTML = `<span class="text-emerald-300 text-lg">🪙 Монетка впала на ТВОЮ сторону! Ти забираєш віртуальний предмет ${opponentLabel}: «${escapeHtml(battleBotItem.name)}».</span>`;
       pSlot?.classList.add('is-winner');
@@ -12178,6 +12386,7 @@ function startBattle() {
       // A win returns the reserved stake and awards the opponent's item.
       userInventory.push(playerStake);
       const botItem = makeDemoItem(battleBotItem, '-battle');
+      battleWonItem = botItem;
       userInventory.push(botItem);
       addActivityEvent({ player: currentUser.name || 'Ти', skin: botItem, outcome: 'win', communityKind: 'battle' });
       gameState.stats.battleWins = (gameState.stats.battleWins || 0) + 1;
@@ -12194,17 +12403,18 @@ function startBattle() {
     const halloweenProgress = isPlayerWin ? awardHalloweenProgress('battle') : { pumpkins: 0, coins: 0 };
     const winterShards = isPlayerWin ? awardWinterShards('battle') : 0;
 
-    gameState.rounds.unshift({
-      at: Date.now(),
+    appendRoundHistory({
       win: isPlayerWin,
       targetName: `🪙 ${battlePlayerItem.name} vs ${opponentName}`,
-      targetValue: battleBotItem.price,
+      targetValue: battleWonItem ? roundPc(playerStake.price + battleWonItem.price) : battleBotItem.price,
       chance: 50,
       mode: 'battle',
       inputValue: battlePlayerItem.price,
-      bonus: 0
+      bonus: 0,
+      balanceDelta: 0,
+      inputItems: [historySkinSnapshot(playerStake)],
+      outputItems: (battleWonItem ? [playerStake, battleWonItem] : [battleBotItem]).map(historySkinSnapshot)
     });
-    gameState.rounds = gameState.rounds.slice(0, ROUND_HISTORY_LIMIT);
     completePendingWager(wagerId);
     checkAchievements();
     saveState();
@@ -13461,8 +13671,10 @@ function royaleSettle(winnerIndex, wagerId, frozenParticipants = royaleParticipa
   const icon = document.getElementById('royaleWinIcon');
   const title = document.getElementById('royaleWinTitle');
   const sub = document.getElementById('royaleWinSub');
+  let royaleWonItems = [];
   if (userWon) {
-    allPotSkins.map(skin => makeDemoItem(skin, '-royale')).filter(Boolean).forEach(skin => userInventory.push(skin));
+    royaleWonItems = allPotSkins.map(skin => makeDemoItem(skin, '-royale')).filter(Boolean);
+    royaleWonItems.forEach(skin => userInventory.push(skin));
     const topSkin = allPotSkins.reduce((best, skin) => Number(skin.price || 0) > Number(best?.price || 0) ? skin : best, null);
     if (topSkin) addActivityEvent({ player: currentUser.name || 'Ти', skin: topSkin, outcome: 'win', communityKind: 'royale' });
     gameState.stats.battleWins = (gameState.stats.battleWins || 0) + 1;
@@ -13480,8 +13692,9 @@ function royaleSettle(winnerIndex, wagerId, frozenParticipants = royaleParticipa
     if (sub) sub.textContent = `${winner} завершує раунд із добіркою ${formatCredits(total)}. Наступний раунд може бути твоїм.`;
     showToast(`${winner} завершує раунд із добіркою.`, 'warn');
   }
-  gameState.rounds.unshift({ at: Date.now(), win: userWon, targetName: `◈ Royale · ${allPotSkins.length} скінів`, targetValue: total, chance, mode: 'royale', inputValue: pv, bonus: 0 });
-  gameState.rounds = gameState.rounds.slice(0, ROUND_HISTORY_LIMIT);
+  appendRoundHistory({ win: userWon, targetName: `◈ Royale · ${allPotSkins.length} скінів`, targetValue: total, chance, mode: 'royale', inputValue: pv, bonus: 0, balanceDelta: 0,
+    inputItems: frozenParticipants.filter(entry => entry.isYou).flatMap(entry => entry.skins).map(historySkinSnapshot),
+    outputItems: (userWon ? royaleWonItems : allPotSkins).map(historySkinSnapshot) });
   gameState.royaleRecent = [{ at: Date.now(), win: userWon, winner: userWon ? 'Ти' : winner, total, mode: royaleMode === 'bots' ? 'VS ботів' : 'Відкритий раунд' }, ...(Array.isArray(gameState.royaleRecent) ? gameState.royaleRecent : [])].slice(0, 4);
   checkAchievements();
   if (isLiveRound) {
@@ -13657,6 +13870,8 @@ async function executeContract() {
   gameState.daily.contracts = (gameState.daily.contracts || 0) + 1;
   gameState.weekly.contracts = (gameState.weekly.contracts || 0) + 1;
   updateAllTimeOnContract();
+  appendRoundHistory({ win: true, mode: 'contract', targetName: item.name, targetValue: item.price, inputValue: roundPc(total), balanceDelta: 0,
+    inputItems: items.map(historySkinSnapshot), outputItems: [historySkinSnapshot(item)] });
   addXp(XP_CONTRACT);
   checkAchievements();
   saveState();

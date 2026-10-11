@@ -184,6 +184,7 @@ assert.equal(context.selectedTargetSkin.price, 42.5);
 const inventoryContext = vm.createContext({
   document: { getElementById: element },
   renderProfileInventoryCategoryChips() {}, renderProfileInventorySelects() {}, renderProfileInventoryStats() {},
+  renderInventorySelection() {}, inventorySelectionMode: false, inventorySelection: new Set(),
   userInventory: [{ id: 'expensive', name: 'AWP | Gungnir', price: 7000 }, { id: 'bound', name: 'FAMAS | Half Sleeve', price: 6.5, accountBound: true }],
   getFilteredProfileInventory: () => inventoryContext.userInventory,
   getShowcaseSelection: () => [],

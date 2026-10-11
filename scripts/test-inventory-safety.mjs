@@ -16,6 +16,7 @@ const controls = new Map();
 const element = id => {
   if (!elements.has(id)) elements.set(id, {
     innerHTML: '', value: '', textContent: '', scrollTop: 0,
+    setAttribute: noop,
     classList: { add: noop, remove: noop, toggle: noop, contains: () => false },
     querySelector: () => null,
     querySelectorAll(selector) {
@@ -72,7 +73,7 @@ for (const [from, to] of [
   ['function makeDemoItem(', 'const CANVAS_SIZE ='],
   ['function canUseInventoryItem(', 'function renderInventoryGrid('],
   ['function closeModal(', 'function refreshInventoryModal('],
-  ['function getInventoryDuplicateKey(', 'function getInventorySource('],
+  ['function getInventoryDuplicateCounts(', 'function getInventorySource('],
   ['function sellInventoryItem(', 'function openInventoryOrFocus('],
   ['function selectInventoryItem(', 'function removeFromMulti('],
   ['function executeUpgrade()', 'function getFreeCaseCatalogCandidates('],
@@ -170,6 +171,57 @@ assert.equal(ctx.userInventory.length, 3);
 assert.ok(ctx.userInventory.some(skin => skin.id === 'protected-dupe'));
 assert.ok(ctx.userInventory.some(skin => skin.phase === 'Phase 2'), 'A different phase is not a duplicate');
 
+// Multi-select quotes skip ineligible items, survive filters, and settle atomically.
+const batchA = { ...first, id: 'batch-a', price: 10 };
+const batchB = { ...first, id: 'batch-b', price: 20 };
+const batchLocked = { ...first, id: 'batch-locked', inventoryProtected: true };
+const batchReward = { ...reward, id: 'batch-reward', price: 30 };
+const unpriced = { ...first, id: 'batch-unpriced', price: 0 };
+ctx.verifiedInventoryMarketPrice = skin => skin.price;
+ctx.userInventory = [batchA, batchB, batchLocked, batchReward, unpriced];
+const ids = ctx.userInventory.map(skin => skin.id);
+const quote = ctx.getInventorySaleQuote([...ids, batchA.id]);
+assert.equal(quote.items.length, 3); assert.equal(quote.skipped, 2); assert.equal(quote.total, 54);
+ctx.getFilteredProfileInventory = () => [batchB, batchLocked];
+ctx.toggleInventorySelectionMode(); ctx.selectVisibleInventory(); ctx.renderInventorySelection();
+assert.ok(element('inventorySelectionSummary').textContent.includes('Обрано 1'));
+ctx.setInventorySelection(batchReward.id, true);
+ctx.getFilteredProfileInventory = () => [batchA]; ctx.renderInventorySelection();
+assert.ok(element('inventorySelectionSummary').textContent.includes('Обрано 2'), 'Changing filters preserves the selection');
+batchReward.inventoryProtected = true; ctx.renderInventorySelection();
+assert.ok(element('inventorySelectionSummary').textContent.includes('Обрано 1'), 'A newly protected item leaves the selection');
+batchReward.inventoryProtected = false;
+const batchBalance = ctx.currentUser.balance;
+ctx.requestInventoryBatchSale(ids);
+assert.ok(element('inventorySaleContent').innerHTML.includes('54.00 PC'));
+assert.ok(!element('inventorySaleContent').innerHTML.includes('batch-locked'));
+ctx.closeModal('inventorySaleModal'); ctx.confirmInventorySale();
+assert.equal(ctx.currentUser.balance, batchBalance, 'Cancel is non-mutating');
+ctx.requestInventoryBatchSale(ids); batchB.inventoryProtected = true; ctx.confirmInventorySale();
+assert.equal(ctx.userInventory.length, 5); assert.equal(ctx.currentUser.balance, batchBalance, 'Lock changes cancel the WHOLE batch');
+batchB.inventoryProtected = false;
+ctx.requestInventoryBatchSale(ids);
+const batchOriginalWear = batchB.wear; batchB.wear = ctx.normalizeWear(batchOriginalWear.code === 'MW' ? 'FN' : 'MW'); ctx.confirmInventorySale();
+assert.equal(ctx.userInventory.length, 5, 'A changed exterior cancels the complete quote'); batchB.wear = batchOriginalWear;
+ctx.requestInventoryBatchSale(ids); batchB.price = 21; ctx.confirmInventorySale();
+assert.equal(ctx.userInventory.length, 5); batchB.price = 20;
+ctx.requestInventoryBatchSale(ids); ctx.pendingWager = { id: 'new-round' }; ctx.confirmInventorySale();
+assert.equal(ctx.currentUser.balance, batchBalance); ctx.pendingWager = null;
+ctx.requestInventoryBatchSale(ids);
+ctx.userInventory = ctx.userInventory.filter(skin => skin.id !== batchB.id); ctx.confirmInventorySale();
+assert.equal(ctx.currentUser.balance, batchBalance, 'Lost ownership may not partially sell the remainder');
+ctx.userInventory.push(batchB);
+ctx.multiInputSkins = [batchA]; ctx.contractItems[0] = batchB; ctx.royalePlayerSkins = [batchA]; ctx.battlePlayerItem = batchB;
+const saleCount = ctx.gameState.stats.sells;
+ctx.requestInventoryBatchSale(ids); ctx.confirmInventorySale(); ctx.confirmInventorySale();
+assert.equal(ctx.currentUser.balance, ctx.roundPc(batchBalance + 54), 'The summed per-item quote pays exactly once');
+assert.equal(ctx.gameState.stats.sells, saleCount + 3);
+assert.deepEqual(Array.from(ctx.userInventory, skin => skin.id).sort(), ['batch-locked', 'batch-unpriced']);
+assert.equal(ctx.multiInputSkins.length + ctx.royalePlayerSkins.length, 0);
+assert.equal(ctx.contractItems[0], null); assert.equal(ctx.battlePlayerItem, null);
+ctx.renderInventorySelection(); assert.ok(element('inventorySelectionSummary').textContent.includes('Обрано 0'));
+ctx.verifiedInventoryMarketPrice = originalQuote;
+
 // One card per finish, separate phases, exact supported wear and target price.
 const variants = ctx.CS2_SKINS.flatMap(ctx.getCatalogWearVariants);
 ctx.renderShopGrid(variants);
@@ -189,4 +241,4 @@ element('shopSort').value = 'price-desc';
 ctx.renderShopGrid(variants);
 const displayedPrices = [...element('shopGrid').innerHTML.matchAll(/aria-label="Обрати [^"]+ · ([\d.]+) PC"/g)].map(match => Number(match[1]));
 assert.deepEqual(displayedPrices, [...displayedPrices].sort((a, b) => b - a), 'Sort by the displayed selected exterior price');
-console.log('Inventory safety passed: persistent locks, stale selections, all wagering guards, cancel/confirm/quote validation, once-only payout, phase identity and grouped exact-wear targets.');
+console.log('Inventory safety passed: persistent locks, all wagering guards, atomic multi-select sales, cancellation/stale quotes, once-only payout, phase identity and exact-wear targets.');
