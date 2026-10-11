@@ -1732,6 +1732,7 @@ const TARGET_ARENA_STAKES = Object.freeze([25, 100, 250]);
 const TARGET_ARENA_DURATION_MS = 15_000;
 const TARGET_ARENA_HIT_BONUS_MS = 220;
 const TARGET_ARENA_MAX_BONUS_MS = 5_000;
+const TARGET_ARENA_DAILY_LIMIT = 10;
 const TARGET_ARENA_ASSETS = Object.freeze({
   backdrop: '/assets/arena/zero-sight-range-v1.png',
   standard: '/assets/arena/zero-sight-standard-target-v1.png',
@@ -1791,15 +1792,16 @@ const TARGET_ARENA_TARGETS = Object.freeze({
   decoy: Object.freeze({ key: 'decoy', label: 'ХИБНИЙ СИГНАЛ', icon: 'fa-triangle-exclamation', asset: TARGET_ARENA_ASSETS.decoy, scoreBonus: 0, bonusMs: 0 })
 });
 const TARGET_ARENA_PAYOUTS = Object.freeze([
-  { minimumScore: 21, multiplier: 0.95, label: 'ЕЛІТА · 95%' },
-  { minimumScore: 17, multiplier: 0.75, label: 'МАЙСТЕР · 75%' },
-  { minimumScore: 13, multiplier: 0.55, label: 'СТАБІЛЬНО · 55%' },
+  { minimumScore: 21, multiplier: 1.50, label: 'ЕЛІТА · 150%' },
+  { minimumScore: 17, multiplier: 1.25, label: 'МАЙСТЕР · 125%' },
+  { minimumScore: 13, multiplier: 1.00, label: 'ВНЕСОК ПОВЕРНУТО · 100%' },
   { minimumScore: 9, multiplier: 0.30, label: 'ЧАСТКОВО · 30%' },
   { minimumScore: 5, multiplier: 0.10, label: 'РОЗІГРІВ · 10%' },
   { minimumScore: 0, multiplier: 0, label: 'ПРОМАХ · 0%' }
 ]);
 let targetArenaSelectedStake = TARGET_ARENA_STAKES[0];
 let targetArenaSession = null;
+let targetArenaLastResult = null;
 let targetArenaTimer = 0;
 let targetArenaMoveTimer = 0;
 let powerRunExpanded = false;
@@ -2052,7 +2054,7 @@ function createDefaultPulseCircuit() {
 }
 
 function createDefaultTargetArena() {
-  return { rounds: 0, bestScore: 0, totalSpent: 0, totalPayout: 0, lastPlayedAt: 0 };
+  return { rounds: 0, bestScore: 0, totalSpent: 0, totalPayout: 0, lastPlayedAt: 0, dailyDate: '', dailyRounds: 0 };
 }
 
 function createDefaultAllTime() {
@@ -3377,12 +3379,15 @@ function claimPowerRun() {
 function getTargetArenaState() {
   if (!gameState) return createDefaultTargetArena();
   const stored = gameState.targetArena && typeof gameState.targetArena === 'object' ? gameState.targetArena : {};
+  const today = getTodayKey();
   const arena = {
     rounds: clampNumber(stored.rounds, 0, 1_000_000, 0),
     bestScore: clampNumber(stored.bestScore, 0, 999, 0),
     totalSpent: clampNumber(stored.totalSpent, 0, MAX_STORED_BALANCE, 0),
     totalPayout: clampNumber(stored.totalPayout, 0, MAX_STORED_BALANCE, 0),
-    lastPlayedAt: clampNumber(stored.lastPlayedAt, 0, Number.MAX_SAFE_INTEGER, 0)
+    lastPlayedAt: clampNumber(stored.lastPlayedAt, 0, Number.MAX_SAFE_INTEGER, 0),
+    dailyDate: today,
+    dailyRounds: stored.dailyDate === today ? Math.floor(clampNumber(stored.dailyRounds, 0, TARGET_ARENA_DAILY_LIMIT, 0)) : 0
   };
   gameState.targetArena = arena;
   return arena;
@@ -3516,6 +3521,34 @@ function renderLegacyActiveTargetArena(root) {
   updateTimer();
 }
 
+function targetArenaPayoutMarkup(stake, score = null) {
+  const current = score === null ? null : getTargetArenaPayout(score);
+  return [...TARGET_ARENA_PAYOUTS].reverse().map((tier, index, tiers) => {
+    const next = tiers[index + 1];
+    const range = next ? `${tier.minimumScore}–${next.minimumScore - 1}` : `${tier.minimumScore}+`;
+    const payout = roundPc(stake * tier.multiplier);
+    const net = roundPc(payout - stake);
+    return `<div class="${tier === current ? 'is-current' : ''} ${tier.multiplier > 1 ? 'is-profit' : ''}" data-arena-payout="${tier.minimumScore}"><span>${range} очок</span><b>${Math.round(tier.multiplier * 100)}%</b><small>${formatCredits(payout)}</small>${net > 0 ? `<em>+${formatCredits(net)} чистими</em>` : ''}</div>`;
+  }).join('');
+}
+
+function targetArenaPreviewMarkup(theme) {
+  const targetAsset = theme.targetAsset || TARGET_ARENA_ASSETS.standard;
+  return `<div class="arena-preview" style="--arena-backdrop-image:url('${theme.backdrop}')" role="img" aria-label="Огляд полігону: три лінії, від одного до трьох очок за влучання">
+    <div class="arena-preview-top"><span><i class="fa-solid fa-crosshairs"></i> ПОЛІГОН · ОГЛЯД</span><b>15 <small>секунд</small></b></div>
+    <div class="arena-preview-targets" aria-hidden="true">${TARGET_ARENA_DEPTHS.map(depth => `<div class="arena-preview-target arena-preview-${depth.key}"><img src="${targetAsset}" alt="" loading="lazy"><span>+${depth.points} <small>${depth.label.replace(' ЛІНІЯ', '')}</small></span></div>`).join('')}</div>
+    <div class="arena-preview-bottom"><span><i class="fa-solid fa-gem"></i> Елітна мішень: +1 очко</span><span><i class="fa-solid fa-triangle-exclamation"></i> Обманка: скидає стрік</span></div>
+  </div>`;
+}
+
+function targetArenaResultMarkup() {
+  const result = targetArenaLastResult;
+  if (!result) return '';
+  const net = result.payout - result.stake;
+  const netLabel = result.practice ? 'Баланс не змінювався' : net > 0 ? `Виграш +${formatCredits(net)}` : net < 0 ? `Втрачено ${formatCredits(Math.abs(net))}` : 'Внесок повернуто';
+  return `<section class="arena-result ${net > 0 ? 'is-profit' : ''}" aria-label="Підсумок останньої спроби"><div class="arena-result-title"><i class="fa-solid fa-flag-checkered"></i><span>${result.practice ? 'ТРЕНУВАННЯ ЗАВЕРШЕНО' : 'СПРОБУ ЗАВЕРШЕНО'}<b>${result.practice ? 'БЕЗ PC І НАГОРОД' : result.tier.label}</b></span></div><div><span>ОЧКИ</span><b>${result.score}</b></div><div><span>ВЛУЧАННЯ</span><b>${result.hits}</b></div><div><span>НАЙКРАЩИЙ СТРІК</span><b>×${result.maxStreak}</b></div><div><span>${result.practice ? 'БЕЗКОШТОВНИЙ РЕЖИМ' : `ПОВЕРНУТО З ${formatCredits(result.stake)}`}</span><b>${result.practice ? 'Без виплат' : formatCredits(result.payout)}</b><small>${netLabel}</small></div></section>`;
+}
+
 function renderTargetArena() {
   const root = document.getElementById('targetArena');
   if (!root || !gameState) return;
@@ -3526,19 +3559,26 @@ function renderTargetArena() {
   const arena = getTargetArenaState();
   const theme = getTargetArenaTheme();
   const iconHtml = '<i class="fa-solid ' + theme.icon + '"></i>';
-  const payoutRanges = [
-    ['0–4', '0%'],
-    ['5–8', '10%'],
-    ['9–12', '30%'],
-    ['13–16', '55%'],
-    ['17–20', '75%'],
-    ['21+', '95%']
-  ];
-  const payoutMarkup = payoutRanges.map(range => '<div><b>' + range[0] + '</b><em>' + range[1] + '</em></div>').join('');
-  const stakeMarkup = TARGET_ARENA_STAKES.map(stake => '<button type="button" data-arena-stake="' + stake + '" class="' + (targetArenaSelectedStake === stake ? 'is-selected' : '') + '">' + formatCredits(stake) + '</button>').join('');
-  const compactAction = '<div class="target-arena-compact"><span>' + iconHtml + ' Внески від ' + formatCredits(TARGET_ARENA_STAKES[0]) + ' · різні лінії та бонуси часу</span><button type="button" data-arena-open><i class="fa-solid fa-crosshairs"></i> Відкрити тир</button></div>';
-  const fullControls = '<div class="target-arena-body"><div class="target-arena-stakes"><span>ОБЕРИ ВНЕСОК</span><div>' + stakeMarkup + '</div><small>Віртуальна мінігра: без реальних грошей, предметів чи призів.</small></div><div class="target-arena-rules"><span>ВИПЛАТА ЗА ОЧКИ</span><div class="target-arena-payout-scale">' + payoutMarkup + '</div><small>Далека мішень і елітний маяк дають більше очок. Хибний сигнал обриває стрік.</small></div><div class="target-arena-actions"><button type="button" class="target-arena-start" data-arena-start>' + iconHtml + ' ПОЧАТИ ЗА ' + formatCredits(targetArenaSelectedStake) + '<small>15 с · + час за точні влучання</small></button><button type="button" class="target-arena-collapse" data-arena-close>Згорнути</button></div></div>';
-  root.innerHTML = '<article class="target-arena-card arena-theme-' + theme.key + ' ' + theme.cardClass + ' ' + (targetArenaExpanded ? 'is-expanded' : 'is-compact') + '" aria-label="' + theme.name + '"><div class="target-arena-head"><div class="target-arena-icon">' + iconHtml + '</div><div><p>' + theme.kicker + '</p><h2>' + theme.name + '</h2><span>2.5D-полігон із трьома лініями дальності. Точний постріл повертає частину віртуального внеску.</span></div><div class="target-arena-record"><span>РЕКОРД</span><b>' + arena.bestScore + '</b><small>' + arena.rounds + ' спроб</small></div></div>' + (targetArenaExpanded ? fullControls : compactAction) + '</article>';
+  const balance = Number(currentUser?.balance) || 0;
+  const missing = Math.max(0, roundPc(targetArenaSelectedStake - balance));
+  const remaining = TARGET_ARENA_DAILY_LIMIT - arena.dailyRounds;
+  const stakeMarkup = TARGET_ARENA_STAKES.map(stake => `<button type="button" data-arena-stake="${stake}" aria-pressed="${targetArenaSelectedStake === stake}" class="${targetArenaSelectedStake === stake ? 'is-selected' : ''}">${formatCredits(stake)}</button>`).join('');
+  const compactAction = `<div class="target-arena-compact"><div class="arena-facts"><span><i class="fa-regular fa-clock"></i> 15 секунд</span><span><i class="fa-solid fa-layer-group"></i> 3 лінії</span><span>До +50% PC</span><span>${remaining}/${TARGET_ARENA_DAILY_LIMIT} спроб із PC</span></div><button type="button" data-arena-open aria-expanded="false"><i class="fa-solid fa-crosshairs"></i> Відкрити тир <i class="fa-solid fa-arrow-right"></i></button></div>`;
+  const fullControls = `${targetArenaResultMarkup()}<div class="arena-setup">
+    ${targetArenaPreviewMarkup(theme)}
+    <div class="arena-control-panel"><div class="arena-control-title"><span>ПІДГОТОВКА ДО СПРОБИ</span><b>Точність вирішує.</b><p>Влучай у мішені. Дальня лінія дає більше очок і додаткового часу.</p></div>
+      <div class="arena-daily"><span>Спроб із PC залишилося</span><b>${remaining} / ${TARGET_ARENA_DAILY_LIMIT}</b><small>Нові спроби опівночі · тренування без ліміту</small></div>
+      <div class="target-arena-stakes"><span>ВНЕСОК У PC</span><div>${stakeMarkup}</div></div>
+      <div class="arena-balance"><span>Твій баланс</span><b>${formatCredits(balance)}</b></div>
+      ${!remaining ? '<p class="arena-shortfall"><i class="fa-solid fa-circle-info"></i> 10 спроб використано. Тренуйся безкоштовно — нові спроби завтра.</p>' : missing ? `<p class="arena-shortfall"><i class="fa-solid fa-circle-info"></i> Бракує ${formatCredits(missing)} для цієї спроби.</p>` : ''}
+      <button type="button" class="target-arena-start" data-arena-start ${missing || !remaining ? 'disabled' : ''}><i class="fa-solid fa-play"></i> Почати · ${formatCredits(targetArenaSelectedStake)}</button>
+      <button type="button" class="arena-practice" data-arena-practice><i class="fa-solid fa-crosshairs"></i> Тренування · без PC</button>
+      ${missing && remaining ? '<button type="button" class="arena-earn" data-arena-earn>Як заробити PC <i class="fa-solid fa-arrow-right"></i></button>' : ''}
+      <small class="arena-risk-note">Внесок списується при старті. Результат залежить від набраних очок — не кожна спроба повертає внесок.</small>
+    </div>
+  </div><section class="arena-returns" aria-label="Шкала повернення внеску"><header><span>ПОВЕРНЕННЯ ЗА ОЧКИ</span><small>Виплата включає внесок · 100% = без втрат</small></header><div class="arena-payouts">${targetArenaPayoutMarkup(targetArenaSelectedStake)}</div></section>
+  <footer class="arena-footer"><span><i class="fa-solid fa-shield-halved"></i> Лише віртуальні PC · без реальних грошей і призів</span><button type="button" class="target-arena-collapse" data-arena-close aria-expanded="true">Згорнути <i class="fa-solid fa-chevron-up"></i></button></footer>`;
+  root.innerHTML = `<article class="target-arena-card arena-v2 arena-theme-${theme.key} ${theme.cardClass} ${targetArenaExpanded ? 'is-expanded' : 'is-compact'}" aria-label="${theme.name}" style="--arena-backdrop-image:url('${theme.backdrop}')"><div class="target-arena-head"><div class="target-arena-icon">${iconHtml}</div><div><p>${theme.kicker}</p><h2>${theme.name}</h2><span>Тримай фокус. Влучай точно. Перевір свою реакцію.</span></div><div class="target-arena-record"><span>ОСОБИСТИЙ РЕКОРД</span><b>${arena.bestScore}<small>очок</small></b><small>Спроб: ${arena.rounds}</small></div></div>${targetArenaExpanded ? fullControls : compactAction}</article>`;
   root.querySelector('[data-arena-open]')?.addEventListener('click', () => {
     targetArenaExpanded = true;
     renderTargetArena();
@@ -3550,7 +3590,10 @@ function renderTargetArena() {
   root.querySelectorAll('[data-arena-stake]').forEach(button => button.addEventListener('click', () => {
     targetArenaSelectedStake = Number(button.dataset.arenaStake);
     renderTargetArena();
+    root.querySelector(`[data-arena-stake="${targetArenaSelectedStake}"]`)?.focus({ preventScroll: true });
   }));
+  root.querySelector('[data-arena-earn]')?.addEventListener('click', () => openModal('topupModal'));
+  root.querySelector('[data-arena-practice]')?.addEventListener('click', () => startTargetArena(targetArenaSelectedStake, true));
   root.querySelector('[data-arena-start]')?.addEventListener('click', () => startTargetArena(targetArenaSelectedStake));
 }
 
@@ -3560,7 +3603,12 @@ function renderActiveTargetArena(root) {
   const session = targetArenaSession;
   if (!session) return;
   const iconHtml = '<i class="fa-solid ' + theme.icon + '"></i>';
-  root.innerHTML = '<article class="target-arena-card arena-theme-' + theme.key + ' ' + theme.cardClass + ' is-active" aria-label="' + theme.name + ', активна спроба"><div class="target-arena-live-head"><div><p>' + iconHtml + ' ' + theme.name + ' · СЕАНС ТРИВАЄ</p><strong id="targetArenaTimer">15.0 с</strong></div><div><span>ВНЕСОК</span><b>' + formatCredits(session.stake) + '</b></div><div><span>ОЧКИ</span><b id="targetArenaScore">0</b><small id="targetArenaHits">0 влучань</small></div><div><span>СТРІК</span><b id="targetArenaStreak">×0</b><small id="targetArenaBonus">+0.00 с</small></div></div><div class="target-arena-board" id="targetArenaBoard" style="--arena-backdrop-image:url(' + theme.backdrop + ')"><div class="target-arena-lane-grid" aria-hidden="true"><span>БЛИЖНЯ</span><span>СЕРЕДНЯ</span><span>ДАЛЬНЯ</span></div><span class="target-arena-board-copy">' + theme.boardCopy + '</span><div class="target-arena-board-status" id="targetArenaCallout" aria-live="polite"><i class="fa-solid fa-satellite-dish"></i> СКАНУВАННЯ ЛІНІЇ...</div><button type="button" class="target-arena-target target-kind-standard" id="targetArenaTarget" aria-label="Влучити в мішень"><span class="target-arena-target-ring" aria-hidden="true"></span><img class="target-arena-target-image" id="targetArenaTargetImage" src="' + TARGET_ARENA_ASSETS.standard + '" alt=""><span class="target-arena-target-meta" id="targetArenaTargetMeta">СИГНАЛ</span></button><span class="target-arena-shot-flash" id="targetArenaFlash" aria-hidden="true"></span></div><p class="target-arena-live-note">' + theme.liveHint + ' Ближня: +1, середня: +2, дальня: +3; елітний маяк дає ще +1.</p></article>';
+  root.innerHTML = `<article class="target-arena-card arena-v2 arena-theme-${theme.key} ${theme.cardClass} is-active" aria-label="${theme.name}, активна спроба">
+    <div class="target-arena-live-head"><div class="arena-timer"><p>${iconHtml} ${theme.name} · ${session.practice ? 'ТРЕНУВАННЯ БЕЗ PC' : 'СЕАНС ТРИВАЄ'}</p><strong id="targetArenaTimer">15.0 с</strong><div class="arena-time-track" aria-hidden="true"><span id="targetArenaTimeBar"></span></div></div><div><span>${session.practice ? 'БЕЗКОШТОВНО' : 'ВНЕСОК'}</span><b>${session.practice ? 'Без PC' : formatCredits(session.stake)}</b></div><div><span>ОЧКИ</span><b id="targetArenaScore">${session.score}</b><small id="targetArenaHits">${session.hits || 0} влучань</small></div><div><span>СТРІК</span><b id="targetArenaStreak">×${session.streak || 0}</b><small id="targetArenaBonus">+0.00 с</small></div></div>
+    <div class="target-arena-board" id="targetArenaBoard" style="--arena-backdrop-image:url('${theme.backdrop}')"><div class="target-arena-lane-grid" aria-hidden="true"><span>БЛИЖНЯ · +1</span><span>СЕРЕДНЯ · +2</span><span>ДАЛЬНЯ · +3</span></div><span class="target-arena-board-copy">${theme.boardCopy}</span><div class="target-arena-board-status" id="targetArenaCallout" aria-live="polite"><i class="fa-solid fa-satellite-dish"></i> СКАНУВАННЯ ЛІНІЇ...</div><button type="button" class="target-arena-target target-kind-standard" id="targetArenaTarget" aria-label="Влучити в мішень"><span class="target-arena-target-ring" aria-hidden="true"></span><img class="target-arena-target-image" id="targetArenaTargetImage" src="${TARGET_ARENA_ASSETS.standard}" alt=""><span class="target-arena-target-meta" id="targetArenaTargetMeta">СИГНАЛ</span></button><span class="target-arena-shot-flash" id="targetArenaFlash" aria-hidden="true"></span></div>
+    <div class="arena-live-progress"><span id="targetArenaMilestone"></span><b id="targetArenaReturn"></b></div><div class="arena-payouts arena-live-payouts">${targetArenaPayoutMarkup(session.stake, session.score)}</div>
+    <p class="target-arena-live-note">Елітна мішень: ще +1 очко. Обманка скидає стрік. Точні влучання додають час — максимум +5 секунд.</p>
+  </article>`;
 
   const board = root.querySelector('#targetArenaBoard');
   const target = root.querySelector('#targetArenaTarget');
@@ -3577,9 +3625,16 @@ function renderActiveTargetArena(root) {
     const streak = root.querySelector('#targetArenaStreak');
     const bonus = root.querySelector('#targetArenaBonus');
     if (score) score.textContent = String(targetArenaSession.score);
-    if (hits) hits.textContent = String(targetArenaSession.hits || 0) + ' влучань';
+    if (hits) hits.textContent = 'Влучань: ' + String(targetArenaSession.hits || 0);
     if (streak) streak.textContent = '×' + String(targetArenaSession.streak || 0);
     if (bonus) bonus.textContent = '+' + ((Number(targetArenaSession.bonusMs) || 0) / 1000).toFixed(2) + ' с';
+    const currentTier = getTargetArenaPayout(targetArenaSession.score);
+    const nextTier = [...TARGET_ARENA_PAYOUTS].reverse().find(tier => tier.minimumScore > targetArenaSession.score);
+    root.querySelectorAll('[data-arena-payout]').forEach(cell => cell.classList.toggle('is-current', Number(cell.dataset.arenaPayout) === currentTier.minimumScore));
+    const milestone = root.querySelector('#targetArenaMilestone');
+    if (milestone) milestone.textContent = nextTier ? `Очок до ${Math.round(nextTier.multiplier * 100)}%: ${nextTier.minimumScore - targetArenaSession.score}` : 'Максимальний рівень досягнуто';
+    const returnValue = root.querySelector('#targetArenaReturn');
+    if (returnValue) returnValue.textContent = targetArenaSession.practice ? 'Без PC, XP та сезонних нагород' : `Повернення: ${formatCredits(roundPc(targetArenaSession.stake * currentTier.multiplier))}`;
   };
 
   const scheduleTarget = delay => {
@@ -3623,7 +3678,7 @@ function renderActiveTargetArena(root) {
     target.classList.remove('is-hit', 'is-decoy-hit');
     void target.offsetWidth;
     target.classList.add(activeTarget.decoy ? 'is-decoy-hit' : 'is-hit');
-    flash?.classList.remove('is-visible');
+    flash?.classList.remove('is-visible', 'is-danger');
     void flash?.offsetWidth;
     flash?.classList.add(activeTarget.decoy ? 'is-danger' : 'is-visible');
     if (activeTarget.decoy) {
@@ -3642,7 +3697,7 @@ function renderActiveTargetArena(root) {
     const previousEnd = targetArenaSession.endsAt;
     targetArenaSession.endsAt = Math.min(targetArenaSession.maxEndsAt, targetArenaSession.endsAt + activeTarget.bonusMs);
     targetArenaSession.bonusMs = clampNumber((Number(targetArenaSession.bonusMs) || 0) + (targetArenaSession.endsAt - previousEnd), 0, TARGET_ARENA_MAX_BONUS_MS, 0);
-    if (callout) callout.innerHTML = '<i class="fa-solid fa-check"></i> ТОЧНО · +' + activeTarget.points + ' очки · +' + activeTarget.bonusMs + ' мс';
+    if (callout) callout.innerHTML = '<i class="fa-solid fa-check"></i> ТОЧНО · очки: +' + activeTarget.points + ' · +' + activeTarget.bonusMs + ' мс';
     beep(590 + Math.min(650, targetArenaSession.score * 19), 0.042, 'square');
     updateStats();
     scheduleTarget(125);
@@ -3655,6 +3710,9 @@ function renderActiveTargetArena(root) {
     const remaining = Math.max(0, targetArenaSession.endsAt - Date.now());
     const timer = root.querySelector('#targetArenaTimer');
     if (timer) timer.textContent = (remaining / 1000).toFixed(1) + ' с';
+    const timeBar = root.querySelector('#targetArenaTimeBar');
+    if (timeBar) timeBar.style.width = `${Math.min(100, remaining / TARGET_ARENA_DURATION_MS * 100)}%`;
+    root.querySelector('.arena-v2')?.classList.toggle('is-urgent', remaining > 0 && remaining <= 3000);
     if (remaining <= 0) {
       finishTargetArena();
       return;
@@ -3664,17 +3722,29 @@ function renderActiveTargetArena(root) {
   updateTimer();
 }
 
-function startTargetArena(stake) {
+function startTargetArena(stake, practice = false) {
   const safeStake = TARGET_ARENA_STAKES.includes(Number(stake)) ? Number(stake) : TARGET_ARENA_STAKES[0];
   if (targetArenaSession || !currentUser || !gameState) return;
-  if (currentUser.balance < safeStake) {
+  const isPractice = practice === true;
+  const arena = getTargetArenaState();
+  if (!isPractice && arena.dailyRounds >= TARGET_ARENA_DAILY_LIMIT) {
+    showToast('10 спроб із PC на сьогодні використано. Доступне безкоштовне тренування.', 'info');
+    renderTargetArena();
+    return;
+  }
+  if (!isPractice && currentUser.balance < safeStake) {
     showToast(`Для Елітного тиру потрібно ${formatCredits(safeStake)}.`, 'warn');
     return;
   }
-  currentUser.balance = roundPc(currentUser.balance - safeStake);
+  if (!isPractice) {
+    currentUser.balance = roundPc(currentUser.balance - safeStake);
+    arena.dailyRounds += 1;
+  }
+  targetArenaLastResult = null;
   const startedAt = Date.now();
   targetArenaSession = {
-    stake: safeStake,
+    stake: isPractice ? 0 : safeStake,
+    practice: isPractice,
     score: 0,
     hits: 0,
     streak: 0,
@@ -3684,16 +3754,28 @@ function startTargetArena(stake) {
     endsAt: startedAt + TARGET_ARENA_DURATION_MS,
     maxEndsAt: startedAt + TARGET_ARENA_DURATION_MS + TARGET_ARENA_MAX_BONUS_MS
   };
-  saveState();
-  updateBalanceUI();
+  if (!isPractice) {
+    saveState();
+    updateBalanceUI();
+  }
   renderTargetArena();
+  document.getElementById('targetArena')?.scrollIntoView({ block: 'start', behavior: 'instant' });
 }
 
 function finishTargetArena() {
   if (!targetArenaSession || !currentUser || !gameState) return;
   const session = targetArenaSession;
   const tier = getTargetArenaPayout(session.score);
-  const payout = Math.round(session.stake * tier.multiplier);
+  const payout = roundPc(session.stake * tier.multiplier);
+  targetArenaLastResult = { ...session, tier, payout };
+  if (session.practice) {
+    targetArenaLastResult.payout = 0;
+    targetArenaSession = null;
+    clearTargetArenaTimers();
+    renderTargetArena();
+    showToast(`Тренування завершено · очки: ${session.score}. Баланс і прогрес не змінювалися.`, 'info');
+    return;
+  }
   const arena = getTargetArenaState();
   arena.rounds += 1;
   arena.bestScore = Math.max(arena.bestScore, session.score);
@@ -3713,7 +3795,7 @@ function finishTargetArena() {
   if (payout > session.stake) soundWin(); else soundLose();
   const net = payout - session.stake;
   const netLabel = net > 0 ? `прибуток +${formatCredits(net)}` : net < 0 ? `втрачено ${formatCredits(Math.abs(net))}` : 'повернення внеску';
-  showToast(`Тир: ${session.score} влучань · ${tier.label} · ${netLabel}${halloweenProgress.pumpkins ? ` · +${halloweenProgress.pumpkins} 🎃 · +${halloweenProgress.coins} 🪙` : ''}${winterShards ? ` · +${winterShards} Frost Shard` : ''}.`, payout >= session.stake ? 'success' : 'warn');
+  showToast(`Тир · очки: ${session.score} · ${tier.label} · ${netLabel}${halloweenProgress.pumpkins ? ` · +${halloweenProgress.pumpkins} 🎃 · +${halloweenProgress.coins} 🪙` : ''}${winterShards ? ` · +${winterShards} Frost Shard` : ''}.`, payout >= session.stake ? 'success' : 'warn');
 }
 
 function getBattlePassProgress() {
