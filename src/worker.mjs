@@ -629,12 +629,17 @@ function parseStake(value) {
   if (!name || !img || !Number.isFinite(rawPrice) || rawPrice < 0.01 || rawPrice > MAX_PRICE) return null
   const price = boundedMoney(rawPrice, 0.01, MAX_PRICE)
   const rarityColor = cleanText(value?.rarityColor, 16)
+  const wearCode = cleanText(typeof value?.wear === 'string' ? value.wear : value?.wear?.code, 2).toUpperCase()
   return {
     name,
     img,
     price,
     rarity: cleanText(value?.rarity, 48) || 'CS2',
     rarityColor: /^#[0-9a-f]{3,8}$/i.test(rarityColor) ? rarityColor : '#b0c3d9',
+    wear: { code: ['FN', 'MW', 'FT', 'WW', 'BS'].includes(wearCode) ? wearCode : 'FT' },
+    weapon: cleanText(value?.weapon, 64),
+    category: cleanText(value?.category, 64),
+    sourceSkinId: cleanText(value?.sourceSkinId, 128),
   }
 }
 

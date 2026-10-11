@@ -207,6 +207,9 @@ const WEAR_TIERS = [
   { code: 'WW', name: 'Well-Worn', min: 0.38, max: 0.45, mult: 0.85 },
   { code: 'BS', name: 'Battle-Scarred', min: 0.45, max: 1, mult: 0.70 }
 ];
+// Game probabilities, not official CS2 odds. Restrict and renormalize these
+// weights when the catalogue lists only some exteriors for a finish.
+const WEAR_DROP_WEIGHTS = Object.freeze({ FN: 10, MW: 18, FT: 47, WW: 15, BS: 10 });
 
 // PC is a virtual game balance. It is not money, cannot be withdrawn and
 // cannot be exchanged for Steam inventory.
@@ -525,12 +528,68 @@ function cleanColor(value) {
     : '#b0c3d9';
 }
 
+function findWearTier(wear) {
+  const value = String(typeof wear === 'string' ? wear : wear?.code || wear?.name || '').trim().toLowerCase();
+  return WEAR_TIERS.find(tier => tier.code.toLowerCase() === value || tier.name.toLowerCase() === value) || null;
+}
+
 function normalizeWear(wear) {
-  return WEAR_TIERS.find(tier => tier.code === wear?.code) || WEAR_TIERS[2];
+  return findWearTier(wear) || WEAR_TIERS[2];
+}
+
+function getSkinWearDistribution(skin) {
+  const declared = Array.isArray(skin?.wears) ? skin.wears.map(findWearTier).filter(Boolean) : [];
+  const allowed = declared.length ? WEAR_TIERS.filter(wear => declared.some(tier => tier.code === wear.code)) : WEAR_TIERS;
+  const total = allowed.reduce((sum, wear) => sum + WEAR_DROP_WEIGHTS[wear.code], 0);
+  return allowed.map(wear => ({ wear, probability: WEAR_DROP_WEIGHTS[wear.code] / total }));
+}
+
+function preferredCatalogWear(skin) {
+  const distribution = getSkinWearDistribution(skin);
+  return distribution.find(entry => entry.wear.code === 'FT')?.wear || distribution[0].wear;
+}
+
+function rollSkinWear(skin, randomValue = Math.random()) {
+  const distribution = getSkinWearDistribution(skin);
+  let roll = clampNumber(randomValue, 0, 0.999999999, 0.5);
+  for (const entry of distribution) {
+    if (roll < entry.probability) return entry.wear;
+    roll -= entry.probability;
+  }
+  return distribution[distribution.length - 1].wear;
+}
+
+function getCatalogWearVariants(skin) {
+  return getSkinWearDistribution(skin).map(entry => marketReadyCatalogSkin(skin, entry.wear)).filter(Boolean);
+}
+
+function getSkinWearValues(skin) {
+  return getSkinWearDistribution(skin).map(entry => ({ ...entry, price: verifiedMarketPriceForWear(skin, entry.wear) }));
+}
+
+function expectedSkinWearValue(skin) {
+  return getSkinWearValues(skin).reduce((sum, entry) => sum + entry.price * entry.probability, 0);
+}
+
+function skinWearPriceRange(skin) {
+  const prices = getSkinWearValues(skin).map(entry => entry.price);
+  const min = Math.min(...prices), max = Math.max(...prices);
+  return min === max ? formatCredits(min) : `${formatCredits(min)} – ${formatCredits(max)}`;
+}
+
+function canSellInventoryItem(item) {
+  if (!item) return false;
+  if (item.accountBound !== true) return true;
+  // Selling exclusive rewards is separate from wagering them. Suffixes also
+  // recognize rewards in older compact cloud saves, which omitted the flags.
+  return item.exclusive === true || item.battlePassReward === true || item.collectionReward === true
+    || item.dailyCalendarReward === true || Boolean(item.halloweenEvent)
+    || /-(?:battle-pass|halloween-\d{4}|daily-calendar|exclusive)$/.test(String(item.id || ''));
 }
 
 function normalizeStoredItem(item, index = 0) {
   if (!item || typeof item !== 'object') return null;
+  item = stableCatalogSourceForItem(item);
   const id = cleanText(item.id || `import-${Date.now()}-${index}`, 128);
   const name = cleanText(item.name || 'CS2 Skin', 160);
   const wear = normalizeWear(item.wear);
@@ -556,10 +615,9 @@ function normalizeStoredItem(item, index = 0) {
     pricingVersion: STABLE_ECONOMY_VERSION,
     price: stablePrice,
     virtual: item.virtual !== false,
-    exclusive: item.exclusive === true,
-    // Season and collection rewards are cosmetic achievements.  Keeping them
-    // in the catalogue is useful for a consistent collection value, but they
-    // must not become a hidden source of sellable PC.
+    exclusive: item.exclusive === true || Boolean(item.halloweenEvent) || /-halloween-\d{4}$/.test(id),
+    // Keep reward wagering restrictions. Exclusive rewards can still be sold
+    // for virtual PC through the separate canSellInventoryItem policy.
     accountBound: item.accountBound === true || item.battlePassReward === true || item.collectionReward === true || item.dailyCalendarReward === true || Boolean(item.halloweenEvent) || /-(?:battle-pass|halloween-\d{4}|daily-calendar|exclusive)$/.test(id),
     battlePassReward: item.battlePassReward === true,
     collectionReward: item.collectionReward === true,
@@ -584,15 +642,16 @@ function normalizeCatalogSkin(skin, index = 0) {
     rarity: cleanText(skin.rarity || 'Consumer Grade', 48),
     rarityColor: cleanColor(skin.rarityColor),
     img,
-    wears: Array.isArray(skin.wears) ? skin.wears.map(wear => cleanText(wear?.name || wear, 32)).filter(Boolean).slice(0, 5) : [],
+    wears: Array.isArray(skin.wears) ? skin.wears.map(wear => findWearTier(wear)?.name).filter(Boolean).slice(0, 5) : [],
     marketPrices: {},
     marketUpdatedAt: 0,
     marketSource: STABLE_ECONOMY_SOURCE,
     pricingVersion: STABLE_ECONOMY_VERSION,
     price: 1
   };
-  const ftPrice = stableCatalogPrice(catalogSkin, 'FT');
-  return { ...catalogSkin, marketPrices: { FT: ftPrice }, marketPrice: ftPrice, price: ftPrice };
+  const wear = preferredCatalogWear(catalogSkin);
+  const price = stableCatalogPrice(catalogSkin, wear);
+  return { ...catalogSkin, marketPrices: { [wear.code]: price }, marketPrice: price, price };
 }
 
 function marketPriceForWear(skin, wear) {
@@ -2772,7 +2831,7 @@ function renderHalloweenShop(state, status) {
     const action = status.preview ? 'Лише перегляд' : soldOut ? 'Вже є' : state.pumpkinCoins < item.cost ? `Ще ${item.cost - state.pumpkinCoins} 🪙` : 'Взяти';
     return `<button type="button" class="halloween-shop-item ${soldOut ? 'is-owned' : ''}" ${canBuy ? `data-halloween-buy="${item.id}"` : 'disabled'}><i class="fa-solid ${item.icon}"></i><span><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.note)}</small></span><em>${soldOut ? '✓' : `${item.cost} 🪙`}</em><strong>${action}</strong></button>`;
   }).join('');
-  return `<div class="halloween-shop" aria-label="Нічна крамниця"><div class="halloween-shop-heading"><div><i class="fa-solid fa-store"></i><b>НІЧНА КРАМНИЦЯ</b><span>Нагороди прив’язані до профілю назавжди</span></div><strong>${state.pumpkinCoins} 🪙</strong></div><div class="halloween-shop-list">${items}</div></div>`;
+  return `<div class="halloween-shop" aria-label="Нічна крамниця"><div class="halloween-shop-heading"><div><i class="fa-solid fa-store"></i><b>НІЧНА КРАМНИЦЯ</b><span>Ексклюзивні скіни можна продати за PC</span></div><strong>${state.pumpkinCoins} 🪙</strong></div><div class="halloween-shop-list">${items}</div></div>`;
 }
 
 function renderHalloweenTreat(state, status) {
@@ -2981,7 +3040,7 @@ function claimHalloweenReward(pumpkins) {
       showToast('Halloween skin ще завантажується. Спробуй за мить.', 'warn');
       return;
     }
-    const item = makeDemoItem({ ...skin, accountBound: true, halloweenEvent: true }, `-${HALLOWEEN_EVENT.id}`);
+    const item = makeDemoItem({ ...skin, exclusive: true, accountBound: true, halloweenEvent: true }, `-${HALLOWEEN_EVENT.id}`);
     userInventory.push(item);
     renderInventoryGrid();
     renderProfileInventory();
@@ -3808,7 +3867,7 @@ function getBattlePassProgress() {
 }
 
 function battlePassRewardCopy(reward) {
-  if (reward?.type === 'skin') return { icon: 'fa-gem', title: reward.skin.name, value: 'Фіксована ціна каталогу', skin: true };
+  if (reward?.type === 'skin') return { icon: 'fa-gem', title: reward.skin.name, value: 'Можна продати за PC', skin: true };
   if (reward?.type === 'ticket') return { icon: 'fa-ticket', title: 'Потужний квиток', value: '1 прокрут кейса', ticket: true };
   return { icon: 'fa-coins', title: `+${formatCredits(reward?.amount || 0)}`, value: 'Potuzhno Coin' };
 }
@@ -4705,13 +4764,13 @@ function compactCloudInventoryItem(item, index = 0) {
   if (!normalized) return null;
   const isSteamItem = Boolean(normalized.steamImported && normalized.steamAssetId && normalized.steamOwnerId);
   return isSteamItem
-    ? [1, normalized.steamAssetId, normalized.steamOwnerId, normalized.name, normalized.rarity, normalized.rarityColor, normalized.img, normalized.basePrice, normalized.wear.code, normalized.virtual ? 1 : 0, normalized.exclusive ? 1 : 0, normalized.addedAt, normalized.marketPrice || 0, normalized.marketHashName || '', normalized.marketUpdatedAt || 0, normalized.accountBound ? 1 : 0]
-    : [0, normalized.id, normalized.sourceSkinId, normalized.name, normalized.rarity, normalized.rarityColor, normalized.img, normalized.basePrice, normalized.wear.code, normalized.virtual ? 1 : 0, normalized.exclusive ? 1 : 0, normalized.addedAt, normalized.marketPrice || 0, normalized.marketHashName || '', normalized.marketUpdatedAt || 0, normalized.accountBound ? 1 : 0];
+    ? [1, normalized.steamAssetId, normalized.steamOwnerId, normalized.name, normalized.rarity, normalized.rarityColor, normalized.img, normalized.basePrice, normalized.wear.code, normalized.virtual ? 1 : 0, normalized.exclusive ? 1 : 0, normalized.addedAt, normalized.marketPrice || 0, normalized.marketHashName || '', normalized.marketUpdatedAt || 0, normalized.accountBound ? 1 : 0, normalized.weapon, normalized.category]
+    : [0, normalized.id, normalized.sourceSkinId, normalized.name, normalized.rarity, normalized.rarityColor, normalized.img, normalized.basePrice, normalized.wear.code, normalized.virtual ? 1 : 0, normalized.exclusive ? 1 : 0, normalized.addedAt, normalized.marketPrice || 0, normalized.marketHashName || '', normalized.marketUpdatedAt || 0, normalized.accountBound ? 1 : 0, normalized.weapon, normalized.category];
 }
 
 function expandCloudInventoryItem(record, index = 0) {
   if (!Array.isArray(record) || record.length < 12) return null;
-  const [isSteamItem, primaryId, secondaryId, name, rarity, rarityColor, img, basePrice, wearCode, virtual, exclusive, addedAt, marketPrice, marketHashName, marketUpdatedAt, accountBound] = record;
+  const [isSteamItem, primaryId, secondaryId, name, rarity, rarityColor, img, basePrice, wearCode, virtual, exclusive, addedAt, marketPrice, marketHashName, marketUpdatedAt, accountBound, weapon, category] = record;
   const steamImported = isSteamItem === 1;
   return normalizeStoredItem({
     id: steamImported ? `steam-copy-${secondaryId}-${primaryId}` : primaryId,
@@ -4728,6 +4787,8 @@ function expandCloudInventoryItem(record, index = 0) {
     marketHashName,
     marketUpdatedAt,
     wear: { code: wearCode },
+    weapon,
+    category,
     virtual: virtual !== 0,
     exclusive: exclusive === 1,
     accountBound: accountBound === 1,
@@ -5679,9 +5740,10 @@ function makeDemoItem(skin, suffix = '', wearRandom = null) {
   // not the catalogue ID. Resolve it before applying the shared stable index.
   const catalogSkin = CS2_SKINS.find(candidate => normalizeSkinName(candidate.name) === normalizeSkinName(safeSkin.name));
   const quoteSkin = catalogSkin || safeSkin;
-  // Issue new virtual items only in the exact wear whose price was checked.
-  // Rolling an unquoted float used to manufacture a value with a multiplier.
-  const wear = skin.wear ? normalizeWear(skin.wear) : WEAR_TIERS[2];
+  // New drops use the independent wear roll; selected targets and settled
+  // stakes keep their exact exterior. Quote that exterior, never multiply an
+  // already quoted price or reroll an owned item during persistence.
+  const wear = skin.wear ? normalizeWear(skin.wear) : rollSkinWear(quoteSkin, wearRandom ?? Math.random());
   const quotedPrice = marketPriceForWear(quoteSkin, wear);
   const basePrice = quotedPrice;
   const item = {
@@ -5709,6 +5771,10 @@ function makeDemoItem(skin, suffix = '', wearRandom = null) {
 function createStarterInventory() {
   const p = [CS2_SKINS[5], CS2_SKINS[6], CS2_SKINS[8] || CS2_SKINS[7], CS2_SKINS[12], CS2_SKINS[13]].filter(Boolean);
   return p.map((s, i) => makeDemoItem(s, `-${i}`));
+}
+
+function createCaseDropItems(winners, rolls, isFree = false) {
+  return winners.map((skin, index) => makeDemoItem(skin, isFree ? '-freecase' : '-case', rolls[index]?.wearRoll)).filter(Boolean);
 }
 
 const CANVAS_SIZE = 260;
@@ -6510,7 +6576,7 @@ function doRevealCollectionReward(collId) {
           <img src="${createSkinPreview(reward.skin.name)}" class="h-32 mx-auto my-3 object-contain" />
           <p class="font-heading text-2xl font-extrabold text-white leading-tight">${escapeHtml(reward.skin.name)}</p>
           <p class="text-sm font-bold text-violet-200 mt-1">Колекційний · фіксована ціна</p>
-          <p class="text-[10px] text-gray-500 mt-2 italic">Цей предмет неможливо отримати інакше — тільки за колекцію та не продається за PC.</p>
+          <p class="text-[10px] text-gray-500 mt-2 italic">Ексклюзив за колекцію. Можна продати за PC; отримана нагорода залишається в прогресі.</p>
         </div>
         <div class="mt-3 rounded-xl border border-green-500/40 bg-green-500/10 p-3 text-center">
           <p class="text-xs font-extrabold text-green-200 uppercase tracking-wider">Бонусні кредити</p>
@@ -8431,13 +8497,13 @@ function renderDailyCalendar() {
     const isClaimed = progress.claimedToday && reward.day <= progress.cycleDay;
     const stateClass = isClaimed ? 'is-claimed' : isCurrent ? 'is-current' : '';
     const stateLabel = isClaimed ? '<i class="fa-solid fa-check"></i> Забрано' : isCurrent ? 'Сьогодні' : `День ${reward.day}`;
-    const collectible = reward.collectible ? `<small><i class="fa-solid fa-lock"></i> ${escapeHtml(getDailyCalendarCollectible(Math.max(7, nextStreakValue)))}</small>` : '';
+    const collectible = reward.collectible ? `<small><i class="fa-solid fa-star"></i> ${escapeHtml(getDailyCalendarCollectible(Math.max(7, nextStreakValue)))}</small>` : '';
     return `<article class="daily-calendar-day ${stateClass}"><span>ДЕНЬ ${reward.day}</span><i class="fa-solid ${reward.icon}"></i><b>${escapeHtml(reward.title)}</b>${collectible}<em>${stateLabel}</em></article>`;
   }).join('');
   const action = progress.claimedToday
     ? `<button type="button" class="daily-calendar-claim is-claimed" disabled><i class="fa-solid fa-clock"></i> НАСТУПНА НАГОРОДА ЗАВТРА</button>`
     : `<button type="button" class="daily-calendar-claim" onclick="claimDailyCalendarReward()"><i class="fa-solid fa-gift"></i> ЗАБРАТИ ДЕНЬ ${progress.cycleDay}</button>`;
-  content.innerHTML = `<div class="daily-calendar-heading"><p><i class="fa-solid fa-calendar-days"></i> ЩОДЕННИЙ КАЛЕНДАР</p><h3>7 ДНІВ ПОВЕРНЕННЯ</h3><span>Заходь щодня. Пропустив день — серія починається знову; на 7-й день чекає прив’язаний колекційний скін.</span></div><div class="daily-calendar-progress"><span>СЕРІЯ</span><strong>${progress.current} <small>дн.</small></strong><em>Коло ${cycle}</em></div><section class="daily-calendar-days">${days}</section>${action}<p class="daily-calendar-note"><i class="fa-solid fa-shield-heart"></i> Усі нагороди віртуальні. Колекційний скін не продається, не ставиться на апгрейд і не впливає на шанси.</p>`;
+  content.innerHTML = `<div class="daily-calendar-heading"><p><i class="fa-solid fa-calendar-days"></i> ЩОДЕННИЙ КАЛЕНДАР</p><h3>7 ДНІВ ПОВЕРНЕННЯ</h3><span>Заходь щодня. Пропустив день — серія починається знову; на 7-й день чекає ексклюзивний колекційний скін.</span></div><div class="daily-calendar-progress"><span>СЕРІЯ</span><strong>${progress.current} <small>дн.</small></strong><em>Коло ${cycle}</em></div><section class="daily-calendar-days">${days}</section>${action}<p class="daily-calendar-note"><i class="fa-solid fa-shield-heart"></i> Усі нагороди віртуальні. Колекційний скін можна продати за PC, але не ставити на апгрейд. Він не впливає на шанси.</p>`;
 }
 
 function openDailyCalendar() {
@@ -8683,18 +8749,19 @@ function renderInventoryGrid() {
     const marketPrice = verifiedInventoryMarketPrice(s);
     const sellPrice = roundPc(marketPrice * SELL_RATE);
     const isBound = s.accountBound === true;
+    const canSell = canSellInventoryItem(s);
     const valueMarkup = `<p class="text-amber-400 font-extrabold text-xs mt-1">${formatCredits(marketPrice)}</p>`;
     return `<div class="relative bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 flex flex-col items-center transition group inventory-card ${inMulti ? 'is-in-multi' : ''} ${s.exclusive ? 'border-violet-500/50' : ''}" style="--rarity-color:${rarity.color}">
       <button type="button" data-inventory-id="${escapeHtml(String(s.id))}" class="w-full text-left">
         <span class="wear-badge wear-${wear.code} absolute top-2 left-2 z-10">${wear.code}</span>
-        ${isBound ? '<span class="absolute top-2 right-2 text-violet-300 text-xs" title="Прив’язано до профілю"><i class="fa-solid fa-lock"></i></span>' : s.exclusive ? `<span class="absolute top-2 right-2 text-violet-300 text-xs" title="Ексклюзив">★</span>` : ''}
+        ${isBound && !canSell ? '<span class="absolute top-2 right-2 text-violet-300 text-xs" title="Прив’язано до профілю"><i class="fa-solid fa-lock"></i></span>' : s.exclusive || isBound ? `<span class="absolute top-2 right-2 text-violet-300 text-xs" title="Ексклюзивна нагорода · можна продати за PC">★</span>` : ''}
         <img src="${escapeHtml(getSkinImageSrc(s))}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" class="h-20 w-full object-contain group-hover:scale-105 transition image-skeleton" loading="lazy" onerror="handleSkinImageError(this)">
         <div class="text-center w-full mt-2">
           <p class="font-bold text-xs text-white truncate" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</p>
           ${valueMarkup}
         </div>
       </button>
-      ${isBound ? '<div class="mt-2 w-full rounded-lg border border-violet-500/30 bg-violet-500/10 text-violet-200 text-[10px] font-extrabold uppercase py-1.5 text-center"><i class="fa-solid fa-lock mr-1"></i>Колекційний</div>' : `<button type="button" data-sell-id="${escapeHtml(String(s.id))}" title="Продати за ${formatCredits(sellPrice)}" class="mt-2 w-full rounded-lg bg-emerald-500/15 border border-emerald-500/40 hover:bg-emerald-500 hover:text-black text-emerald-200 text-[11px] font-extrabold uppercase py-1.5 transition flex items-center justify-center gap-1"><i class="fa-solid fa-sack-dollar text-[10px]"></i>Продати</button>`}
+      ${!canSell ? '<div class="mt-2 w-full rounded-lg border border-violet-500/30 bg-violet-500/10 text-violet-200 text-[10px] font-extrabold uppercase py-1.5 text-center"><i class="fa-solid fa-lock mr-1"></i>Колекційний</div>' : `<button type="button" data-sell-id="${escapeHtml(String(s.id))}" title="Продати за ${formatCredits(sellPrice)}" class="mt-2 w-full rounded-lg bg-emerald-500/15 border border-emerald-500/40 hover:bg-emerald-500 hover:text-black text-emerald-200 text-[11px] font-extrabold uppercase py-1.5 transition flex items-center justify-center gap-1"><i class="fa-solid fa-sack-dollar text-[10px]"></i>Продати</button>`}
       ${rarityStripMarkup(rarity, 'inventory-rarity-bar')}
     </div>`;
   }).join('');
@@ -8838,6 +8905,7 @@ function renderProfileInventory() {
     const marketPrice = verifiedInventoryMarketPrice(s);
     const sellPrice = roundPc(marketPrice * SELL_RATE);
     const isBound = s.accountBound === true;
+    const canSell = canSellInventoryItem(s);
     const isShowcased = showcaseSelection.has(String(s.id));
     const [weaponPart, ...skinParts] = String(s.name || 'CS2 Skin').split('|');
     const weapon = cleanText(weaponPart, 48) || 'CS2';
@@ -8845,13 +8913,13 @@ function renderProfileInventory() {
     const source = getInventorySource(s);
     const origin = source === 'steam' ? 'STEAM' : source === 'exclusive' ? 'EXCLUSIVE' : 'DROP';
     return `<article class="profile-inv-card rarity-surface ${s.exclusive ? 'is-exclusive' : ''}" style="--rarity-color:${rarity.color}">
-      <div class="profile-inv-card-top"><span class="wear-badge wear-${wear.code}">${wear.code}</span><span class="profile-inv-origin">${isBound ? 'BOUND' : origin}</span></div>
+      <div class="profile-inv-card-top"><span class="wear-badge wear-${wear.code}">${wear.code}</span><span class="profile-inv-origin">${isBound && !canSell ? 'BOUND' : origin}</span></div>
       <button type="button" class="profile-inv-inspect" data-profile-inspect="${escapeHtml(String(s.id))}" title="Відкрити деталі: ${escapeHtml(s.name)}">
         <img src="${escapeHtml(getSkinImageSrc(s))}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" loading="lazy" onerror="handleSkinImageError(this)">
         <div class="profile-inv-copy"><span>${escapeHtml(weapon)}</span><p class="inv-name" title="${escapeHtml(s.name)}">${escapeHtml(skinName)}</p></div>
       </button>
       <div class="profile-inv-card-footer"><p class="inv-price" title="${formatCredits(marketPrice)}"><i class="fa-solid fa-coins"></i>${formatCredits(marketPrice)}</p><div class="inv-actions">
-        ${isBound ? '<span class="info-btn text-violet-300 border-violet-500/40" title="Прив’язано до профілю"><i class="fa-solid fa-lock"></i></span>' : `<button class="sell-btn" data-profile-sell="${escapeHtml(String(s.id))}" title="Продати за ${formatCredits(sellPrice)}"><i class="fa-solid fa-sack-dollar"></i><span>Продати</span></button>`}
+        ${!canSell ? '<span class="info-btn text-violet-300 border-violet-500/40" title="Прив’язано до профілю"><i class="fa-solid fa-lock"></i></span>' : `<button class="sell-btn" data-profile-sell="${escapeHtml(String(s.id))}" title="Продати за ${formatCredits(sellPrice)}"><i class="fa-solid fa-sack-dollar"></i><span>Продати</span></button>`}
         <button class="info-btn ${isShowcased ? 'text-amber-300 border-amber-400/60' : ''}" data-profile-showcase="${escapeHtml(String(s.id))}" title="${isShowcased ? 'Прибрати з вітрини' : 'Додати на вітрину'}"><i class="${isShowcased ? 'fa-solid' : 'fa-regular'} fa-star"></i></button>
         <button class="info-btn" data-profile-info="${escapeHtml(String(s.id))}" title="Деталі"><i class="fa-solid fa-circle-info"></i></button>
       </div></div>
@@ -8891,6 +8959,7 @@ function showItemDetail(itemId) {
   const marketPrice = verifiedInventoryMarketPrice(it);
   const sellPrice = roundPc(marketPrice * SELL_RATE);
   const isBound = it.accountBound === true;
+  const canSell = canSellInventoryItem(it);
   const cat = categorizeWeapon(it.name);
   const catLabel = { rifle: 'Гвинтівка', pistol: 'Пістолет', sniper: 'Снайперська', smg: 'ПП', heavy: 'Важка', knife: 'Ніж', gloves: 'Рукавиці', other: 'Зброя' }[cat] || 'Зброя';
   const html = `
@@ -8908,8 +8977,8 @@ function showItemDetail(itemId) {
       <div class="rounded-xl border border-gray-800 bg-black/20 p-3"><p class="text-[10px] font-bold uppercase tracking-wider text-gray-500">Продаж (90%)</p><p class="font-heading text-2xl font-extrabold text-emerald-300">${formatCredits(sellPrice)}</p></div>
     </div>
     <p class="mt-3 text-[10px] leading-4 text-gray-500">Фіксована ціна зі стабільного каталогу ПОТУЖНО. Вона однакова в інвентарі, апгрейдері, кейсах, Battle, Royale та контрактах і не є реальною грошовою вартістю.</p>
-    ${isBound ? `<p class="mt-3 text-[10px] text-violet-300 italic"><i class="fa-solid fa-lock mr-1"></i>Колекційний предмет прив’язаний до профілю: його не можна продавати, ставити на апгрейд, у Battle, Royale чи контракт.</p>` : it.exclusive ? `<p class="mt-3 text-[10px] text-violet-300 italic">Ексклюзивний предмет — його можна продати, але більше не отримати.</p>` : ''}
-    ${isBound ? '<div class="mt-4 w-full py-3 rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-200 font-extrabold uppercase text-sm tracking-wider"><i class="fa-solid fa-lock mr-2"></i>Прив’язано до профілю</div>' : `<button type="button" data-detail-sell-id="${escapeHtml(String(it.id))}" class="mt-4 w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-400 text-black font-extrabold uppercase text-sm tracking-wider transition"><i class="fa-solid fa-sack-dollar mr-2"></i>Продати за ${formatCredits(sellPrice)}</button>`}
+    ${isBound ? `<p class="mt-3 text-[10px] text-violet-300 italic">${canSell ? 'Ексклюзивну нагороду можна продати за PC. Отримання нагороди залишиться в прогресі.' : 'Колекційний предмет не продається.'} Не можна ставити на апгрейд, у Battle, Royale чи контракт.</p>` : it.exclusive ? `<p class="mt-3 text-[10px] text-violet-300 italic">Ексклюзивний предмет · продаж за 90% стабільної вартості.</p>` : ''}
+    ${!canSell ? '<div class="mt-4 w-full py-3 rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-200 font-extrabold uppercase text-sm tracking-wider"><i class="fa-solid fa-lock mr-2"></i>Прив’язано до профілю</div>' : `<button type="button" data-detail-sell-id="${escapeHtml(String(it.id))}" class="mt-4 w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-400 text-black font-extrabold uppercase text-sm tracking-wider transition"><i class="fa-solid fa-sack-dollar mr-2"></i>Продати за ${formatCredits(sellPrice)}</button>`}
     <button onclick="closeModal('itemDetailModal')" class="mt-3 w-full py-2.5 rounded-xl border border-gray-700 bg-black/20 hover:bg-gray-800 text-xs font-bold text-gray-300 transition">Закрити</button>
   </div>`;
   const container = document.getElementById('itemDetailContent');
@@ -8927,7 +8996,7 @@ function sellInventoryItem(itemId, fromProfile = false) {
   const idx = userInventory.findIndex(i => String(i.id) === String(itemId));
   if (idx === -1) return;
   const it = userInventory[idx];
-  if (it.accountBound === true) {
+  if (!canSellInventoryItem(it)) {
     showToast('Цей колекційний предмет прив’язаний до профілю і не продається.', 'info');
     return;
   }
@@ -8987,8 +9056,8 @@ function sellAllDuplicates() {
     }
   }
   const duplicates = userInventory.filter(it => !keep.has(it.id));
-  const locked = duplicates.filter(it => it.accountBound === true);
-  const sellable = duplicates.filter(it => it.accountBound !== true);
+  const locked = duplicates.filter(it => !canSellInventoryItem(it));
+  const sellable = duplicates.filter(canSellInventoryItem);
   const toSell = sellable.filter(verifiedInventoryMarketPrice);
   if (!toSell.length) {
     if (sellable.length) {
@@ -9100,7 +9169,7 @@ function selectTargetItem(it) {
   const nameEl = document.getElementById('targetSkinName');
   if (nameEl) nameEl.textContent = it.name;
   const rarityEl = document.getElementById('targetSkinRarity');
-  if (rarityEl) rarityEl.textContent = it.rarity || 'CS2';
+  if (rarityEl) rarityEl.textContent = `${it.rarity || 'CS2'} · ${getWear(it).code}`;
   document.getElementById('targetSkinState')?.classList.remove('hidden');
   document.getElementById('targetEmptyState')?.classList.add('hidden');
   closeModal('shopModal');
@@ -9363,13 +9432,11 @@ function applyMultiplierPreset(mult) {
   const iv = getInputVal();
   if (!iv) { showToast('Спочатку обери вхідний предмет', 'warn'); return; }
   const target = iv * mult;
-  // Find skin in catalog closest to target price (must be >= iv)
+  // Find an exact skin/exterior variant above the input value.
   let best = null, bestDiff = Infinity;
-  for (const source of CS2_SKINS) {
-    const s = marketReadyCatalogSkin(source);
-    if (!s) continue;
+  for (const s of CS2_SKINS.flatMap(getCatalogWearVariants)) {
     const p = s.price;
-    if (p < iv) continue;
+    if (p <= iv) continue;
     const diff = Math.abs(p - target);
     if (diff < bestDiff) { bestDiff = diff; best = s; }
   }
@@ -9385,7 +9452,7 @@ function applyMultiplierPreset(mult) {
   if (tsi) tsi.classList.remove('hidden');
   if (timg) setImageSource(timg, best.img, best.name, getSkinKey(best));
   if (tnm)  tnm.textContent  = best.name;
-  if (trar) trar.textContent = best.rarity || '';
+  if (trar) trar.textContent = `${best.rarity || 'CS2'} · ${getWear(best).code}`;
   // Highlight active preset button
   document.querySelectorAll('.upg-preset-btn').forEach(b => b.classList.remove('active'));
   const clicked = [...document.querySelectorAll('.upg-preset-btn')].find(b => b.textContent.trim() === `${mult}x` || parseFloat(b.textContent) === mult);
@@ -9402,15 +9469,14 @@ function renderSmartSuggestions(inputVal) {
     { key: 'balance', icon: '⚡',  label: 'Balance', mult: 3.3,  accent: '#f59e0b', bg: 'rgba(245,158,11,0.08)',  border: 'rgba(245,158,11,0.25)' },
     { key: 'jackpot', icon: '💎', label: 'Aurora', mult: 12.5, accent: '#a855f7', bg: 'rgba(168,85,247,0.08)',  border: 'rgba(168,85,247,0.25)' },
   ];
+  const variants = CS2_SKINS.flatMap(getCatalogWearVariants);
 
   el.innerHTML = presets.map(p => {
     const targetPrice = inputVal * p.mult;
     let best = null, bestDiff = Infinity;
-    for (const source of CS2_SKINS) {
-      const s = marketReadyCatalogSkin(source);
-      if (!s) continue;
+    for (const s of variants) {
       const pr = s.price;
-      if (pr < inputVal) continue;
+      if (pr <= inputVal) continue;
       const diff = Math.abs(pr - targetPrice);
       if (diff < bestDiff) { bestDiff = diff; best = s; }
     }
@@ -9421,11 +9487,11 @@ function renderSmartSuggestions(inputVal) {
     const displayName = best.name.length > 18 ? best.name.slice(0, 16) + '…' : best.name;
     const priceStr = typeof formatCredits === 'function' ? formatCredits(best.price || 0) : (best.price || 0) + ` ${CURRENCY_TOKEN}`;
 
-    return `<button type="button" class="upg-sugg-card" data-preset="${p.key}" data-suggestion-key="${escapeHtml(sk)}" style="background:${p.bg};border-color:${p.border}">
+    return `<button type="button" class="upg-sugg-card" data-preset="${p.key}" data-suggestion-key="${escapeHtml(sk)}" data-suggestion-wear="${getWear(best).code}" style="background:${p.bg};border-color:${p.border}">
   <div class="upg-sugg-icon" style="color:${p.accent}">${p.icon}</div>
   <div class="upg-sugg-body">
     <div class="upg-sugg-label" style="color:${p.accent}">${p.label}</div>
-    <div class="upg-sugg-name">${escapeHtml(displayName)}</div>
+    <div class="upg-sugg-name">${escapeHtml(displayName)} · ${getWear(best).code}</div>
     <div class="upg-sugg-meta">
       <span class="upg-sugg-chance" style="color:${p.accent}">${actualChance.toFixed(1)}%</span>
       <span class="upg-sugg-price">${priceStr}</span>
@@ -9434,14 +9500,14 @@ function renderSmartSuggestions(inputVal) {
 </button>`;
   }).join('');
   el.querySelectorAll('[data-suggestion-key]').forEach(button => {
-    button.addEventListener('click', () => applySuggestion(button.dataset.suggestionKey));
+    button.addEventListener('click', () => applySuggestion(button.dataset.suggestionKey, button.dataset.suggestionWear));
   });
 }
 
-function applySuggestion(skinKey) {
+function applySuggestion(skinKey, wearCode) {
   const skin = getSkinByKey(skinKey) || CS2_SKINS.find(s => s.name === skinKey);
   if (!skin) return;
-  const marketSkin = marketReadyCatalogSkin(skin);
+  const marketSkin = marketReadyCatalogSkin(skin, wearCode || skin.wear || preferredCatalogWear(skin));
   if (!marketSkin) {
     warmVisibleShopMarketPrices([skin]);
     showToast('Не вдалося визначити стабільну ціну цілі.', 'info');
@@ -9458,10 +9524,10 @@ function applySuggestion(skinKey) {
   if (tsi) tsi.classList.remove('hidden');
   if (timg) setImageSource(timg, marketSkin.img, marketSkin.name, getSkinKey(marketSkin));
   if (tnm)  tnm.textContent  = marketSkin.name;
-  if (trar) trar.textContent = marketSkin.rarity || '';
+  if (trar) trar.textContent = `${marketSkin.rarity || 'CS2'} · ${getWear(marketSkin).code}`;
   // Highlight by a data attribute, never by executable inline code.
   document.querySelectorAll('.upg-sugg-card').forEach(c => {
-    c.classList.toggle('is-active', c.dataset.suggestionKey === getSkinKey(marketSkin));
+    c.classList.toggle('is-active', c.dataset.suggestionKey === getSkinKey(marketSkin) && c.dataset.suggestionWear === getWear(marketSkin).code);
   });
   recalculateUpgrade();
 }
@@ -9924,7 +9990,9 @@ function getCaseSkinPool(caseType) {
   // global cheap pool here was why knives, gloves and weapon cases looked the
   // same. Price tiers below now provide the loss/win balance inside each pool.
   const pool = sampleByPrice(themed, 180)
-    .map(skin => ({ ...skin, basePrice: verifiedMarketPriceForWear(skin), marketPrice: verifiedMarketPriceForWear(skin), price: verifiedMarketPriceForWear(skin) }))
+    // The base skin odds are priced from ALL possible exteriors. Actual item
+    // values are quoted only after its separate wear roll has been resolved.
+    .map(skin => ({ ...skin, price: expectedSkinWearValue(skin) }))
     .sort((a, b) => b.price - a.price);
   _casePoolCache.set(cacheKey, pool);
   return pool;
@@ -10038,7 +10106,7 @@ function renderCaseCollectionPassport(caseType) {
           <div class="case-collection-card-state"><i class="fa-solid ${owned ? 'fa-check' : 'fa-lock'}"></i>${owned ? 'Є' : 'Не знайдено'}</div>
           <img src="${escapeHtml(getSkinImageSrc(skin))}" alt="" data-skin-name="${escapeHtml(skin.name)}" loading="lazy" onerror="handleSkinImageError(this)">
           <strong title="${escapeHtml(skin.name)}">${escapeHtml(skin.name)}</strong>
-          <small>${formatCredits(skin.price)}</small>
+          <small>${formatCredits(verifiedMarketPriceForWear(skin))} · ${preferredCatalogWear(skin).code}</small>
         </div>`;
       }).join('')}
     </div>
@@ -10173,10 +10241,12 @@ function getCaseMetrics(caseType) {
 
   pool.forEach(item => {
     const chance = getItemDropChance(item, cfg.id);
-    const price = Math.max(0, Number(item.price) || 0);
-    expectedValue += price * chance / 100;
-    if (price >= cost) breakEvenChance += chance;
-    if (price >= cost * 3) rareChance += chance;
+    getSkinWearValues(item).forEach(entry => {
+      const variantChance = chance * entry.probability;
+      expectedValue += entry.price * variantChance / 100;
+      if (entry.price >= cost) breakEvenChance += variantChance;
+      if (entry.price >= cost * 3) rareChance += variantChance;
+    });
   });
 
   const result = {
@@ -10186,7 +10256,7 @@ function getCaseMetrics(caseType) {
     rareChance,
     expectedValue,
     returnRate: expectedValue / cost,
-    maxValue: pool.reduce((max, item) => Math.max(max, Number(item.price) || 0), 0)
+    maxValue: pool.reduce((max, item) => Math.max(max, ...getSkinWearValues(item).map(entry => entry.price)), 0)
   };
   _caseMetricsCache.set(cacheKey, result);
   return result;
@@ -10612,7 +10682,7 @@ function buildSingleReelTrack(trackId, winner, config = getCaseReelConfig()) {
       continue;
     }
     const s = pickCaseReelDisplaySkin(fallback, currentActiveCaseId);
-    items.push({ ...s, wear: WEAR_TIERS[2] });
+    items.push(marketReadyCatalogSkin(s, rollSkinWear(s)));
   }
 
   track.innerHTML = items.map(it => {
@@ -10620,6 +10690,7 @@ function buildSingleReelTrack(trackId, winner, config = getCaseReelConfig()) {
     const rarity = getItemRarity(it);
     return `
     <div class="case-reel-card rarity-surface" style="--rarity-color:${rarity.color}">
+      <span class="wear-badge wear-${getWear(it).code} absolute top-2 left-2 z-10">${getWear(it).code}</span>
       <img src="${escapeHtml(image)}" alt="" data-skin-name="${escapeHtml(it.name)}" loading="eager" decoding="async" onerror="handleSkinImageError(this)">
       <p>${escapeHtml(it.name.split('|').pop().trim().slice(0, 18))}</p>
       <p class="text-[10px] font-extrabold text-amber-300">${formatCredits(it.price || 0)}</p>
@@ -10797,7 +10868,7 @@ async function startCaseReel() {
   }
 
   // Create demo items and store
-  const wonItems = winners.map(w => makeDemoItem(w, isFree ? '-freecase' : '-case')).filter(Boolean);
+  const wonItems = createCaseDropItems(winners, fairRolls.rolls, isFree);
   if (wonItems.length !== mult) {
     restorePendingCaseOpen();
     showToast('Не вдалося визначити стабільну ціну дропа. Баланс відновлено.', 'warn');
@@ -11076,6 +11147,8 @@ async function showCaseDetails(caseType) {
 
   grid.innerHTML = pool.map(s => {
     const chance = getItemDropChance(s, cfg.id);
+    const rarity = getItemRarity(s);
+    const wearValues = getSkinWearValues(s);
     const chanceStr = formatCaseChance(chance);
     let badgeColor = '#6ee7b7';
     if (chance < 0.2) badgeColor = '#f87171';
@@ -11083,13 +11156,16 @@ async function showCaseDetails(caseType) {
     else if (chance < 6) badgeColor = '#a78bfa';
 
     return `
-      <div class="bg-brand-card border border-brand-border rounded-xl p-2.5 flex flex-col items-center hover:border-amber-500/40 transition">
+      <div class="rarity-surface relative bg-brand-card border border-brand-border rounded-xl p-2.5 flex flex-col items-center hover:border-amber-500/40 transition" style="--rarity-color:${rarity.color}">
         <div class="relative w-full">
           <img src="${escapeHtml(getSkinImageSrc(s))}" alt="${escapeHtml(s.name)}" class="h-16 w-full object-contain" onerror="handleSkinImageError(this)">
           <span class="case-chance-badge" style="color:${badgeColor};border-color:${badgeColor}40">CHANCE ${chanceStr}</span>
         </div>
         <p class="mt-2 text-[10px] font-extrabold text-white truncate w-full text-center" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</p>
-        <p class="text-amber-300 font-extrabold text-xs mt-0.5">${formatCredits(s.price)}</p>
+        <p class="text-[9px] font-bold mt-1" style="color:${rarity.color}">${escapeHtml(rarity.name)}</p>
+        <p class="text-amber-300 font-extrabold text-[10px] mt-0.5">${skinWearPriceRange(s)}</p>
+        <details class="w-full mt-2 text-[9px] text-gray-400"><summary class="cursor-pointer text-center">Знос і шанси</summary><p class="mt-1 leading-4">Після вибору цього скіна:</p>${wearValues.map(entry => `<p class="flex justify-between gap-1 leading-4"><span>${entry.wear.code} · ${(entry.probability * 100).toFixed(2)}%</span><span>${formatCredits(entry.price)}</span></p>`).join('')}</details>
+        ${rarityStripMarkup(rarity, 'shop-rarity-bar')}
       </div>
     `;
   }).join('');
@@ -11392,6 +11468,10 @@ function toPublicBattleStake(item) {
     price: roundPc(clampNumber(marketPrice, 0.01, MAX_STORED_ITEM_VALUE, 0.01)),
     rarity: cleanText(item?.rarity || 'CS2', 48),
     rarityColor: cleanColor(item?.rarityColor),
+    wear: { code: getWear(item).code },
+    weapon: cleanText(item?.weapon, 64),
+    category: cleanText(item?.category, 64),
+    sourceSkinId: cleanText(item?.sourceSkinId || item?.id, 128),
   };
 }
 
@@ -11402,8 +11482,8 @@ function setBattleOpponent(item, opponentName, isBot, match = null) {
     id: `match-${match?.id || 'bot'}-${Date.now()}`,
     basePrice: safe.price,
     marketPrice: safe.price,
-    marketPrices: { FT: safe.price },
-    wear: { code: 'FT' },
+    marketPrices: { [safe.wear.code]: safe.price },
+    wear: normalizeWear(safe.wear),
     botName: cleanText(opponentName, 24) || (isBot ? 'Бот' : 'Гравець'),
     isBot,
   };
@@ -11829,7 +11909,7 @@ function setBattlePlayer(item) {
 
 function pickBotOpponent(basePrice) {
   const lo = basePrice * 0.65, hi = basePrice * 1.45;
-  const marketPool = CS2_SKINS.map(skin => marketReadyCatalogSkin(skin)).filter(Boolean);
+  const marketPool = CS2_SKINS.flatMap(getCatalogWearVariants);
   const pool = marketPool.filter(skin => skin.price >= lo && skin.price <= hi);
   const pick = pool.length ? pool[Math.floor(Math.random() * pool.length)] : marketPool[Math.floor(Math.random() * marketPool.length)];
   if (!pick) {
@@ -12873,7 +12953,7 @@ function royalePickCatalogSkinForValue(catalog, wantedValue, usedCatalogIds) {
 }
 
 function royaleCreateBotPool(targetValue, botIndex, requestedCount = 1, usedCatalogIds = new Set()) {
-  const catalog = (CS2_SKINS || []).map(skin => marketReadyCatalogSkin(skin)).filter(Boolean);
+  const catalog = (CS2_SKINS || []).flatMap(getCatalogWearVariants);
   if (!catalog.length) return [];
   const itemCount = Math.max(1, Math.min(ROYALE_MAX_SKINS, Math.floor(Number(requestedCount) || 1)));
   let remainingTarget = Math.max(itemCount, Math.round(Number(targetValue) || itemCount));
@@ -12884,8 +12964,8 @@ function royaleCreateBotPool(targetValue, botIndex, requestedCount = 1, usedCata
     if (!source) break;
     usedCatalogIds.add(getSkinKey(source));
     // Never replace a real catalogue price with the balancing target: bots
-    // stake only an exact confirmed FT market quote.
-    const botSkin = makeDemoItem({ ...source, wear: WEAR_TIERS[2] }, `-royale-ai-${botIndex}-${index}`);
+    // stake an exact priced catalogue variant, including its exterior.
+    const botSkin = makeDemoItem(source, `-royale-ai-${botIndex}-${index}`);
     if (!botSkin || !verifiedInventoryMarketPrice(botSkin)) continue;
     pool.push(botSkin);
     remainingTarget = Math.max(0, remainingTarget - verifiedInventoryMarketPrice(botSkin));
@@ -13423,8 +13503,7 @@ async function executeContract() {
   const total = items.reduce((sum, item) => sum + verifiedInventoryMarketPrice(item), 0);
   const lo = total * CONTRACT_RETURN_MIN, hi = total * CONTRACT_RETURN_MAX;
   const getVerifiedPool = () => CS2_SKINS
-    .map(skin => marketReadyCatalogSkin(skin))
-    .filter(Boolean)
+    .flatMap(getCatalogWearVariants)
     .filter(skin => skin.price >= lo && skin.price <= hi);
   let pool = getVerifiedPool();
   if (!pool.length) {
@@ -13579,7 +13658,9 @@ async function fetchSkinCatalogPage(offset = 0, limit = SHOP_CATALOG_PAGE_SIZE) 
 }
 
 function getShopCatalogSource() {
-  return shopCatalogSkins.length ? shopCatalogSkins : CS2_SKINS;
+  // Keep the balanced game catalogue searchable while full-catalogue pages
+  // load. The first alphabetical page alone used to hide every other weapon.
+  return [...new Map([...CS2_SKINS, ...shopCatalogSkins].map(skin => [String(skin.id), skin])).values()];
 }
 
 function normalizeCatalogPage(items, startIndex = 0) {
@@ -13632,11 +13713,11 @@ function marketDescriptor(skin, wear = WEAR_TIERS[2]) {
   return id ? { id, wear: code } : null;
 }
 
-function verifiedMarketPriceForWear(skin, wear = WEAR_TIERS[2]) {
+function verifiedMarketPriceForWear(skin, wear = skin?.wear || preferredCatalogWear(skin)) {
   return stableCatalogPrice(skin, normalizeWear(wear));
 }
 
-function marketReadyCatalogSkin(skin, wear = WEAR_TIERS[2]) {
+function marketReadyCatalogSkin(skin, wear = skin?.wear || preferredCatalogWear(skin)) {
   const normalizedWear = normalizeWear(wear);
   const price = verifiedMarketPriceForWear(skin, normalizedWear);
   return price ? { ...skin, wear: normalizedWear, basePrice: price, marketPrice: price, price } : null;
@@ -13785,10 +13866,7 @@ function loadCompleteSkinCatalog() {
     if (currentPage === 'case') renderCaseButtons();
     void refreshRecentInventoryMarketPrices(80);
   } catch {
-    filteredSkins = CS2_SKINS;
-    renderShopGrid(filteredSkins);
-    const countEl = document.getElementById('shopCount');
-    if (countEl) countEl.textContent = `${CS2_SKINS.length} скінів`;
+    filterShop();
     renderGameHub();
   }
   })().finally(() => {
@@ -13811,6 +13889,10 @@ function resetShopFilters() {
   if (search) search.value = '';
   const cat = document.getElementById('shopCategory');
   if (cat) cat.value = 'all';
+  const wear = document.getElementById('shopWear');
+  if (wear) wear.value = 'all';
+  const rarity = document.getElementById('shopRarity');
+  if (rarity) rarity.value = 'all';
   const sort = document.getElementById('shopSort');
   if (sort) sort.value = 'name-asc';
   const minP = document.getElementById('shopMinPrice');
@@ -13833,6 +13915,8 @@ function debounceFilterShop() {
 function filterShop() {
   const q = (document.getElementById('shopSearch')?.value || '').trim().toLowerCase();
   const cat = document.getElementById('shopCategory')?.value || 'all';
+  const wearCode = document.getElementById('shopWear')?.value || 'all';
+  const rarityTier = document.getElementById('shopRarity')?.value || 'all';
   const sort = document.getElementById('shopSort')?.value || 'name-asc';
   const minP = parseFloat(document.getElementById('shopMinPrice')?.value) || 0;
   const maxP = parseFloat(document.getElementById('shopMaxPrice')?.value) || Infinity;
@@ -13853,12 +13937,15 @@ function filterShop() {
   let list = getShopCatalogSource().filter(s => {
     if (!isUsableSkin(s)) return false;
     if (cat !== 'all' && s.category !== cat) return false;
+    if (rarityTier !== 'all' && getItemRarity(s).tier !== rarityTier) return false;
+    return !q || `${s.name} ${s.weapon || ''}`.toLowerCase().includes(q);
+  }).flatMap(getCatalogWearVariants).filter(s => {
+    if (wearCode !== 'all' && getWear(s).code !== wearCode) return false;
     const marketPrice = verifiedMarketPriceForWear(s);
     if (minP > 0 && (!marketPrice || marketPrice < minP)) return false;
     if (maxP !== Infinity && (!marketPrice || marketPrice > maxP)) return false;
     if (minTarget > 0 && (!marketPrice || marketPrice <= minTarget)) return false;
-    if (!q) return true;
-    return `${s.name} ${s.weapon || ''}`.toLowerCase().includes(q);
+    return true;
   });
 
   if (sort === 'price-asc') list.sort((a, b) => (verifiedMarketPriceForWear(a) || Number.MAX_SAFE_INTEGER) - (verifiedMarketPriceForWear(b) || Number.MAX_SAFE_INTEGER));
@@ -13886,10 +13973,8 @@ function renderShopGrid(skins) {
   const shown = av.slice(0, visibleSkinCount);
   const countEl = document.getElementById('shopCount');
   if (countEl) {
-    const total = Math.max(0, Number(shopCatalogTotal) || 0);
-    countEl.textContent = total && shopCatalogSkins.length
-      ? `${av.length.toLocaleString('uk-UA')} з ${total.toLocaleString('uk-UA')} скінів`
-      : `${av.length.toLocaleString('uk-UA')} скінів`;
+    const skinCount = new Set(av.map(getSkinKey)).size;
+    countEl.textContent = `Варіантів: ${av.length.toLocaleString('uk-UA')} · скінів: ${skinCount.toLocaleString('uk-UA')}${shopCatalogHasMore ? ' · є ще' : ''}`;
   }
   const moreBtn = document.getElementById('shopMoreBtn');
   if (moreBtn) {
@@ -13905,15 +13990,18 @@ function renderShopGrid(skins) {
 
   g.innerHTML = shown.map(s => {
     const rarity = getItemRarity(s);
+    const wear = getWear(s);
     const marketPrice = verifiedMarketPriceForWear(s);
     const priceMarkup = marketPrice
       ? `<p class="text-amber-400 font-extrabold text-xs mt-0.5">${formatCredits(marketPrice)}</p><p class="text-[9px] text-gray-500">${escapeHtml(marketQuoteMeta(s))}</p>`
       : '<p class="text-cyan-300 font-extrabold text-[11px] mt-1"><i class="fa-solid fa-arrows-rotate fa-spin-pulse mr-1"></i>Оновлюємо Steam</p><p class="text-[9px] text-gray-500">ціна ще не підтверджена</p>';
     return `<article data-skin-card="${escapeHtml(getSkinKey(s))}" class="skin-card rarity-surface relative bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 transition group focus-within:border-amber-500" style="--rarity-color:${rarity.color}">
-      <button type="button" data-select-skin-id="${escapeHtml(getSkinKey(s))}" class="w-full text-left flex flex-col items-center justify-between focus:outline-none">
+      <span class="wear-badge wear-${wear.code} absolute top-2 left-2 z-10" title="${escapeHtml(wear.name)}">${wear.code}</span>
+      <button type="button" data-select-skin-id="${escapeHtml(getSkinKey(s))}" data-select-wear="${wear.code}" aria-label="Обрати ${escapeHtml(s.name)} · ${wear.code} · ${formatCredits(marketPrice)}" class="w-full text-left flex flex-col items-center justify-between focus:outline-none">
         <img src="${escapeHtml(getSkinImageSrc(s))}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" class="h-20 w-full object-contain group-hover:scale-105 transition image-skeleton" loading="lazy" onerror="handleSkinImageError(this)">
         <div class="text-center w-full mt-2 min-w-0">
           <p class="font-bold text-xs text-white truncate" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</p>
+          <p class="text-[9px] font-bold mt-1" style="color:${rarity.color}">${escapeHtml(rarity.name)} · ${wear.code}</p>
           ${priceMarkup}
         </div>
       </button>
@@ -13928,7 +14016,7 @@ function renderShopGrid(skins) {
 
   g.querySelectorAll('[data-select-skin-id]').forEach(b => b.addEventListener('click', () => {
     const s = getSkinByKey(b.dataset.selectSkinId);
-    if (s) selectTargetItem(s);
+    if (s) selectTargetItem(marketReadyCatalogSkin(s, b.dataset.selectWear));
   }));
   g.querySelectorAll('[data-favorite-toggle]').forEach(b => b.addEventListener('click', () => toggleFavorite(b.dataset.favoriteToggle)));
 }
@@ -13950,7 +14038,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   renderCanvas(0);
   renderInventoryGrid();
-  renderShopGrid(CS2_SKINS);
+  filterShop();
   renderMultiSlots();
   renderContractSlots();
   renderProfileInventory();
