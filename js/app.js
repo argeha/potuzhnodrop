@@ -96,6 +96,7 @@ function showPage(id) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 
   if (id === 'hub') renderCommandHub();
+  if (id === 'upgrader' && !isRolling) recalculateUpgrade();
   if (id === 'case') {
     updateFreeCaseBtn();
     renderCaseCatalog();
@@ -5950,6 +5951,8 @@ function updateBalanceUI() {
     if (el) el.textContent = formatCredits(currentUser.balance);
     const profileBalance = document.getElementById('profileBalance');
     if (profileBalance) profileBalance.textContent = formatCredits(currentUser.balance);
+    const upgraderBalance = document.getElementById('upgraderBalance');
+    if (upgraderBalance) upgraderBalance.textContent = formatCredits(currentUser.balance);
   }
 }
 
@@ -7039,7 +7042,7 @@ function renderCommandHub() {
   if (greeting) greeting.textContent = pendingClaims
     ? `${name}, у тебе ${pendingClaims} ${pendingClaims === 1 ? 'готова нагорода' : 'готові нагороди'} на сьогодні.`
     : userInventory.length
-      ? `${name}, колекція синхронізована. Обери наступний режим або завершуй ціль.`
+      ? `${name}, обери режим або продовжуй збирати колекцію.`
       : `${name}, почни з кейса або підключи Steam, щоб зібрати свою вітрину.`;
   const levelNode = document.getElementById('hubLevel');
   if (levelNode) levelNode.textContent = `LVL ${level}`;
@@ -8899,6 +8902,8 @@ function sellAllDuplicates() {
 function openInventoryOrFocus() {
   if (selectedInputMode === 'skin' || selectedInputMode === 'multi') {
     openModal('inventoryModal');
+  } else {
+    document.getElementById('balanceStakeInput')?.focus();
   }
 }
 
@@ -8928,7 +8933,7 @@ function selectInventoryItem(it) {
   const nameEl = document.getElementById('inputSkinName');
   if (nameEl) nameEl.textContent = it.name;
   const rarityEl = document.getElementById('inputSkinRarity');
-  if (rarityEl) rarityEl.textContent = `${it.rarity || 'CS2'} · ${getWear(it).name}`;
+  if (rarityEl) rarityEl.textContent = `${getItemRarity(it).name} · ${getWear(it).code}`;
   document.getElementById('inputSkinState')?.classList.remove('hidden');
   document.getElementById('inputEmptyState')?.classList.add('hidden');
   document.getElementById('inputMultiState')?.classList.add('hidden');
@@ -9010,7 +9015,7 @@ function renderMultiSlots() {
   if (!g) return;
   if (!multiInputSkins.length) {
     g.className = 'flex-1 flex items-center justify-center text-center';
-    g.innerHTML = '<div><i class="fa-solid fa-plus text-2xl text-gray-700 block mb-3"></i><p class="text-xs text-gray-500">Натисни «Додати» щоб обрати скіни</p></div>';
+    g.innerHTML = `<div class="upg-multi-empty"><i class="fa-solid fa-plus text-2xl text-gray-700 block mb-3"></i><p class="text-xs text-gray-500">Обери ${MULTI_INPUT_MIN}–10 скінів</p></div>`;
   } else {
     g.className = 'flex-1 grid grid-cols-3 gap-1.5 overflow-y-auto content-start pr-1';
     g.innerHTML = multiInputSkins.map(s => {
@@ -9035,6 +9040,8 @@ function renderMultiSlots() {
 
 function switchInputMode(mode) {
   selectedInputMode = mode;
+  const pickerLabel = document.getElementById('inputPickerLabel');
+  if (pickerLabel) pickerLabel.textContent = mode === 'balance' ? 'Змінити суму' : 'Інвентар';
   const sb = document.getElementById('tabSkinBtn');
   const mb = document.getElementById('tabMultiBtn');
   const bb = document.getElementById('tabBalanceBtn');
@@ -9044,6 +9051,7 @@ function switchInputMode(mode) {
   if (sb) sb.className = inactiveClass;
   if (mb) mb.className = inactiveClass;
   if (bb) bb.className = inactiveClass;
+  [[sb, 'skin'], [mb, 'multi'], [bb, 'balance']].forEach(([button, value]) => button?.setAttribute('aria-pressed', String(mode === value)));
 
   if (mode === 'skin' && sb) sb.className = activeClass;
   else if (mode === 'multi' && mb) mb.className = activeClass;
@@ -9065,7 +9073,8 @@ function switchInputMode(mode) {
     document.getElementById('inputBalanceState')?.classList.remove('hidden');
   }
   renderInventoryGrid();
-  recalculateUpgrade();
+  if (mode === 'balance') updateBalanceStake();
+  else recalculateUpgrade();
 }
 
 function setStake(v) {
@@ -9084,7 +9093,7 @@ function updateBalanceStake() {
   if (!i) return;
   const r = parseFloat(i.value) || 0;
   balanceStake = Math.min(Math.max(0, r), currentUser?.balance || 0);
-  i.value = String(Math.floor(balanceStake));
+  i.value = String(balanceStake);
   recalculateUpgrade();
 }
 
@@ -9111,7 +9120,7 @@ function setRollMode(mode) {
 }
 
 function getInputVal() {
-  if (selectedInputMode === 'skin') return verifiedInventoryMarketPrice(selectedInputSkin);
+  if (selectedInputMode === 'skin') return selectedInputSkin ? verifiedInventoryMarketPrice(selectedInputSkin) : 0;
   if (selectedInputMode === 'multi') return multiInputSkins.reduce((sum, item) => sum + verifiedInventoryMarketPrice(item), 0);
   return balanceStake;
 }
@@ -9165,13 +9174,26 @@ function recalculateUpgrade() {
   renderUpgradeSessionStatus(iv, tv);
 
   const btn = document.getElementById('upgradeActionBtn');
-  if (btn) {
-    if (selectedInputMode === 'multi' && multiInputSkins.length < MULTI_INPUT_MIN) {
-      btn.innerHTML = `<i class="fa-solid fa-layer-group mr-2"></i>ДОДАЙ ЩЕ ${MULTI_INPUT_MIN - multiInputSkins.length}`;
-    } else {
-      btn.innerHTML = '<i class="fa-solid fa-bolt mr-2"></i>АПГРЕЙД';
-    }
+  if (btn && !isRolling) {
+    const needsMulti = selectedInputMode === 'multi' && multiInputSkins.length < MULTI_INPUT_MIN;
+    const label = needsMulti ? `ДОДАЙ ЩЕ ${MULTI_INPUT_MIN - multiInputSkins.length}`
+      : !iv ? 'ОБЕРИ ВНЕСОК'
+      : !tv ? 'ОБЕРИ ЦІЛЬ'
+      : tv <= iv ? 'ЦІЛЬ МАЄ БУТИ ДОРОЖЧА'
+      : 'АПГРЕЙД';
+    btn.disabled = needsMulti || !iv || !tv || tv <= iv;
+    btn.innerHTML = `<i class="fa-solid fa-bolt" aria-hidden="true"></i>${label}`;
+    const rollStatus = document.getElementById('rollStatusText');
+    if (rollStatus) rollStatus.textContent = needsMulti ? 'ДОДАЙ СКІНИ'
+      : !iv ? 'ОБЕРИ ВНЕСОК'
+      : !tv ? 'ОБЕРИ ЦІЛЬ'
+      : tv <= iv ? 'ЗМІНИ ЦІЛЬ'
+      : 'ГОТОВО';
   }
+
+  const suggestions = document.getElementById('upgraderQuickSuggestions');
+  if (!iv && suggestions) suggestions.replaceChildren();
+  if (iv > 0) renderSmartSuggestions(iv);
 
   const winChanceText = document.getElementById('winChanceText');
   const multiplierText = document.getElementById('multiplierText');
@@ -9193,7 +9215,6 @@ function recalculateUpgrade() {
   if (winChanceText) winChanceText.textContent = `${c.toFixed(2)} %`;
   if (multiplierText) multiplierText.textContent = `x${(tv / iv).toFixed(2)}`;
   renderCanvas(c);
-  if (iv > 0) renderSmartSuggestions(iv);
 }
 
 /* ───── Upgrader 2.0 helper: multiplier preset ─────────────────────────── */
@@ -9231,7 +9252,6 @@ function applyMultiplierPreset(mult) {
   const clicked = [...document.querySelectorAll('.upg-preset-btn')].find(b => b.textContent.trim() === `${mult}x` || parseFloat(b.textContent) === mult);
   if (clicked) clicked.classList.add('active');
   recalculateUpgrade();
-  renderSmartSuggestions(iv);
 }
 
 function renderSmartSuggestions(inputVal) {
@@ -10121,17 +10141,8 @@ function renderCaseCatalog() {
     if (currentCaseCategory === 'all' || isCollectionView) return true;
     return c.category === currentCaseCategory;
   });
-  const categoryNames = {
-    all: 'усі напрямки',
-    hot: 'лімітовані кейси',
-    knives: 'кейси з ножами',
-    gloves: 'кейси з рукавицями',
-    weapons: 'зброя та AWP',
-    budget: 'доступні кейси',
-    collections: 'колекції кейсів'
-  };
   const categoryTitles = {
-    all: 'Усі кейси',
+    all: 'Каталог',
     hot: 'Лімітовані кейси',
     knives: 'Ножі',
     gloves: 'Рукавиці',
@@ -10143,8 +10154,8 @@ function renderCaseCatalog() {
   const title = document.getElementById('caseCatalogTitle');
   const count = document.getElementById('caseCatalogCount');
   if (title) title.textContent = categoryTitles[currentCaseCategory] || 'Кейси';
-  if (summary) summary.textContent = `Показано ${filtered.length} з ${validEntries.length} · ${categoryNames[currentCaseCategory] || 'кейси'} зі стабільними цінами.`;
-  if (count) count.textContent = `${validEntries.length} кейсів`;
+  if (summary) summary.textContent = 'Фіксовані ціни · склад і шанси відкриті';
+  if (count) count.textContent = String(filtered.length);
   document.querySelectorAll('#caseCategoryBar .case-cat-pill').forEach(button => {
     const category = button.getAttribute('onclick')?.match(/'([^']+)'/)?.[1];
     const categoryCount = category === 'all' || category === 'collections'
@@ -10192,8 +10203,8 @@ function renderCaseCatalog() {
           ${contextMarkup}
         </div>
         <div class="case-catalog-actions">
-          <button type="button" onclick="openPowerCase('${id}')" class="case-catalog-open" ${caseCost ? '' : 'disabled'}>
-            <span><i class="fa-solid fa-box-open"></i> Відкрити</span><strong>${openCost}</strong>
+          <button type="button" onclick="openPowerCase('${id}')" class="case-catalog-open" aria-label="Відкрити ${escapeHtml(c.name)} за ${escapeHtml(openCost)}" ${caseCost ? '' : 'disabled'}>
+            <span><i class="fa-solid fa-box-open"></i> Відкрити</span>
           </button>
           <button type="button" onclick="showCaseDetails('${id}')" class="case-catalog-details" title="Склад кейсу та шанси" aria-label="Склад кейсу та шанси: ${escapeHtml(c.name)}">
             <i class="fa-solid fa-list"></i><span>Склад</span>

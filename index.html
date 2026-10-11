@@ -32,13 +32,13 @@
 <link rel="preconnect" href="https://community.akamai.steamstatic.com">
 <link rel="preconnect" href="https://avatars.steamstatic.com">
 <!-- Tailwind зібраний локально: інтерфейс не залежить від зовнішнього CDN. -->
-<link rel="stylesheet" href="/css/tailwind.css?v=7.9.0">
+<link rel="stylesheet" href="/css/tailwind.css?v=7.9.0-polish.15">
 <!-- Font Awesome -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Teko:wght@600;700&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-  <link rel="stylesheet" href="/css/style.css?v=7.9.0-atelier.10">
+  <link rel="stylesheet" href="/css/style.css?v=7.9.0-polish.15">
 </head>
 <body class="pd-rebrand min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -79,7 +79,7 @@
 <a href="#about" data-nav="about" class="nav-link" onclick="showPage('about');return false"><i class="fa-solid fa-circle-info text-xs"></i> Про гру</a>
 </nav>
 <div class="header-actions flex items-center gap-2">
-<button class="mobile-menu-btn w-10 h-10 rounded-xl bg-brand-card border border-brand-border hover:bg-gray-800 items-center justify-center text-gray-300" onclick="toggleMobileMenu()"><i class="fa-solid fa-bars"></i></button>
+<button class="mobile-menu-btn w-10 h-10 rounded-xl bg-brand-card border border-brand-border hover:bg-gray-800 items-center justify-center text-gray-300" onclick="toggleMobileMenu()" aria-label="Відкрити меню"><i class="fa-solid fa-bars"></i></button>
 <button id="soundToggle" onclick="toggleSound()" title="Звукові ефекти увімкнені" aria-label="Звукові ефекти" aria-pressed="true" class="hidden sm:flex w-10 h-10 rounded-xl bg-brand-card border border-brand-border hover:bg-gray-800 items-center justify-center text-gray-300 transition"><i id="soundIcon" class="fa-solid fa-volume-high text-sm"></i></button>
 <button id="musicToggle" onclick="toggleMusic()" title="Музика увімкнена" aria-label="Музика" aria-pressed="true" class="hidden sm:flex w-10 h-10 rounded-xl bg-brand-card border border-brand-border hover:bg-gray-800 items-center justify-center text-cyan-200 transition"><i id="musicIcon" class="fa-solid fa-music text-sm"></i></button>
 <div id="userBalanceBox" class="hidden sm:flex items-center gap-2 bg-brand-card border border-brand-border rounded-xl px-3 py-1.5">
@@ -135,10 +135,10 @@
 </div>
 
 <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full">
-<section id="steamNudge" class="hidden mb-5 overflow-hidden rounded-2xl border border-cyan-400/35 bg-gradient-to-r from-[#10283b] via-[#17253c] to-[#201c3b] p-4 shadow-lg shadow-cyan-950/30">
+<section id="steamNudge" class="hidden mb-5 overflow-hidden rounded-2xl border border-cyan-400/35 bg-gradient-to-r from-[#10283b] via-[#17253c] to-[#201c3b] p-4 shadow-lg shadow-cyan-950/30" aria-label="Підключення Steam">
 <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-<div class="flex items-center gap-3"><div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-cyan-300/35 bg-cyan-400/10 text-cyan-200"><i class="fa-brands fa-steam text-2xl"></i></div><div><p class="text-sm font-extrabold text-white">Підключи свій Steam-профіль</p><p class="mt-0.5 text-xs leading-5 text-cyan-100/75">Побачиш аватар, нік і віртуальну копію публічного CS2-інвентарю. Без паролів, кодів і Trade Offers.</p></div></div>
-<div class="flex shrink-0 gap-2"><button onclick="startSteamLogin()" class="rounded-xl bg-cyan-300 px-4 py-2.5 text-xs font-extrabold text-slate-950 transition hover:bg-cyan-200"><i class="fa-brands fa-steam mr-1.5"></i>Увійти через Steam</button><button onclick="dismissSteamNudge()" class="rounded-xl border border-white/15 px-3 py-2.5 text-xs font-bold text-gray-300 hover:bg-white/5" title="Не показувати">Пізніше</button></div>
+<div class="flex items-center gap-3"><div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-cyan-300/35 bg-cyan-400/10 text-cyan-200"><i class="fa-brands fa-steam text-2xl"></i></div><div><p class="text-sm font-extrabold text-white">Твоя колекція зі Steam</p><p class="mt-0.5 text-xs leading-5 text-cyan-100/75">Аватар та віртуальна копія інвентарю. Без трейдів.</p></div></div>
+<div class="flex shrink-0 gap-2"><button onclick="startSteamLogin()" class="rounded-xl bg-cyan-300 px-4 py-2.5 text-xs font-extrabold text-slate-950 transition hover:bg-cyan-200"><i class="fa-brands fa-steam mr-1.5"></i>Підключити</button><button onclick="dismissSteamNudge()" class="steam-nudge-dismiss rounded-xl border border-white/15 px-3 py-2.5 text-xs font-bold text-gray-300 hover:bg-white/5" title="Не показувати" aria-label="Приховати підказку Steam"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>
 </div>
 </section>
 <section id="runtimeAnnouncement" class="runtime-announcement hidden" aria-live="polite"></section>
@@ -148,7 +148,7 @@
 <article class="command-hub-hero">
   <div class="command-hub-hero-copy">
     <p class="command-hub-kicker"><i class="fa-solid fa-satellite-dish"></i> Твій простір колекції</p>
-    <h1>ТРИМАЙ <em>ТЕМП</em></h1>
+    <h1>Твоя <em>колекція</em></h1>
     <p id="hubGreeting">Твій профіль, колекція та наступна дія — в одному місці.</p>
     <div class="command-hub-hero-signals" aria-label="Принципи платформи"><span><i class="fa-solid fa-shield-halved"></i> ПРОЗОРІ ШАНСИ</span><span><i class="fa-solid fa-sparkles"></i> БЕЗ РЕАЛЬНИХ ПРИЗІВ</span></div>
     <div class="command-hub-hero-actions">
@@ -182,25 +182,25 @@
 <!-- UPGRADER -->
 <section data-page="upgrader" class="page-view upgrader-page hidden space-y-5">
 <div class="mode-intro mode-intro-upgrader upgrade-command-intro">
-  <div><span class="mode-eyebrow"><i class="fa-solid fa-bolt"></i> Лабораторія апгрейду</span><h1>Піднімай рівень <em>розумно</em></h1><p>Обери предмет або віртуальні PC, задай ціль і перевір шанс до запуску.</p></div>
-  <div class="mode-intro-stats"><span><b>1–95%</b><small>діапазон шансу</small></span><span><b>ПЕРЕВІРКА</b><small>історія раунду</small></span></div>
+  <div><h1>Апгрейд</h1><p>Обери внесок і ціль. Перевір шанс до запуску.</p></div>
+  <div class="upg-mobile-balance"><span>Баланс</span><strong id="upgraderBalance">—</strong></div>
 </div>
 <div class="upgrader-layout grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
 <div class="upg-deck upg-deck--input lg:col-span-4 glass-panel rounded-2xl p-5 border border-brand-border flex flex-col h-[560px]">
 <div class="upg-deck-heading flex items-center justify-between mb-3 border-b border-gray-800 pb-3">
-<span class="font-bold text-gray-200 flex items-center gap-2"><i class="fa-solid fa-hand-holding-dollar text-amber-400"></i> Твій предмет</span>
+<span class="font-bold text-gray-200 flex items-center gap-2"><i class="fa-solid fa-hand-holding-dollar text-amber-400"></i> Внесок</span>
 <span id="inputItemValue" class="text-amber-400 font-extrabold">0 PC</span>
 </div>
 <div class="upg-input-tabs grid grid-cols-3 gap-1 p-1 bg-black/40 rounded-xl mb-3 border border-gray-800">
-<button id="tabSkinBtn" onclick="switchInputMode('skin')" class="py-2 text-[11px] font-bold rounded-lg bg-amber-500 text-black transition">Скін</button>
-<button id="tabMultiBtn" onclick="switchInputMode('multi')" class="py-2 text-[11px] font-bold rounded-lg text-gray-400 hover:text-white transition">Мульти</button>
-<button id="tabBalanceBtn" onclick="switchInputMode('balance')" class="py-2 text-[11px] font-bold rounded-lg text-gray-400 hover:text-white transition">Кредити</button>
+<button id="tabSkinBtn" onclick="switchInputMode('skin')" aria-pressed="true" class="py-2 text-[11px] font-bold rounded-lg bg-amber-500 text-black transition">Скін</button>
+<button id="tabMultiBtn" onclick="switchInputMode('multi')" aria-pressed="false" class="py-2 text-[11px] font-bold rounded-lg text-gray-400 hover:text-white transition">Мульти</button>
+<button id="tabBalanceBtn" onclick="switchInputMode('balance')" aria-pressed="false" class="py-2 text-[11px] font-bold rounded-lg text-gray-400 hover:text-white transition">Кредити</button>
 </div>
 <div id="inputDisplayArea" class="upg-item-stage flex-1 flex flex-col min-h-0 border-2 border-dashed border-gray-800 rounded-xl p-3 bg-black/20 hover:border-gray-700 transition cursor-pointer" onclick="openInventoryOrFocus()">
 <div id="inputEmptyState" class="flex-1 flex flex-col items-center justify-center text-center">
 <div class="w-14 h-14 rounded-2xl bg-brand-card flex items-center justify-center mb-2 border border-gray-800"><i class="fa-solid fa-plus text-2xl text-amber-500/60"></i></div>
-<p class="text-sm font-semibold text-gray-300">Обери предмет з інвентарю</p>
-<p class="text-[11px] text-gray-500 mt-1">1 скін, мульти або кредити</p>
+<p class="text-sm font-semibold text-gray-300">Обери предмет</p>
+<p class="text-[11px] text-gray-500 mt-1">З твого інвентарю</p>
 </div>
 <div id="inputSkinState" class="hidden flex flex-1 flex-col min-h-0">
 <div class="skin-display"><img id="inputSkinImg" src="" alt="" onerror="handleSkinImageError(this,'input')"></div>
@@ -217,8 +217,8 @@
 </div>
 </div>
 <div id="inputBalanceState" class="hidden flex flex-1 flex-col items-center justify-center gap-4">
-<label class="text-xs font-medium text-gray-400">Вкажи кількість кредитів</label>
-<input type="number" id="balanceStakeInput" value="50" min="1" max="100000" oninput="updateBalanceStake()" class="w-full max-w-[220px] bg-brand-card border border-amber-500/40 rounded-xl py-3 px-4 text-center font-bold text-amber-400 text-xl focus:outline-none">
+<label for="balanceStakeInput" class="text-xs font-medium text-gray-400">Віртуальні PC</label>
+<input type="number" id="balanceStakeInput" value="50" min="0" step="0.01" max="100000" oninput="updateBalanceStake()" class="w-full max-w-[220px] bg-brand-card border border-amber-500/40 rounded-xl py-3 px-4 text-center font-bold text-amber-400 text-xl focus:outline-none">
 <div class="flex gap-2">
 <button type="button" onclick="setStake(50)" class="px-3 py-1.5 rounded-lg bg-black/40 border border-gray-800 text-xs font-bold text-gray-300 hover:text-white">50</button>
 <button type="button" onclick="setStake(250)" class="px-3 py-1.5 rounded-lg bg-black/40 border border-gray-800 text-xs font-bold text-gray-300 hover:text-white">250</button>
@@ -227,7 +227,25 @@
 </div>
 </div>
 </div>
-<button onclick="openInventoryOrFocus()" class="upg-deck-action mt-3 w-full py-3 bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl font-semibold text-sm text-gray-200 transition flex items-center justify-center gap-2"><i class="fa-solid fa-boxes-stacked text-amber-400"></i> Інвентар</button>
+<button id="inputPickerBtn" onclick="openInventoryOrFocus()" class="upg-deck-action mt-3 w-full py-3 bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl font-semibold text-sm text-gray-200 transition flex items-center justify-center gap-2"><i class="fa-solid fa-boxes-stacked text-amber-400"></i><span id="inputPickerLabel">Інвентар</span></button>
+</div>
+<div class="upg-deck upg-deck--target lg:col-span-4 glass-panel rounded-2xl p-5 border border-brand-border flex flex-col h-[560px]">
+<div class="upg-deck-heading flex items-center justify-between mb-3 border-b border-gray-800 pb-3">
+<span class="font-bold text-gray-200 flex items-center gap-2"><i class="fa-solid fa-bullseye text-amber-400"></i> Ціль</span>
+<span id="targetItemValue" class="text-amber-400 font-extrabold">0 PC</span>
+</div>
+<div id="targetDisplayArea" class="upg-item-stage flex-1 flex flex-col min-h-0 border-2 border-dashed border-gray-800 rounded-xl p-3 bg-black/20 hover:border-gray-700 transition cursor-pointer" onclick="openModal('shopModal')">
+<div id="targetEmptyState" class="flex-1 flex flex-col items-center justify-center text-center">
+<div class="w-14 h-14 rounded-2xl bg-brand-card flex items-center justify-center mb-2 border border-gray-800"><i class="fa-solid fa-plus text-2xl text-amber-500/60"></i></div>
+<p class="text-sm font-semibold text-gray-300">Обери скін</p>
+<p class="text-[11px] text-gray-500 mt-1">Дорожчий за внесок</p>
+</div>
+<div id="targetSkinState" class="hidden flex flex-1 flex-col min-h-0">
+<div class="skin-display"><img id="targetSkinImg" src="" alt="" onerror="handleSkinImageError(this,'target')"></div>
+<div class="text-center w-full shrink-0 pt-3"><h4 id="targetSkinName" class="font-bold text-sm text-gray-100 truncate">--</h4><p id="targetSkinRarity" class="text-[11px] text-amber-400 uppercase font-semibold mt-0.5">--</p></div>
+</div>
+</div>
+<button onclick="openModal('shopModal')" class="upg-deck-action mt-3 w-full py-3 bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl font-semibold text-sm text-gray-200 transition flex items-center justify-center gap-2"><i class="fa-solid fa-store text-amber-400"></i> Каталог</button>
 </div>
 <div class="upg-deck upg-deck--core lg:col-span-4 flex flex-col items-center glass-panel rounded-2xl p-5 border border-brand-border h-[560px] relative gap-3">
   <!-- Header: chance + quick resolve. The switch never changes the odds. -->
@@ -260,33 +278,15 @@
   <!-- Smart suggestions -->
   <div id="upgraderQuickSuggestions" class="upg-suggestion-rail w-full grid grid-cols-3 gap-1.5 shrink-0"></div>
   <!-- Mode + upgrade button -->
-  <div class="w-full space-y-2 mt-auto shrink-0">
+  <div class="upg-launch w-full space-y-2 mt-auto shrink-0">
     <div class="upg-formula rounded-xl border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-center">
-      <p id="rollModeHint" class="text-[11px] font-medium text-amber-100">Чесна формула: шанс = (внесок ÷ ціль) × 90%. Без прихованих бонусів.</p>
+      <p id="rollModeHint" class="text-[11px] font-medium text-amber-100">Шанс = (внесок ÷ ціль) × 90%. Без прихованих бонусів.</p>
     </div>
     <button id="upgradeActionBtn" onclick="executeUpgrade()" class="upg-execute w-full py-3.5 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-600 hover:from-amber-400 text-black font-extrabold text-base uppercase tracking-wider rounded-xl shadow-lg shadow-amber-500/30 transition flex items-center justify-center gap-2"><i class="fa-solid fa-bolt"></i> АПГРЕЙД</button>
   </div>
 </div>
-<div class="upg-deck upg-deck--target lg:col-span-4 glass-panel rounded-2xl p-5 border border-brand-border flex flex-col h-[560px]">
-<div class="upg-deck-heading flex items-center justify-between mb-3 border-b border-gray-800 pb-3">
-<span class="font-bold text-gray-200 flex items-center gap-2"><i class="fa-solid fa-bullseye text-amber-400"></i> Цільовий скін</span>
-<span id="targetItemValue" class="text-amber-400 font-extrabold">0 PC</span>
 </div>
-<div id="targetDisplayArea" class="upg-item-stage flex-1 flex flex-col min-h-0 border-2 border-dashed border-gray-800 rounded-xl p-3 bg-black/20 hover:border-gray-700 transition cursor-pointer" onclick="openModal('shopModal')">
-<div id="targetEmptyState" class="flex-1 flex flex-col items-center justify-center text-center">
-<div class="w-14 h-14 rounded-2xl bg-brand-card flex items-center justify-center mb-2 border border-gray-800"><i class="fa-solid fa-plus text-2xl text-amber-500/60"></i></div>
-<p class="text-sm font-semibold text-gray-300">Обрати бажаний скін</p>
-<p class="text-[11px] text-gray-500 mt-1">Тільки дорожче за твій інпут</p>
-</div>
-<div id="targetSkinState" class="hidden flex flex-1 flex-col min-h-0">
-<div class="skin-display"><img id="targetSkinImg" src="" alt="" onerror="handleSkinImageError(this,'target')"></div>
-<div class="text-center w-full shrink-0 pt-3"><h4 id="targetSkinName" class="font-bold text-sm text-gray-100 truncate">--</h4><p id="targetSkinRarity" class="text-[11px] text-amber-400 uppercase font-semibold mt-0.5">--</p></div>
-</div>
-</div>
-<button onclick="openModal('shopModal')" class="upg-deck-action mt-3 w-full py-3 bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl font-semibold text-sm text-gray-200 transition flex items-center justify-center gap-2"><i class="fa-solid fa-store text-amber-400"></i> Каталог скінів</button>
-</div>
-</div>
-<aside id="upgradeSessionRail" class="upg-session-rail lg:col-span-12" aria-label="Статус сесії апгрейду" aria-live="polite">
+<aside id="upgradeSessionRail" class="sr-only" aria-label="Статус сесії апгрейду" aria-live="polite" aria-atomic="true">
   <div class="upg-session-step"><span class="upg-session-number">01</span><i class="fa-solid fa-box-open"></i><div><small>Внесок</small><strong id="upgradeSessionInput">Обери предмет</strong></div></div>
   <span class="upg-session-connector" aria-hidden="true"></span>
   <div class="upg-session-step"><span class="upg-session-number">02</span><i class="fa-solid fa-bullseye"></i><div><small>Ціль</small><strong id="upgradeSessionTarget">Обери бажаний скін</strong></div></div>
@@ -299,9 +299,8 @@
 <section data-page="case" class="case-page page-view hidden space-y-4">
 <div class="mode-intro mode-intro-case case-command-intro flex flex-col md:flex-row md:items-end md:justify-between gap-4">
   <div>
-    <span class="text-xs font-extrabold uppercase tracking-[.2em] text-amber-400">Відкрий кейс</span>
     <h1 class="font-heading mt-1 text-4xl sm:text-5xl font-extrabold uppercase tracking-wider text-white">Кейси</h1>
-    <p class="text-sm text-gray-400 mt-1">Відкривай авторські й тематичні добірки для своєї цифрової CS2-колекції.</p>
+    <p class="text-sm text-gray-400 mt-1">Авторські добірки для твоєї CS2-колекції.</p>
   </div>
   <!-- Daily Free Case Banner -->
   <div class="glass-panel rounded-2xl border border-emerald-500/35 bg-emerald-500/5 p-4 flex items-center justify-between gap-4 max-w-md w-full shrink-0">
@@ -323,8 +322,7 @@
 <!-- Категорії кейсів -->
 <section class="case-catalog-toolbar" aria-label="Фільтри каталогу кейсів">
   <div class="case-catalog-toolbar-copy">
-    <span>КАТАЛОГ КЕЙСІВ</span>
-    <div class="case-catalog-title"><h2 id="caseCatalogTitle">Усі кейси</h2><b id="caseCatalogCount">—</b></div>
+    <div class="case-catalog-title"><h2 id="caseCatalogTitle">Каталог</h2><b id="caseCatalogCount">—</b></div>
     <p id="caseCatalogSummary">Авторські добірки зі стабільним складом і цінами.</p>
   </div>
   <div class="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar" id="caseCategoryBar">
@@ -810,6 +808,6 @@
 
 <script src="/js/mobile-config.js" defer></script>
 <script src="/js/mobile.js?v=1" defer></script>
-<script src="/js/app.js?v=7.9.0-ops.10" defer></script>
+<script src="/js/app.js?v=7.9.0-polish.16" defer></script>
 </body>
 </html>
