@@ -197,6 +197,7 @@ const inventoryContext = vm.createContext({
 });
 element('profileInventoryGrid').querySelectorAll = () => [];
 vm.runInContext(extract('function rarityStripMarkup(', 'function priceWithWear('), inventoryContext);
+vm.runInContext(extract('function inventoryProtectionButton(', 'function toggleInventoryProtection('), inventoryContext);
 vm.runInContext(extract('function renderProfileInventory()', 'function showItemDetail('), inventoryContext);
 inventoryContext.renderProfileInventory();
 const inventoryMarkup = element('profileInventoryGrid').innerHTML;
@@ -204,7 +205,8 @@ assert.equal((inventoryMarkup.match(/<article /g) || []).length, 2);
 assert.equal((inventoryMarkup.match(/<\/div><\/div>\s*<div class="profile-inv-rarity"/g) || []).length, 2,
   'Rarity strips must be card children, not extra items in the action row');
 assert.ok(inventoryMarkup.includes('title="7,000 PC"'), 'Keep the complete expensive-skin price available');
-assert.ok(!inventoryMarkup.includes('data-profile-sell="bound"'), 'Bound skins stay unsellable');
+assert.match(inventoryMarkup, /data-profile-sell="bound" disabled/, 'Bound skins stay unsellable');
+assert.equal((inventoryMarkup.match(/data-inventory-protect=/g) || []).length, 2);
 assert.ok(css.includes('.profile-inv-card-footer{display:grid;width:100%;min-width:0;'));
 assert.ok(css.includes('@container inventory-card (max-width:157px)'), 'Narrow card footers must stack instead of clipping controls');
 

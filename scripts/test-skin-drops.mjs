@@ -62,6 +62,8 @@ const context = vm.createContext({
   renderShopGrid: skins => { context.rendered = skins; },
   userInventory: [], currentUser: { balance: 100 },
   selectedInputSkin: null, selectedTargetSkin: null, multiInputSkins: [],
+  pendingWager: null, isRolling: false, battleInProgress: false, royaleInProgress: false,
+  battleStakeRequestInFlight: false, battleSearchTicket: null, battleAutoStartTimer: null,
   SELL_RATE: .9, gameState: { stats: {}, daily: {}, weekly: {}, battlePass: { premium: true, claimedFree: [], claimedPremium: [] } },
   ensureDailyState: noOp, ensureWeeklyState: noOp, updateAllTimeOnSell: noOp,
   updateBalanceUI: noOp, saveState: noOp, renderInventoryGrid: noOp, renderProfileInventory: noOp,
@@ -84,6 +86,8 @@ for (const [from, to] of [
   ['function selectTargetItem(', 'function addToMulti('],
   ['function getTargetVal()', 'function recalculateUpgrade('],
   ['function compactCloudInventoryItem(', 'function buildPortableSave('],
+  ['function isInventoryMutationBusy(', 'function inventoryProtectionButton('],
+  ['function getInventoryDuplicateKey(', 'function getInventorySource('],
   ['function sellInventoryItem(', 'function openInventoryOrFocus('],
   ['function claimBattlePassReward(', '/* ====='],
   ['function toPublicBattleStake(', 'function setBattleOpponent('],
@@ -243,7 +247,7 @@ for (const code of ['FN', 'MW', 'FT', 'WW', 'BS']) {
 assert.equal(serverContext.parseStake({ name: 'legacy', img: image, price: 10 }).wear.code, 'FT');
 assert.equal(serverContext.parseStake({ name: 'invalid', img: image, price: 10, wear: { code: 'xx' } }).wear.code, 'FT');
 assert.ok(html.includes('id="shopWear"') && html.includes('id="shopRarity"'));
-assert.ok(source.includes('if (inSkin.accountBound') || source.includes("inSkin.accountBound === true"), 'Reward wagering remains locked');
+assert.ok(source.includes("selectedInputMode === 'skin' && !canUseInventoryItem(inSkin)") && source.includes('owned.accountBound !== true'), 'Reward wagering remains locked');
 assert.ok(source.includes('data-select-wear="${wear.code}"'));
 // Optional read-only integration check against a running local catalogue.
 if (process.argv[2]) {

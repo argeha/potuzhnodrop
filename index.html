@@ -32,13 +32,13 @@
 <link rel="preconnect" href="https://community.akamai.steamstatic.com">
 <link rel="preconnect" href="https://avatars.steamstatic.com">
 <!-- Tailwind зібраний локально: інтерфейс не залежить від зовнішнього CDN. -->
-<link rel="stylesheet" href="/css/tailwind.css?v=7.9.0-case-layout.4">
+<link rel="stylesheet" href="/css/tailwind.css?v=7.9.0-inventory-safety.2">
 <!-- Font Awesome -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Teko:wght@600;700&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-<link rel="stylesheet" href="/css/style.css?v=7.9.0-case-layout.4">
+<link rel="stylesheet" href="/css/style.css?v=7.9.0-inventory-safety.2">
 </head>
 <body class="pd-rebrand min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -827,10 +827,12 @@
   </div>
 </div>
 
+<div id="inventorySaleModal" class="modal-backdrop fixed inset-0 z-[105] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4"><div class="glass-panel inventory-sale-panel"><div id="inventorySaleContent"></div></div></div>
+
 <div id="toastContainer" class="fixed bottom-6 right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm"></div>
 
 <script src="/js/mobile-config.js" defer></script>
 <script src="/js/mobile.js?v=1" defer></script>
-<script src="/js/app.js?v=7.9.0-case-layout.4" defer></script>
+<script src="/js/app.js?v=7.9.0-inventory-safety.2" defer></script>
 </body>
 </html>

@@ -19,7 +19,8 @@ const STORAGE = {
   freeCase: 'potuzhno_v5_freecase',
   // v42 deliberately discards the former multi-thousand-record browser cache.
   // It could stall mobile browsers before the Cases interface was interactive.
-  catalogCache: 'potuzhno_catalog_cache_v42',
+  // v43 also refreshes finish metadata (Doppler phase and paint index).
+  catalogCache: 'potuzhno_catalog_cache_v43',
   pendingWager: 'potuzhno_v6_pending_wager',
   fair: 'potuzhno_v9_fair',
   steamNudge: 'potuzhno_v10_steam_nudge',
@@ -579,6 +580,7 @@ function skinWearPriceRange(skin) {
 
 function canSellInventoryItem(item) {
   if (!item) return false;
+  if (item.inventoryProtected === true) return false;
   if (item.accountBound !== true) return true;
   // Selling exclusive rewards is separate from wagering them. Suffixes also
   // recognize rewards in older compact cloud saves, which omitted the flags.
@@ -623,6 +625,9 @@ function normalizeStoredItem(item, index = 0) {
     collectionReward: item.collectionReward === true,
     dailyCalendarReward: item.dailyCalendarReward === true,
     halloweenEvent: item.halloweenEvent === true,
+    inventoryProtected: item.inventoryProtected === true,
+    phase: cleanText(item.phase, 48),
+    paintIndex: cleanText(item.paintIndex || item.paint_index, 16),
     addedAt: clampNumber(item.addedAt, 0, Number.MAX_SAFE_INTEGER, Date.now())
   };
 }
@@ -642,6 +647,8 @@ function normalizeCatalogSkin(skin, index = 0) {
     rarity: cleanText(skin.rarity || 'Consumer Grade', 48),
     rarityColor: cleanColor(skin.rarityColor),
     img,
+    phase: cleanText(skin.phase, 48),
+    paintIndex: cleanText(skin.paintIndex || skin.paint_index, 16),
     wears: Array.isArray(skin.wears) ? skin.wears.map(wear => findWearTier(wear)?.name).filter(Boolean).slice(0, 5) : [],
     marketPrices: {},
     marketUpdatedAt: 0,
@@ -662,15 +669,18 @@ function marketPriceForWear(skin, wear) {
 function stableCatalogSourceForItem(item) {
   const sourceSkinId = cleanText(item?.sourceSkinId || item?.id, 128);
   const name = cleanText(item?.name, 160);
-  const catalogSkin = CS2_SKINS.find(candidate => (
-    (sourceSkinId && String(candidate?.id || '') === sourceSkinId)
-    || (name && candidate?.name === name)
-  ));
+  const exactSkin = CS2_SKINS.find(candidate => sourceSkinId && String(candidate?.id || '') === sourceSkinId);
+  const catalogSkin = exactSkin
+    || CS2_SKINS.find(candidate => name && candidate?.name === name && (!item?.phase || candidate.phase === item.phase));
+  const knownFinish = Boolean(exactSkin || item?.phase || CS2_SKINS.filter(candidate => candidate?.name === name).length === 1);
   return catalogSkin
     ? {
       ...item,
       weapon: item?.weapon || catalogSkin.weapon,
       category: item?.category || catalogSkin.category,
+      // A legacy name alone cannot identify a Doppler phase.
+      phase: item?.phase || (knownFinish ? catalogSkin.phase : ''),
+      paintIndex: item?.paintIndex || (knownFinish ? catalogSkin.paintIndex : ''),
       rarity: item?.rarity && item.rarity !== 'CS2' ? item.rarity : catalogSkin.rarity
     }
     : item;
@@ -4764,13 +4774,13 @@ function compactCloudInventoryItem(item, index = 0) {
   if (!normalized) return null;
   const isSteamItem = Boolean(normalized.steamImported && normalized.steamAssetId && normalized.steamOwnerId);
   return isSteamItem
-    ? [1, normalized.steamAssetId, normalized.steamOwnerId, normalized.name, normalized.rarity, normalized.rarityColor, normalized.img, normalized.basePrice, normalized.wear.code, normalized.virtual ? 1 : 0, normalized.exclusive ? 1 : 0, normalized.addedAt, normalized.marketPrice || 0, normalized.marketHashName || '', normalized.marketUpdatedAt || 0, normalized.accountBound ? 1 : 0, normalized.weapon, normalized.category]
-    : [0, normalized.id, normalized.sourceSkinId, normalized.name, normalized.rarity, normalized.rarityColor, normalized.img, normalized.basePrice, normalized.wear.code, normalized.virtual ? 1 : 0, normalized.exclusive ? 1 : 0, normalized.addedAt, normalized.marketPrice || 0, normalized.marketHashName || '', normalized.marketUpdatedAt || 0, normalized.accountBound ? 1 : 0, normalized.weapon, normalized.category];
+    ? [1, normalized.steamAssetId, normalized.steamOwnerId, normalized.name, normalized.rarity, normalized.rarityColor, normalized.img, normalized.basePrice, normalized.wear.code, normalized.virtual ? 1 : 0, normalized.exclusive ? 1 : 0, normalized.addedAt, normalized.marketPrice || 0, normalized.marketHashName || '', normalized.marketUpdatedAt || 0, normalized.accountBound ? 1 : 0, normalized.weapon, normalized.category, normalized.inventoryProtected ? 1 : 0, normalized.phase, normalized.paintIndex]
+    : [0, normalized.id, normalized.sourceSkinId, normalized.name, normalized.rarity, normalized.rarityColor, normalized.img, normalized.basePrice, normalized.wear.code, normalized.virtual ? 1 : 0, normalized.exclusive ? 1 : 0, normalized.addedAt, normalized.marketPrice || 0, normalized.marketHashName || '', normalized.marketUpdatedAt || 0, normalized.accountBound ? 1 : 0, normalized.weapon, normalized.category, normalized.inventoryProtected ? 1 : 0, normalized.phase, normalized.paintIndex];
 }
 
 function expandCloudInventoryItem(record, index = 0) {
   if (!Array.isArray(record) || record.length < 12) return null;
-  const [isSteamItem, primaryId, secondaryId, name, rarity, rarityColor, img, basePrice, wearCode, virtual, exclusive, addedAt, marketPrice, marketHashName, marketUpdatedAt, accountBound, weapon, category] = record;
+  const [isSteamItem, primaryId, secondaryId, name, rarity, rarityColor, img, basePrice, wearCode, virtual, exclusive, addedAt, marketPrice, marketHashName, marketUpdatedAt, accountBound, weapon, category, inventoryProtected, phase, paintIndex] = record;
   const steamImported = isSteamItem === 1;
   return normalizeStoredItem({
     id: steamImported ? `steam-copy-${secondaryId}-${primaryId}` : primaryId,
@@ -4789,6 +4799,9 @@ function expandCloudInventoryItem(record, index = 0) {
     wear: { code: wearCode },
     weapon,
     category,
+    inventoryProtected: inventoryProtected === 1,
+    phase,
+    paintIndex,
     virtual: virtual !== 0,
     exclusive: exclusive === 1,
     accountBound: accountBound === 1,
@@ -5738,7 +5751,8 @@ function makeDemoItem(skin, suffix = '', wearRandom = null) {
   };
   // Reward definitions and Steam imports sometimes carry a display name but
   // not the catalogue ID. Resolve it before applying the shared stable index.
-  const catalogSkin = CS2_SKINS.find(candidate => normalizeSkinName(candidate.name) === normalizeSkinName(safeSkin.name));
+  const catalogSkin = CS2_SKINS.find(candidate => String(candidate.id) === String(skin.sourceSkinId || skin.id))
+    || CS2_SKINS.find(candidate => normalizeSkinName(candidate.name) === normalizeSkinName(safeSkin.name) && (!skin.phase || candidate.phase === skin.phase));
   const quoteSkin = catalogSkin || safeSkin;
   // New drops use the independent wear roll; selected targets and settled
   // stakes keep their exact exterior. Quote that exterior, never multiply an
@@ -5748,6 +5762,8 @@ function makeDemoItem(skin, suffix = '', wearRandom = null) {
   const basePrice = quotedPrice;
   const item = {
     ...safeSkin,
+    phase: catalogSkin?.phase || safeSkin.phase || '',
+    paintIndex: catalogSkin?.paintIndex || safeSkin.paintIndex || '',
     sourceSkinId: cleanText(catalogSkin?.id || skin.sourceSkinId || safeSkin.id, 128),
     id: `demo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${suffix}`,
     basePrice,
@@ -7172,7 +7188,8 @@ function getInventoryDuplicateCounts(items = userInventory) {
 
 function getInventoryDuplicateKey(item) {
   const wear = getWear(item);
-  return `${normalizeSkinName(item?.name)}|${wear.code || ''}`;
+  // Same display name does not mean same finish (e.g. Doppler phases).
+  return `${normalizeSkinName(item?.name)}|${item?.phase || item?.paintIndex || item?.sourceSkinId || ''}|${wear.code || ''}`;
 }
 
 function getInventorySource(item) {
@@ -8138,6 +8155,7 @@ function openModal(id) {
 }
 
 function closeModal(id) {
+  if (id === 'inventorySaleModal') pendingInventorySale = null;
   if (id === 'caseReelModal' && (isCaseOpening || isFreeCaseOpening)) {
     showToast('Дочекайся завершення відкриття кейсу', 'info');
     return;
@@ -8735,6 +8753,100 @@ function requestInventoryMarketPrice(item) {
   void refreshRecentInventoryMarketPrices(80);
 }
 
+function canUseInventoryItem(item) {
+  // Always consult the owned record: a picker can contain an old snapshot.
+  const owned = userInventory.find(entry => String(entry.id) === String(item?.id));
+  return Boolean(owned && owned.accountBound !== true && owned.inventoryProtected !== true);
+}
+
+function isInventoryMutationBusy() {
+  return Boolean(pendingWager || isRolling || battleInProgress || royaleInProgress
+    || battleStakeRequestInFlight || battleSearchTicket || battleAutoStartTimer);
+}
+
+function inventoryProtectionButton(item) {
+  const locked = item.inventoryProtected === true;
+  const label = locked ? 'Зняти захист скіна' : 'Захистити від продажу та ставок';
+  return `<button type="button" data-inventory-protect="${escapeHtml(String(item.id))}" class="inventory-protect-btn ${locked ? 'is-protected' : ''}" aria-pressed="${locked}" aria-label="${label}: ${escapeHtml(item.name)}" title="${label}"><i class="fa-solid ${locked ? 'fa-lock' : 'fa-lock-open'}" aria-hidden="true"></i></button>`;
+}
+
+function bindInventoryProtection(container) {
+  container?.querySelectorAll('[data-inventory-protect]').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation();
+    toggleInventoryProtection(button.dataset.inventoryProtect);
+  }));
+}
+
+function toggleInventoryProtection(itemId) {
+  const item = userInventory.find(entry => String(entry.id) === String(itemId));
+  if (!item) return false;
+  if (isInventoryMutationBusy()) {
+    showToast('Дочекайся завершення раунду або пошуку суперника, щоб змінити захист.', 'info');
+    return false;
+  }
+  item.inventoryProtected = item.inventoryProtected !== true;
+  if (item.inventoryProtected) {
+    if (String(selectedInputSkin?.id) === String(item.id)) {
+      selectedInputSkin = null;
+      document.getElementById('inputSkinState')?.classList.add('hidden');
+      document.getElementById('inputEmptyState')?.classList.remove('hidden');
+    }
+    multiInputSkins = multiInputSkins.filter(entry => String(entry.id) !== String(item.id));
+    contractItems = contractItems.map(entry => String(entry?.id) === String(item.id) ? null : entry);
+    royalePlayerSkins = royalePlayerSkins.filter(entry => String(entry.id) !== String(item.id));
+    if (String(battlePlayerItem?.id) === String(item.id)) {
+      battlePlayerItem = null;
+      document.getElementById('battlePlayerEmpty')?.classList.remove('hidden');
+      document.getElementById('battlePlayerFilled')?.classList.add('hidden');
+      document.getElementById('battlePlayerSlot')?.classList.remove('filled');
+      clearBattleOpponent();
+    }
+    renderMultiSlots(); renderContractSlots(); renderRoyaleDeck(); recalculateUpgrade();
+  }
+  saveState(); renderInventoryGrid(); renderProfileInventory();
+  if (document.getElementById('itemDetailModal')?.classList.contains('flex')) showItemDetail(item.id);
+  showToast(item.inventoryProtected ? 'Скін захищено від продажу, апгрейду та ставок.' : 'Захист скіна знято.', 'info');
+  return true;
+}
+
+let pendingInventorySale = null;
+
+function requestInventorySale(itemId, fromProfile = false, closeAfter = '') {
+  const item = userInventory.find(entry => String(entry.id) === String(itemId));
+  if (!item || !canSellInventoryItem(item) || isInventoryMutationBusy()) {
+    showToast('Продаж недоступний: скін захищений, прив’язаний або бере участь у раунді.', 'info');
+    return;
+  }
+  const price = verifiedInventoryMarketPrice(item);
+  if (!price) return showToast('Не вдалося визначити стабільну ціну предмета.', 'warn');
+  const content = document.getElementById('inventorySaleContent');
+  if (!content) return;
+  pendingInventorySale = { itemId: String(item.id), price, fingerprint: getInventoryDuplicateKey(item), fromProfile, closeAfter };
+  const wear = getWear(item);
+  content.innerHTML = `<p class="sale-eyebrow">ПІДТВЕРДЖЕННЯ ПРОДАЖУ</p><h3>Продати цей скін?</h3>
+    <img class="sale-skin-image" src="${escapeHtml(getSkinImageSrc(item))}" alt="${escapeHtml(item.name)}" data-skin-name="${escapeHtml(item.name)}" onerror="handleSkinImageError(this)">
+    <p class="sale-skin-name">${escapeHtml(item.name)}</p><p class="sale-skin-meta">${escapeHtml(item.phase || '')}${item.phase ? ' · ' : ''}${wear.code} · ${escapeHtml(wear.name)}</p>
+    <div class="sale-quote"><span>Ти отримаєш · 90% вартості</span><strong>${formatCredits(roundPc(price * SELL_RATE))}</strong></div>
+    <p class="sale-note">Скін зникне з інвентарю. PC — віртуальні ігрові монети, не гроші.</p>
+    <div class="sale-actions"><button type="button" onclick="closeModal('inventorySaleModal')">Залишити скін</button><button type="button" class="sale-confirm" onclick="confirmInventorySale()">Підтвердити продаж</button></div>`;
+  openModal('inventorySaleModal');
+}
+
+function confirmInventorySale() {
+  const sale = pendingInventorySale;
+  if (!sale) return;
+  // Consume confirmation first, then validate live ownership and quote again.
+  closeModal('inventorySaleModal');
+  pendingInventorySale = null;
+  const item = userInventory.find(entry => String(entry.id) === sale.itemId);
+  if (!item || !canSellInventoryItem(item) || isInventoryMutationBusy()
+    || verifiedInventoryMarketPrice(item) !== sale.price || getInventoryDuplicateKey(item) !== sale.fingerprint) {
+    showToast('Предмет або ціна змінилися. Продаж не виконано — перевір скін ще раз.', 'warn');
+    return;
+  }
+  if (sellInventoryItem(item.id, sale.fromProfile) && sale.closeAfter) closeModal(sale.closeAfter);
+}
+
 function renderInventoryGrid() {
   const g = document.getElementById('userInventoryGrid');
   if (!g) return;
@@ -8761,7 +8873,7 @@ function renderInventoryGrid() {
           ${valueMarkup}
         </div>
       </button>
-      ${!canSell ? '<div class="mt-2 w-full rounded-lg border border-violet-500/30 bg-violet-500/10 text-violet-200 text-[10px] font-extrabold uppercase py-1.5 text-center"><i class="fa-solid fa-lock mr-1"></i>Колекційний</div>' : `<button type="button" data-sell-id="${escapeHtml(String(s.id))}" title="Продати за ${formatCredits(sellPrice)}" class="mt-2 w-full rounded-lg bg-emerald-500/15 border border-emerald-500/40 hover:bg-emerald-500 hover:text-black text-emerald-200 text-[11px] font-extrabold uppercase py-1.5 transition flex items-center justify-center gap-1"><i class="fa-solid fa-sack-dollar text-[10px]"></i>Продати</button>`}
+      <div class="inventory-card-actions">${!canSell ? `<span class="inventory-locked-label"><i class="fa-solid fa-lock" aria-hidden="true"></i> ${s.inventoryProtected ? 'Захищено' : 'Колекційний'}</span>` : `<button type="button" data-sell-id="${escapeHtml(String(s.id))}" title="Продати за ${formatCredits(sellPrice)}" class="inventory-sell-btn"><i class="fa-solid fa-sack-dollar" aria-hidden="true"></i> Продати</button>`}${inventoryProtectionButton(s)}</div>
       ${rarityStripMarkup(rarity, 'inventory-rarity-bar')}
     </div>`;
   }).join('');
@@ -8772,8 +8884,9 @@ function renderInventoryGrid() {
   }));
   g.querySelectorAll('[data-sell-id]').forEach(b => b.addEventListener('click', e => {
     e.stopPropagation();
-    sellInventoryItem(b.dataset.sellId);
+    requestInventorySale(b.dataset.sellId);
   }));
+  bindInventoryProtection(g);
 }
 
 function getFilteredProfileInventory() {
@@ -8916,12 +9029,12 @@ function renderProfileInventory() {
       <div class="profile-inv-card-top"><span class="wear-badge wear-${wear.code}">${wear.code}</span><span class="profile-inv-origin">${isBound && !canSell ? 'BOUND' : origin}</span></div>
       <button type="button" class="profile-inv-inspect" data-profile-inspect="${escapeHtml(String(s.id))}" title="Відкрити деталі: ${escapeHtml(s.name)}">
         <img src="${escapeHtml(getSkinImageSrc(s))}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" loading="lazy" onerror="handleSkinImageError(this)">
-        <div class="profile-inv-copy"><span>${escapeHtml(weapon)}</span><p class="inv-name" title="${escapeHtml(s.name)}">${escapeHtml(skinName)}</p></div>
+        <div class="profile-inv-copy"><span>${escapeHtml(weapon)}</span><p class="inv-name" title="${escapeHtml(s.name)}${s.phase ? ` · ${escapeHtml(s.phase)}` : ''}">${escapeHtml(skinName)}${s.phase ? ` · ${escapeHtml(s.phase)}` : ''}</p></div>
       </button>
       <div class="profile-inv-card-footer"><p class="inv-price" title="${formatCredits(marketPrice)}"><i class="fa-solid fa-coins"></i>${formatCredits(marketPrice)}</p><div class="inv-actions">
-        ${!canSell ? '<span class="info-btn text-violet-300 border-violet-500/40" title="Прив’язано до профілю"><i class="fa-solid fa-lock"></i></span>' : `<button class="sell-btn" data-profile-sell="${escapeHtml(String(s.id))}" title="Продати за ${formatCredits(sellPrice)}"><i class="fa-solid fa-sack-dollar"></i><span>Продати</span></button>`}
-        <button class="info-btn ${isShowcased ? 'text-amber-300 border-amber-400/60' : ''}" data-profile-showcase="${escapeHtml(String(s.id))}" title="${isShowcased ? 'Прибрати з вітрини' : 'Додати на вітрину'}"><i class="${isShowcased ? 'fa-solid' : 'fa-regular'} fa-star"></i></button>
-        <button class="info-btn" data-profile-info="${escapeHtml(String(s.id))}" title="Деталі"><i class="fa-solid fa-circle-info"></i></button>
+        <button type="button" class="sell-btn" data-profile-sell="${escapeHtml(String(s.id))}" ${!canSell ? 'disabled' : ''} aria-label="${!canSell ? 'Продаж недоступний' : `Продати за ${formatCredits(sellPrice)}`}" title="${!canSell ? (s.inventoryProtected ? 'Захищено від продажу' : 'Прив’язано до профілю') : `Продати за ${formatCredits(sellPrice)}`}"><i class="fa-solid fa-sack-dollar" aria-hidden="true"></i><span>Продати</span></button>
+        ${inventoryProtectionButton(s)}
+        <button type="button" class="info-btn ${isShowcased ? 'text-amber-300 border-amber-400/60' : ''}" data-profile-showcase="${escapeHtml(String(s.id))}" aria-label="${isShowcased ? 'Прибрати з вітрини' : 'Додати на вітрину'}" title="${isShowcased ? 'Прибрати з вітрини' : 'Додати на вітрину'}"><i class="${isShowcased ? 'fa-solid' : 'fa-regular'} fa-star" aria-hidden="true"></i></button>
       </div></div>
       ${rarityStripMarkup(rarity, 'profile-inv-rarity')}
     </article>`;
@@ -8933,7 +9046,7 @@ function renderProfileInventory() {
   grid.querySelectorAll('[data-profile-sell]').forEach(b => {
     b.addEventListener('click', e => {
       e.stopPropagation();
-      sellInventoryItem(b.dataset.profileSell, true);
+      requestInventorySale(b.dataset.profileSell, true);
     });
   });
   grid.querySelectorAll('[data-profile-info]').forEach(b => {
@@ -8948,6 +9061,7 @@ function renderProfileInventory() {
       toggleShowcaseItem(b.dataset.profileShowcase);
     });
   });
+  bindInventoryProtection(grid);
 }
 
 function showItemDetail(itemId) {
@@ -8970,6 +9084,7 @@ function showItemDetail(itemId) {
     <h3 class="font-heading mt-1 text-3xl font-extrabold uppercase text-white leading-none">${escapeHtml(it.name)}</h3>
     <div class="mt-3 inline-flex items-center gap-2 flex-wrap justify-center">
       <span class="wear-badge wear-${wear.code}">${wear.code} · ${escapeHtml(wear.name)}</span>
+      ${it.phase ? `<span class="wear-badge">${escapeHtml(it.phase)}</span>` : ''}
       <span class="wear-badge rarity-detail-badge" style="--rarity-color:${rarity.color}"><i class="fa-solid fa-gem"></i>${escapeHtml(rarity.name)}</span>
     </div>
     <div class="mt-4 grid grid-cols-2 gap-3">
@@ -8978,26 +9093,28 @@ function showItemDetail(itemId) {
     </div>
     <p class="mt-3 text-[10px] leading-4 text-gray-500">Фіксована ціна зі стабільного каталогу ПОТУЖНО. Вона однакова в інвентарі, апгрейдері, кейсах, Battle, Royale та контрактах і не є реальною грошовою вартістю.</p>
     ${isBound ? `<p class="mt-3 text-[10px] text-violet-300 italic">${canSell ? 'Ексклюзивну нагороду можна продати за PC. Отримання нагороди залишиться в прогресі.' : 'Колекційний предмет не продається.'} Не можна ставити на апгрейд, у Battle, Royale чи контракт.</p>` : it.exclusive ? `<p class="mt-3 text-[10px] text-violet-300 italic">Ексклюзивний предмет · продаж за 90% стабільної вартості.</p>` : ''}
-    ${!canSell ? '<div class="mt-4 w-full py-3 rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-200 font-extrabold uppercase text-sm tracking-wider"><i class="fa-solid fa-lock mr-2"></i>Прив’язано до профілю</div>' : `<button type="button" data-detail-sell-id="${escapeHtml(String(it.id))}" class="mt-4 w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-400 text-black font-extrabold uppercase text-sm tracking-wider transition"><i class="fa-solid fa-sack-dollar mr-2"></i>Продати за ${formatCredits(sellPrice)}</button>`}
+    <div class="inventory-detail-protection">${inventoryProtectionButton(it)}<span>${it.inventoryProtected ? 'Захищено від продажу й усіх ставок' : 'Захист від випадкового продажу та ставок'}</span></div>
+    ${!canSell ? `<div class="mt-4 w-full py-3 rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-200 font-extrabold uppercase text-sm tracking-wider"><i class="fa-solid fa-lock mr-2"></i>${it.inventoryProtected ? 'Скін захищено' : 'Прив’язано до профілю'}</div>` : `<button type="button" data-detail-sell-id="${escapeHtml(String(it.id))}" class="mt-4 w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-400 text-black font-extrabold uppercase text-sm tracking-wider transition"><i class="fa-solid fa-sack-dollar mr-2"></i>Продати за ${formatCredits(sellPrice)}</button>`}
     <button onclick="closeModal('itemDetailModal')" class="mt-3 w-full py-2.5 rounded-xl border border-gray-700 bg-black/20 hover:bg-gray-800 text-xs font-bold text-gray-300 transition">Закрити</button>
   </div>`;
   const container = document.getElementById('itemDetailContent');
   if (container) {
     container.innerHTML = html;
     container.querySelector('[data-detail-sell-id]')?.addEventListener('click', () => {
-      sellInventoryItem(it.id, true);
-      closeModal('itemDetailModal');
+      requestInventorySale(it.id, true, 'itemDetailModal');
     });
+    bindInventoryProtection(container);
   }
   openModal('itemDetailModal');
 }
 
 function sellInventoryItem(itemId, fromProfile = false) {
+  if (isInventoryMutationBusy()) { showToast('Дочекайся завершення поточного раунду.', 'info'); return false; }
   const idx = userInventory.findIndex(i => String(i.id) === String(itemId));
   if (idx === -1) return;
   const it = userInventory[idx];
   if (!canSellInventoryItem(it)) {
-    showToast('Цей колекційний предмет прив’язаний до профілю і не продається.', 'info');
+    showToast(it.inventoryProtected ? 'Спочатку зніми захист скіна.' : 'Цей колекційний предмет прив’язаний до профілю і не продається.', 'info');
     return;
   }
   const marketPrice = verifiedInventoryMarketPrice(it);
@@ -9040,16 +9157,18 @@ function sellInventoryItem(itemId, fromProfile = false) {
   renderGameHub();
   showToast(`Продано «${it.name}» за ${formatCredits(payout)}`, 'success');
   soundSell();
+  return true;
 }
 
 function sellAllDuplicates() {
+  if (isInventoryMutationBusy()) return showToast('Дочекайся завершення поточного раунду.', 'info');
   if (!userInventory.length) {
     showToast('Інвентар порожній', 'warn');
     return;
   }
   const seen = new Map(), keep = new Set();
   for (const it of userInventory) {
-    const key = normalizeSkinName(it.name) + '|' + (it.wear?.code || '');
+    const key = getInventoryDuplicateKey(it);
     if (!seen.has(key)) {
       seen.set(key, it.id);
       keep.add(it.id);
@@ -9064,7 +9183,7 @@ function sellAllDuplicates() {
       sellable.forEach(requestInventoryMarketPrice);
       showToast('Є дублікати без стабільної ціни. Продаж не виконано.', 'info');
     } else if (locked.length) {
-      showToast('Дублікати нагород прив’язані до профілю і не продаються.', 'info');
+      showToast('Дублікати захищені або прив’язані до профілю.', 'info');
     } else {
       showToast('Дублікатів немає', 'info');
     }
@@ -9072,7 +9191,7 @@ function sellAllDuplicates() {
   }
   const unquoted = sellable.length - toSell.length;
   const total = roundPc(toSell.reduce((s, it) => s + roundPc(verifiedInventoryMarketPrice(it) * SELL_RATE), 0));
-  const notice = `${unquoted ? ` ${unquoted} без стабільної ціни залишаться в інвентарі.` : ''}${locked.length ? ` ${locked.length} прив’язаних нагород залишаться в інвентарі.` : ''}`;
+  const notice = `${unquoted ? ` ${unquoted} без стабільної ціни залишаться в інвентарі.` : ''}${locked.length ? ` ${locked.length} захищених або прив’язаних предметів залишаться в інвентарі.` : ''}`;
   if (!window.confirm(`Продати ${toSell.length} дублікатів за ${formatCredits(total)}?${notice}`)) return;
 
   const soldIds = new Set(toSell.map(i => i.id));
@@ -9116,8 +9235,8 @@ function openInventoryOrFocus() {
 
 function selectInventoryItem(it) {
   if (!it) return;
-  if (it.accountBound === true) {
-    showToast('Колекційні нагороди не можна використовувати як внесок в апгрейдер.', 'info');
+  if (!canUseInventoryItem(it)) {
+    showToast('Захищені або колекційні предмети не можна використовувати як внесок.', 'info');
     return;
   }
   const marketPrice = verifiedInventoryMarketPrice(it);
@@ -9178,8 +9297,8 @@ function selectTargetItem(it) {
 
 function addToMulti(item) {
   if (!item) return;
-  if (item.accountBound === true) {
-    showToast('Колекційні нагороди не можна використовувати як внесок в апгрейдер.', 'info');
+  if (!canUseInventoryItem(item)) {
+    showToast('Захищені або колекційні предмети не можна використовувати як внесок.', 'info');
     return;
   }
   const marketPrice = verifiedInventoryMarketPrice(item);
@@ -9563,36 +9682,7 @@ function chainUpgradeWonSkin() {
 
 function quickSellUpgradedSkin() {
   if (!lastWonUpgraderSkin) { showToast('Немає виграного скіна', 'warn'); return; }
-  const won = lastWonUpgraderSkin;
-  const price = verifiedInventoryMarketPrice(won);
-  if (!price) {
-    requestInventoryMarketPrice(won);
-    showToast('Не вдалося визначити стабільну ціну виграного скіна. Швидкий продаж заблоковано.', 'warn');
-    return;
-  }
-  lastWonUpgraderSkin = null;
-  const _rua = document.getElementById('resultUpgraderActions');
-  if (_rua) _rua.classList.add('hidden');
-  closeModal('resultModal');
-  const earned = roundPc(price * SELL_RATE);
-  currentUser.balance = roundPc(currentUser.balance + earned);
-  userInventory = userInventory.filter(i => i.id !== won.id);
-  ensureDailyState();
-  ensureWeeklyState();
-  gameState.stats.sells = (gameState.stats.sells || 0) + 1;
-  gameState.daily.sells = (gameState.daily.sells || 0) + 1;
-  gameState.daily.sellValue = (gameState.daily.sellValue || 0) + earned;
-  gameState.weekly.sells = (gameState.weekly.sells || 0) + 1;
-  updateAllTimeOnSell(earned);
-  updateBalanceUI();
-  renderInventoryGrid();
-  renderProfileInventory();
-  updateAvatarBadge();
-  saveState();
-  checkAchievements();
-  renderGameHub();
-  showToast(`Продано за ${formatCredits(earned)}`, 'success');
-  soundSell();
+  requestInventorySale(lastWonUpgraderSkin.id, false, 'resultModal');
 }
 
 function showResultModal(win, skin, bonus = 0, context = {}) {
@@ -9693,8 +9783,8 @@ function executeUpgrade() {
     showToast('Обраного скіна вже немає в інвентарі', 'warn');
     return;
   }
-  if (selectedInputMode === 'skin' && inSkin.accountBound === true) {
-    showToast('Колекційний предмет прив’язаний до профілю і не може бути внеском.', 'warn');
+  if (selectedInputMode === 'skin' && !canUseInventoryItem(inSkin)) {
+    showToast('Захищений або колекційний предмет не може бути внеском.', 'warn');
     return;
   }
   if (selectedInputMode === 'skin' && !verifiedInventoryMarketPrice(inSkin)) {
@@ -9706,8 +9796,8 @@ function executeUpgrade() {
     showToast('Деяких скінів уже немає в інвентарі', 'warn');
     return;
   }
-  if (selectedInputMode === 'multi' && multiAtStart.some(item => item.accountBound === true)) {
-    showToast('Колекційні предмети не можуть бути внеском в апгрейдер.', 'warn');
+  if (selectedInputMode === 'multi' && multiAtStart.some(item => !canUseInventoryItem(item))) {
+    showToast('Захищені або колекційні предмети не можуть бути внеском.', 'warn');
     return;
   }
   if (selectedInputMode === 'multi' && !multiAtStart.every(verifiedInventoryMarketPrice)) {
@@ -11008,18 +11098,22 @@ function displayCaseDropResult(items, isFree, caseName, resultKind = 'case') {
 }
 
 function quickSellCaseResult() {
+  if (isInventoryMutationBusy()) return showToast('Дочекайся завершення поточного раунду.', 'info');
   if (!lastWonCaseItems || !lastWonCaseItems.length) {
     closeModal('caseModal');
     return;
   }
 
-  const itemsToSell = lastWonCaseItems.filter(verifiedInventoryMarketPrice);
-  const unquoted = lastWonCaseItems.filter(item => !verifiedInventoryMarketPrice(item));
+  const ownedDrops = lastWonCaseItems.map(drop => userInventory.find(item => String(item.id) === String(drop.id))).filter(Boolean);
+  const itemsToSell = ownedDrops.filter(item => canSellInventoryItem(item) && verifiedInventoryMarketPrice(item));
+  const unquoted = ownedDrops.filter(item => !canSellInventoryItem(item) || !verifiedInventoryMarketPrice(item));
   if (!itemsToSell.length) {
     unquoted.forEach(requestInventoryMarketPrice);
-    showToast('Не вдалося визначити стабільну ціну дропа. Швидкий продаж заблоковано.', 'warn');
+    showToast('Немає доступного дропа для продажу: перевір захист і стабільні ціни.', 'warn');
     return;
   }
+  const quotedTotal = roundPc(itemsToSell.reduce((sum, item) => sum + roundPc(verifiedInventoryMarketPrice(item) * SELL_RATE), 0));
+  if (!window.confirm(`Продати ${itemsToSell.length} предметів за ${formatCredits(quotedTotal)}?${unquoted.length ? ' Захищені або неоцінені предмети залишаться в інвентарі.' : ''}`)) return;
   lastWonCaseItems = unquoted;
   closeModal('caseModal');
 
@@ -11198,6 +11292,7 @@ const BATTLE_MATCH_COUNTDOWN_MS = 5_000;
 let battleMatch = null;
 let battleSearchSerial = 0;
 let battleSearchTicket = null;
+let battleStakeRequestInFlight = false;
 let battleLobbyTab = 'open';
 let battleListings = [];
 let battleListing = null;
@@ -11326,6 +11421,7 @@ function restoreBattleListingItem(listing = battleListing) {
 }
 
 function reserveBattleListingItem(listing, item) {
+  if (!canUseInventoryItem(item)) return false;
   const reserved = normalizeStoredItem(item, 0);
   if (!reserved) return false;
   listing.reservedItem = reserved;
@@ -11476,6 +11572,8 @@ function toPublicBattleStake(item) {
     weapon: cleanText(item?.weapon, 64),
     category: cleanText(item?.category, 64),
     sourceSkinId: cleanText(item?.sourceSkinId || item?.id, 128),
+    phase: cleanText(item?.phase, 48),
+    paintIndex: cleanText(item?.paintIndex, 16),
   };
 }
 
@@ -11680,7 +11778,8 @@ async function pollBattleListing() {
 
 async function createBattleListing() {
   if (battleRoom) return findBattleOpponent();
-  if (battleInProgress || pendingWager || !battlePlayerItem) return;
+  if (battleInProgress || pendingWager || battleStakeRequestInFlight || !battlePlayerItem) return;
+  if (!canUseInventoryItem(battlePlayerItem)) return showToast('Обраний скін захищений або недоступний.', 'warn');
   if (isProfileHidden()) {
     showToast('Щоб створити відкритий бій, увімкни видимість профілю на Potuzhno Drop.', 'warn');
     return;
@@ -11702,6 +11801,7 @@ async function createBattleListing() {
   const ticketId = makeUuid();
   const stake = toPublicBattleStake(battlePlayerItem);
   setBattleAction('waiting', true);
+  battleStakeRequestInFlight = true;
   try {
     const data = await matchmakingRequest('create-listing', ticketId, stake, { roomId: '' });
     if (data?.status !== 'listed' || !data.listing?.id) throw new Error('Не вдалося створити відкритий бій.');
@@ -11719,6 +11819,8 @@ async function createBattleListing() {
   } catch (error) {
     setBattleAction('listing');
     showToast(error?.message || 'Не вдалося створити відкритий бій.', 'error');
+  } finally {
+    battleStakeRequestInFlight = false;
   }
 }
 
@@ -11751,7 +11853,8 @@ async function cancelBattleListing() {
 
 async function acceptBattleListing() {
   const listing = battleListingJoin;
-  if (!listing || !battlePlayerItem || battleInProgress || pendingWager) return;
+  if (!listing || !battlePlayerItem || battleInProgress || pendingWager || battleStakeRequestInFlight) return;
+  if (!canUseInventoryItem(battlePlayerItem)) return showToast('Обраний скін захищений або недоступний.', 'warn');
   if (!isCompatibleBattleListing(listing, battlePlayerItem)) {
     const lower = roundPc(Number(listing.stake?.price || 0) * BATTLE_LISTING_MIN_RATIO);
     const upper = roundPc(Number(listing.stake?.price || 0) * BATTLE_LISTING_MAX_RATIO);
@@ -11769,6 +11872,7 @@ async function acceptBattleListing() {
   }
   const ticketId = makeUuid();
   setBattleAction('waiting', true);
+  battleStakeRequestInFlight = true;
   try {
     const data = await matchmakingRequest('accept-listing', ticketId, toPublicBattleStake(battlePlayerItem), { listingId: listing.id, roomId: '' });
     if (data?.status !== 'matched' || !data.match || !useHumanBattleMatch(data.match, ticketId)) {
@@ -11783,6 +11887,8 @@ async function acceptBattleListing() {
     setBattleAction('listing');
     showToast(error?.message || 'Не вдалося прийняти бій.', 'error');
     void refreshBattleListings();
+  } finally {
+    battleStakeRequestInFlight = false;
   }
 }
 
@@ -11799,6 +11905,7 @@ function useHumanBattleMatch(match, ticketId) {
 
 async function findBattleOpponent() {
   if (battleInProgress || !battlePlayerItem || pendingWager) return;
+  if (!canUseInventoryItem(battlePlayerItem)) return showToast('Обраний скін захищений або недоступний.', 'warn');
   if (!verifiedInventoryMarketPrice(battlePlayerItem)) {
     requestInventoryMarketPrice(battlePlayerItem);
     showToast('Не вдалося визначити стабільну ціну обраного предмета.', 'warn');
@@ -11843,12 +11950,12 @@ function pickBattlePlayerItem() {
     return;
   }
   const reservedItemId = String(battleListing?.itemId || '');
-  const available = userInventory.filter(item => item.accountBound !== true && (
+  const available = userInventory.filter(item => canUseInventoryItem(item) && (
     (!reservedItemId || String(item.id) === reservedItemId || String(item.id) === String(battlePlayerItem?.id || ''))
     && verifiedInventoryMarketPrice(item)
   ));
   if (!available.length) {
-    showToast('Твій скін уже зарезервовано у відкритому бою. Скасуй заявку, щоб обрати інший.', 'info');
+    showToast('Немає доступних скінів: перевір захист предметів або відкриту заявку.', 'info');
     return;
   }
   const g = document.getElementById('battlePickGrid');
@@ -11873,8 +11980,8 @@ function pickBattlePlayerItem() {
 }
 
 function setBattlePlayer(item) {
-  if (item?.accountBound === true) {
-    showToast('Колекційний предмет не можна ставити у Battle.', 'info');
+  if (!canUseInventoryItem(item)) {
+    showToast('Захищений або колекційний предмет не можна ставити у Battle.', 'info');
     return;
   }
   if (battleListing && String(item?.id) !== String(battleListing.itemId)) {
@@ -12009,8 +12116,8 @@ function startBattle() {
     if (startBtn) startBtn.disabled = true;
     return;
   }
-  if (battlePlayerItem.accountBound === true) {
-    showToast('Колекційний предмет не можна ставити у Battle.', 'warn');
+  if (!canUseInventoryItem(battlePlayerItem)) {
+    showToast('Захищений або колекційний предмет не можна ставити у Battle.', 'warn');
     return;
   }
   if (!verifiedInventoryMarketPrice(battlePlayerItem) || !verifiedInventoryMarketPrice(battleBotItem)) {
@@ -12467,10 +12574,10 @@ function legacyStartRoyale() {
   }
 
   // Validate that all skins are still in userInventory
-  const allExist = royalePlayerSkins.every(s => userInventory.some(u => u.id === s.id));
+  const allExist = royalePlayerSkins.every(canUseInventoryItem);
   if (!allExist) {
     showToast('Деяких скінів уже немає в інвентарі! Оновлюємо...', 'warn');
-    royalePlayerSkins = royalePlayerSkins.filter(s => userInventory.some(u => u.id === s.id));
+    royalePlayerSkins = royalePlayerSkins.filter(canUseInventoryItem);
     renderRoyalePlayerSlots();
     return;
   }
@@ -12998,7 +13105,7 @@ function royaleAddSkin() {
   if (royaleInProgress || (royaleMode === 'live' && royaleLiveTicket)) return;
   const limit = royaleMode === 'live' ? ROYALE_LIVE_MAX_SKINS : ROYALE_MAX_SKINS;
   if (royalePlayerSkins.length >= limit) return showToast(`Максимум ${limit} ${limit === 1 ? 'скін' : 'скінів'} для цього режиму`, 'warn');
-  const available = userInventory.filter(skin => skin.accountBound !== true && !royalePlayerSkins.some(selected => selected.id === skin.id) && verifiedInventoryMarketPrice(skin));
+  const available = userInventory.filter(skin => canUseInventoryItem(skin) && !royalePlayerSkins.some(selected => selected.id === skin.id) && verifiedInventoryMarketPrice(skin));
   if (!available.length) return showToast('У сховищі немає доступних скінів.', 'warn');
   const grid = document.getElementById('royalePickGrid');
   const count = document.getElementById('royalePickCount');
@@ -13025,7 +13132,7 @@ function royaleAddSkin() {
     }));
   };
   confirm.onclick = () => {
-    const selected = available.filter(skin => selectedIds.has(String(skin.id)));
+    const selected = available.filter(skin => selectedIds.has(String(skin.id)) && canUseInventoryItem(skin));
     if (!selected.length) return;
     royalePlayerSkins.push(...selected);
     if (royaleMode === 'bots') royaleGenerateBots();
@@ -13228,8 +13335,8 @@ async function joinLiveRoyale() {
   if (pendingWager || isCaseOpening || isFreeCaseOpening) return showToast('Спочатку дочекайся завершення поточного раунду.', 'warn');
   const skins = royalePlayerSkins.slice(0, ROYALE_LIVE_MAX_SKINS);
   if (!skins.length) return showToast('Додай від 1 до 10 віртуальних скінів до відкритого раунду.', 'warn');
-  if (!skins.every(skin => userInventory.some(item => item.id === skin.id && item.accountBound !== true) && verifiedInventoryMarketPrice(skin))) {
-    royalePlayerSkins = royalePlayerSkins.filter(skin => userInventory.some(item => item.id === skin.id && item.accountBound !== true) && verifiedInventoryMarketPrice(skin));
+  if (!skins.every(skin => canUseInventoryItem(skin) && verifiedInventoryMarketPrice(skin))) {
+    royalePlayerSkins = royalePlayerSkins.filter(skin => canUseInventoryItem(skin) && verifiedInventoryMarketPrice(skin));
     renderRoyaleDeck();
     return showToast('Потрібні стабільні ціни всіх обраних скінів.', 'warn');
   }
@@ -13262,9 +13369,9 @@ function startRoyale() {
   if (royaleInProgress) return;
   if (pendingWager || isCaseOpening || isFreeCaseOpening) return showToast('Спочатку дочекайся завершення поточного раунду', 'warn');
   if (!royalePlayerSkins.length) return showToast('Додай хоча б один скін до раунду.', 'warn');
-  if (!royalePlayerSkins.every(skin => userInventory.some(owned => owned.id === skin.id && owned.accountBound !== true) && verifiedInventoryMarketPrice(skin))) {
+  if (!royalePlayerSkins.every(skin => canUseInventoryItem(skin) && verifiedInventoryMarketPrice(skin))) {
     showToast('Один зі скінів уже недоступний. Оновлюємо внесок.', 'warn');
-    royalePlayerSkins = royalePlayerSkins.filter(skin => userInventory.some(owned => owned.id === skin.id && owned.accountBound !== true) && verifiedInventoryMarketPrice(skin));
+    royalePlayerSkins = royalePlayerSkins.filter(skin => canUseInventoryItem(skin) && verifiedInventoryMarketPrice(skin));
     royaleGenerateBots();
     renderRoyaleDeck();
     return;
@@ -13422,9 +13529,9 @@ function pickContractSlot(idx) {
   const g = document.getElementById('contractPickGrid');
   if (!g) return;
   const used = new Set(contractItems.filter(Boolean).map(i => i.id));
-  const available = userInventory.filter(s => s.accountBound !== true && !used.has(s.id) && verifiedInventoryMarketPrice(s));
+  const available = userInventory.filter(s => canUseInventoryItem(s) && !used.has(s.id) && verifiedInventoryMarketPrice(s));
   if (!available.length) {
-    g.innerHTML = '<div class="col-span-full py-10 text-center text-sm text-gray-400">Усі предмети з інвентарю вже додано до контракту.</div>';
+    g.innerHTML = '<div class="col-span-full py-10 text-center text-sm text-gray-400">Немає доступних предметів. Перевір захист скінів і вже заповнені слоти.</div>';
   } else {
     g.innerHTML = available.map(s => {
       const wear = getWear(s);
@@ -13437,7 +13544,7 @@ function pickContractSlot(idx) {
     }).join('');
     g.querySelectorAll('[data-contract-pick]').forEach(b => b.addEventListener('click', () => {
       const it = userInventory.find(x => String(x.id) === b.dataset.contractPick);
-      if (it) {
+      if (it && canUseInventoryItem(it)) {
         contractItems[contractActiveSlot] = it;
         renderContractSlots();
         closeModal('contractPickModal');
@@ -13495,8 +13602,8 @@ async function executeContract() {
     renderContractSlots();
     return;
   }
-  if (items.some(item => item.accountBound === true)) {
-    showToast('Колекційні предмети прив’язані до профілю й не можуть бути в контракті.', 'warn');
+  if (items.some(item => !canUseInventoryItem(item))) {
+    showToast('Захищені або колекційні предмети не можуть бути в контракті.', 'warn');
     return;
   }
   if (!items.every(verifiedInventoryMarketPrice)) {
@@ -13521,6 +13628,12 @@ async function executeContract() {
   }
   if (!pool.length) {
     showToast('Немає стабільних цін у діапазоні контракту. Баланс не змінено.', 'warn');
+    return;
+  }
+  // Catalogue warming above can await a request. Recheck the live inventory
+  // after it resolves so a newly protected/sold input cannot be consumed.
+  if (isInventoryMutationBusy() || !items.every(canUseInventoryItem)) {
+    showToast('Внесок змінився або захищений. Контракт не виконано.', 'warn');
     return;
   }
   const pick = pool[Math.floor(Math.random() * pool.length)];
@@ -13676,7 +13789,9 @@ function normalizeCatalogPage(items, startIndex = 0) {
     rarity: skin.rarity?.name || skin.rarity || 'Consumer Grade',
     rarityColor: skin.rarity?.color || skin.rarityColor || '#b0c3d9',
     img: skin.image || skin.img,
-    wears: skin.wears
+    wears: skin.wears,
+    phase: skin.phase,
+    paintIndex: skin.paintIndex || skin.paint_index
   }, startIndex + index)).filter(Boolean);
 }
 
@@ -13849,6 +13964,8 @@ function loadCompleteSkinCatalog() {
       rarityColor: skin.rarity?.color || '#b0c3d9',
       img: skin.image,
       wears: skin.wears,
+      phase: skin.phase,
+      paintIndex: skin.paintIndex || skin.paint_index,
       price: stableCatalogPrice(skin, 'FT')
     }, index)).filter(Boolean);
     if (normalizedCatalog.length < 50) throw new Error('Catalog validation failed');
@@ -13942,7 +14059,7 @@ function filterShop() {
     if (!isUsableSkin(s)) return false;
     if (cat !== 'all' && s.category !== cat) return false;
     if (rarityTier !== 'all' && getItemRarity(s).tier !== rarityTier) return false;
-    return !q || `${s.name} ${s.weapon || ''}`.toLowerCase().includes(q);
+    return !q || `${s.name} ${s.weapon || ''} ${s.phase || ''}`.toLowerCase().includes(q);
   }).flatMap(getCatalogWearVariants).filter(s => {
     if (wearCode !== 'all' && getWear(s).code !== wearCode) return false;
     const marketPrice = verifiedMarketPriceForWear(s);
@@ -13962,7 +14079,7 @@ function filterShop() {
 }
 
 function showMoreSkins() {
-  if (visibleSkinCount < filteredSkins.length) {
+  if (visibleSkinCount < groupShopVariants(filteredSkins).length) {
     visibleSkinCount += getCatalogRenderPageSize();
     renderShopGrid(filteredSkins);
     return;
@@ -13970,19 +14087,44 @@ function showMoreSkins() {
   if (shopCatalogHasMore) void loadShopCatalogPage();
 }
 
+const shopSelectedWear = new Map();
+
+function groupShopVariants(skins) {
+  const groups = new Map();
+  for (const skin of skins.filter(isUsableSkin)) {
+    const key = getSkinKey(skin);
+    if (!groups.has(key)) groups.set(key, { key, variants: [] });
+    const group = groups.get(key);
+    if (!group.variants.some(variant => getWear(variant).code === getWear(skin).code)) group.variants.push(skin);
+  }
+  return [...groups.values()];
+}
+
 function renderShopGrid(skins) {
   const g = document.getElementById('shopGrid');
   if (!g) return;
   const av = skins.filter(isUsableSkin);
-  const shown = av.slice(0, visibleSkinCount);
+  const groups = groupShopVariants(av);
+  const sort = document.getElementById('shopSort')?.value || 'name-asc';
+  const chooseGroupSkin = group => {
+    const preferredWear = sort.startsWith('price-') ? '' : preferredCatalogWear(group.variants[0]).code;
+    return group.variants.find(skin => getWear(skin).code === shopSelectedWear.get(group.key))
+      || group.variants.find(skin => getWear(skin).code === preferredWear) || group.variants[0];
+  };
+  if (sort.startsWith('price-')) groups.sort((left, right) => {
+    const difference = verifiedMarketPriceForWear(chooseGroupSkin(left)) - verifiedMarketPriceForWear(chooseGroupSkin(right));
+    return sort === 'price-desc' ? -difference : difference;
+  });
+  const shownGroups = groups.slice(0, visibleSkinCount);
+  const shown = shownGroups.map(chooseGroupSkin);
   const countEl = document.getElementById('shopCount');
   if (countEl) {
     const skinCount = new Set(av.map(getSkinKey)).size;
-    countEl.textContent = `Варіантів: ${av.length.toLocaleString('uk-UA')} · скінів: ${skinCount.toLocaleString('uk-UA')}${shopCatalogHasMore ? ' · є ще' : ''}`;
+    countEl.textContent = `Скінів: ${skinCount.toLocaleString('uk-UA')} · варіантів зносу: ${av.length.toLocaleString('uk-UA')}${shopCatalogHasMore ? ' · є ще' : ''}`;
   }
   const moreBtn = document.getElementById('shopMoreBtn');
   if (moreBtn) {
-    const canShowLoaded = shown.length < av.length;
+    const canShowLoaded = shownGroups.length < groups.length;
     moreBtn.classList.toggle('hidden', !canShowLoaded && !shopCatalogHasMore);
     moreBtn.textContent = canShowLoaded ? 'Показати ще' : 'Завантажити ще скіни';
   }
@@ -13992,23 +14134,35 @@ function renderShopGrid(skins) {
     return;
   }
 
-  g.innerHTML = shown.map(s => {
+  const nameCounts = new Map();
+  for (const group of groups) nameCounts.set(group.variants[0].name, (nameCounts.get(group.variants[0].name) || 0) + 1);
+  g.innerHTML = shown.map((s, index) => {
     const rarity = getItemRarity(s);
     const wear = getWear(s);
     const marketPrice = verifiedMarketPriceForWear(s);
+    const variants = shownGroups[index].variants;
+    const phaseLabel = s.phase || (nameCounts.get(s.name) > 1 ? (s.paintIndex ? `Paint #${s.paintIndex}` : `Варіант ${getSkinKey(s).slice(-6)}`) : '');
+    const [weapon, ...finishParts] = String(s.name).split('|');
+    const finish = finishParts.join('|').trim() || weapon.trim();
     const priceMarkup = marketPrice
-      ? `<p class="text-amber-400 font-extrabold text-xs mt-0.5">${formatCredits(marketPrice)}</p><p class="text-[9px] text-gray-500">${escapeHtml(marketQuoteMeta(s))}</p>`
+      ? `<p class="shop-price text-amber-400 font-extrabold text-xs mt-0.5">${formatCredits(marketPrice)}</p>`
       : '<p class="text-cyan-300 font-extrabold text-[11px] mt-1"><i class="fa-solid fa-arrows-rotate fa-spin-pulse mr-1"></i>Оновлюємо Steam</p><p class="text-[9px] text-gray-500">ціна ще не підтверджена</p>';
     return `<article data-skin-card="${escapeHtml(getSkinKey(s))}" class="skin-card rarity-surface relative bg-brand-card hover:bg-gray-800 border border-brand-border rounded-xl p-3 transition group focus-within:border-amber-500" style="--rarity-color:${rarity.color}">
       <span class="wear-badge wear-${wear.code} absolute top-2 left-2 z-10" title="${escapeHtml(wear.name)}">${wear.code}</span>
-      <button type="button" data-select-skin-id="${escapeHtml(getSkinKey(s))}" data-select-wear="${wear.code}" aria-label="Обрати ${escapeHtml(s.name)} · ${wear.code} · ${formatCredits(marketPrice)}" class="w-full text-left flex flex-col items-center justify-between focus:outline-none">
+      <button type="button" data-select-skin-id="${escapeHtml(getSkinKey(s))}" data-select-wear="${wear.code}" aria-label="Обрати ${escapeHtml(s.name)}${phaseLabel ? ` · ${escapeHtml(phaseLabel)}` : ''} · ${wear.code} · ${formatCredits(marketPrice)}" class="w-full text-left flex flex-col items-center justify-between focus:outline-none">
         <img src="${escapeHtml(getSkinImageSrc(s))}" alt="${escapeHtml(s.name)}" data-skin-id="${escapeHtml(getSkinKey(s))}" data-skin-name="${escapeHtml(s.name)}" class="h-20 w-full object-contain group-hover:scale-105 transition image-skeleton" loading="lazy" onerror="handleSkinImageError(this)">
         <div class="text-center w-full mt-2 min-w-0">
-          <p class="font-bold text-xs text-white truncate" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</p>
-          <p class="text-[9px] font-bold mt-1" style="color:${rarity.color}">${escapeHtml(rarity.name)} · ${wear.code}</p>
+          <p class="shop-weapon">${escapeHtml(weapon.trim())}</p>
+          <p class="shop-finish" title="${escapeHtml(s.name)}">${escapeHtml(finish)}</p>
+          <p class="shop-phase">${escapeHtml(phaseLabel)}</p>
+          <p class="shop-rarity" style="color:${rarity.color}">${escapeHtml(rarity.name)}</p>
           ${priceMarkup}
         </div>
       </button>
+      <label class="shop-wear-choice"><span>Знос</span><select data-shop-wear="${escapeHtml(getSkinKey(s))}" aria-label="Знос для ${escapeHtml(s.name)}${phaseLabel ? ` · ${escapeHtml(phaseLabel)}` : ''}">${variants.map(variant => {
+        const variantWear = getWear(variant);
+        return `<option value="${variantWear.code}" ${variantWear.code === wear.code ? 'selected' : ''}>${variantWear.code} · ${formatCredits(verifiedMarketPriceForWear(variant))}</option>`;
+      }).join('')}</select></label>
       <button type="button" data-favorite-toggle="${escapeHtml(getSkinKey(s))}" title="Улюблене" class="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-lg border ${isFavorite(s) ? 'border-amber-400/60 bg-amber-500 text-black' : 'border-gray-700 bg-black/60 text-gray-400 hover:border-amber-400 hover:text-amber-300'}">
         <i class="${isFavorite(s) ? 'fa-solid' : 'fa-regular'} fa-heart text-xs"></i>
       </button>
@@ -14023,6 +14177,14 @@ function renderShopGrid(skins) {
     if (s) selectTargetItem(marketReadyCatalogSkin(s, b.dataset.selectWear));
   }));
   g.querySelectorAll('[data-favorite-toggle]').forEach(b => b.addEventListener('click', () => toggleFavorite(b.dataset.favoriteToggle)));
+  g.querySelectorAll('[data-shop-wear]').forEach(select => select.addEventListener('change', () => {
+    const key = select.dataset.shopWear;
+    shopSelectedWear.set(key, select.value);
+    const scrollTop = g.scrollTop;
+    renderShopGrid(skins);
+    g.scrollTop = scrollTop;
+    [...g.querySelectorAll('[data-shop-wear]')].find(control => control.dataset.shopWear === key)?.focus({ preventScroll: true });
+  }));
 }
 
 /* Initialization */

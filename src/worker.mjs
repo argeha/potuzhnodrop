@@ -640,6 +640,8 @@ function parseStake(value) {
     weapon: cleanText(value?.weapon, 64),
     category: cleanText(value?.category, 64),
     sourceSkinId: cleanText(value?.sourceSkinId, 128),
+    phase: cleanText(value?.phase, 48),
+    paintIndex: cleanText(value?.paintIndex, 16),
   }
 }
 
@@ -4132,12 +4134,13 @@ export class PotuzhnoState {
   }
 
   async readSkinCatalog() {
-    const cacheKey = 'catalog:skins:v4-meta'
-    const cached = await this.storage.get(cacheKey)
+    const cacheKey = 'catalog:skins:v5-meta'
+    const currentCached = await this.storage.get(cacheKey)
+    const cached = currentCached || await this.storage.get('catalog:skins:v4-meta')
     const cachedItems = Array.isArray(cached?.items) ? cached.items : []
     const cacheAge = Date.now() - Number(cached?.updatedAt || 0)
-    if (cachedItems.length >= 50 && cacheAge >= 0 && cacheAge < CATALOG_TTL) {
-      return { items: cachedItems, total: Number(cached?.total) || cachedItems.length, stale: false }
+    if (currentCached && cachedItems.length >= 50 && cacheAge >= 0 && cacheAge < CATALOG_TTL) {
+      return { items: cachedItems, total: Number(cached?.total) || cachedItems.length, stale: false, pageVersion: 5 }
     }
 
     for (const source of CATALOG_SOURCES) {
@@ -4157,6 +4160,8 @@ export class PotuzhnoState {
             category: { name: cleanText(skin?.category?.name, 64) },
             rarity: { name: cleanText(skin?.rarity?.name || 'Consumer Grade', 48), color: cleanColor(skin?.rarity?.color) },
             image: cleanImage(skin?.image),
+            phase: cleanText(skin?.phase, 48),
+            paintIndex: cleanText(skin?.paint_index, 16),
             wears,
           }
         }).filter(skin => skin.name && skin.weapon.name && skin.category.name && skin.image)
@@ -4169,7 +4174,7 @@ export class PotuzhnoState {
           }
           // Store data pages first and publish their metadata last. A reader
           // can therefore never observe a fresh page count with missing rows.
-          await Promise.all(chunks.map((items, index) => this.storage.put(`catalog:skins:v4-page:${index}`, items)))
+          await Promise.all(chunks.map((items, index) => this.storage.put(`catalog:skins:v5-page:${index}`, items)))
           const result = {
             items: gameCatalog,
             total: safeCatalog.length,
@@ -4177,7 +4182,7 @@ export class PotuzhnoState {
             updatedAt,
           }
           await this.storage.put(cacheKey, result)
-          return { items: result.items, total: result.total, stale: false }
+          return { items: result.items, total: result.total, stale: false, pageVersion: 5 }
         }
       } catch {
         // Try the next public mirror. The last known catalog is still useful
@@ -4185,7 +4190,7 @@ export class PotuzhnoState {
       }
     }
     if (cachedItems.length >= 50 && cacheAge >= 0 && cacheAge < CATALOG_STALE_TTL) {
-      return { items: cachedItems, total: Number(cached?.total) || cachedItems.length, stale: true }
+      return { items: cachedItems, total: Number(cached?.total) || cachedItems.length, stale: true, pageVersion: currentCached ? 5 : 4 }
     }
     return null
   }
@@ -4202,7 +4207,7 @@ export class PotuzhnoState {
     const firstPage = Math.floor(safeOffset / pageSize)
     const lastPage = Math.floor(Math.min(total - 1, safeOffset + safeLimit - 1) / pageSize)
     const pages = await Promise.all(Array.from({ length: lastPage - firstPage + 1 }, (_, index) => (
-      this.storage.get(`catalog:skins:v4-page:${firstPage + index}`)
+      this.storage.get(`catalog:skins:v${catalog.pageVersion || 5}-page:${firstPage + index}`)
     )))
     if (pages.some(page => !Array.isArray(page))) return null
     const flattened = pages.flat()
