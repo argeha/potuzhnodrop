@@ -61,6 +61,7 @@ const context = vm.createContext({
   getSkinByKey: id => catalog.find(skin => String(skin.id) === String(id)),
   renderShopGrid: skins => { context.rendered = skins; },
   userInventory: [], currentUser: { balance: 100 },
+  lastWonCaseItems: [], lastWonUpgraderSkin: null,
   selectedInputSkin: null, selectedTargetSkin: null, multiInputSkins: [],
   pendingWager: null, isRolling: false, battleInProgress: false, royaleInProgress: false,
   battleStakeRequestInFlight: false, battleSearchTicket: null, battleAutoStartTimer: null,
@@ -68,7 +69,11 @@ const context = vm.createContext({
   ensureDailyState: noOp, ensureWeeklyState: noOp, updateAllTimeOnSell: noOp,
   updateBalanceUI: noOp, saveState: noOp, renderInventoryGrid: noOp, renderProfileInventory: noOp,
   renderMultiSlots: noOp, updateAvatarBadge: noOp, checkAchievements: noOp, renderGameHub: noOp,
-  soundSell: noOp, soundWin: noOp, window: { confirm: () => true },
+  contractItems: [null, null, null, null, null], royalePlayerSkins: [], battlePlayerItem: null,
+  renderContractSlots: noOp, renderRoyaleDeck: noOp, clearBattleOpponent: noOp,
+  escapeHtml: value => String(value), getSkinImageSrc: skin => skin.img,
+  modalReturnFocus: new Map(),
+  soundSell: noOp, soundWin: noOp, window: { confirm: () => true, setTimeout: noOp },
   BATTLE_PASS_REWARDS: [{ tier: 1, premium: { type: 'skin', skin: unrestricted } }],
   getBattlePassProgress: () => ({ unlocked: 1, pass: context.gameState.battlePass }),
   battlePassRewardCopy: reward => ({ title: reward.skin.name }),
@@ -87,6 +92,8 @@ for (const [from, to] of [
   ['function getTargetVal()', 'function recalculateUpgrade('],
   ['function compactCloudInventoryItem(', 'function buildPortableSave('],
   ['function isInventoryMutationBusy(', 'function inventoryProtectionButton('],
+  ['let pendingInventorySale = null;', 'function renderInventoryGrid('],
+  ['function closeModal(', 'function refreshInventoryModal('],
   ['function getInventoryDuplicateKey(', 'function getInventorySource('],
   ['function sellInventoryItem(', 'function openInventoryOrFocus('],
   ['function claimBattlePassReward(', '/* ====='],
@@ -226,6 +233,8 @@ assert.equal(context.userInventory.length, 1);
 context.userInventory = [restored, { ...restored, id: 'second-battle-pass' }];
 const duplicateBalance = context.currentUser.balance;
 context.sellAllDuplicates();
+assert.equal(context.userInventory.length, 2, 'Exclusive duplicates need explicit confirmation too');
+context.confirmInventorySale();
 assert.equal(context.userInventory.length, 1);
 assert.equal(context.currentUser.balance, context.roundPc(duplicateBalance + context.roundPc(restored.price * .9)));
 

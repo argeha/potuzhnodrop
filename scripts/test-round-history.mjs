@@ -77,9 +77,9 @@ Object.assign(ctx, {
   calcChance: () => 30, beginPendingWager: () => 'test', completePendingWager: () => true,
   updateBalanceUI: noop, renderInventoryGrid: noop, renderProfileInventory: noop, updateAvatarBadge: noop,
   renderMultiSlots: noop, renderCanvas: noop, recalculateUpgrade: noop, soundWin: noop, soundLose: noop,
-  addActivityEvent: noop, showResultModal: noop, beep: noop, showToast: noop,
+  addActivityEvent: noop, showResultModal: (win, skin, bonus, context) => { ctx.resultContext = context; }, beep: noop, showToast: noop,
   makeDemoItem: skin => ({ ...skin, id: 'won-test', wear: { code: 'BS' } }),
-  performance: { now: () => 0 }, setInterval: () => 1, clearInterval: noop, setTimeout: noop,
+  performance: { now: () => 0 }, setInterval: () => 1, clearInterval: noop, setTimeout: callback => callback(),
   requestAnimationFrame: callback => callback(4000),
 });
 vm.runInContext(extract('function executeUpgrade()', '/* ===== ПУЛИ ТА ШАНСИ КЕЙСІВ'), ctx);
@@ -92,6 +92,7 @@ for (const fast of [true, false]) {
     const round = ctx.gameState.rounds[0];
     assert.equal(round.win, win); assert.equal(round.inputKind, 'balance');
     assert.equal(round.balanceDelta, -10); assert.equal(ctx.currentUser.balance, 90);
+    assert.equal(ctx.resultContext.balanceDelta, -10, 'The result uses the same frozen receipt as history');
     assert.equal(round.outputItems[0].wear, 'BS');
     assert.equal(ctx.userInventory.length, win ? 1 : 0);
   }

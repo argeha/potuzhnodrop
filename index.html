@@ -32,13 +32,13 @@
 <link rel="preconnect" href="https://community.akamai.steamstatic.com">
 <link rel="preconnect" href="https://avatars.steamstatic.com">
 <!-- Tailwind зібраний локально: інтерфейс не залежить від зовнішнього CDN. -->
-<link rel="stylesheet" href="/css/tailwind.css?v=7.9.0-inventory-history.2">
+<link rel="stylesheet" href="/css/tailwind.css?v=7.9.0-result-receipts.1">
 <!-- Font Awesome -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Teko:wght@600;700&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-<link rel="stylesheet" href="/css/style.css?v=7.9.0-inventory-history.2">
+<link rel="stylesheet" href="/css/style.css?v=7.9.0-result-receipts.1">
 </head>
 <body class="pd-rebrand min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -784,48 +784,45 @@
 </div>
 </div>
 
-<div id="resultModal" class="modal-backdrop fixed inset-0 z-[90] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4"><div class="upg-result-shell glass-panel rounded-3xl max-w-md w-full p-8 border border-brand-border relative text-center"><div class="upg-result-orbit"><div id="resultIcon" class="flex items-center justify-center"></div></div><p id="resultEyebrow" class="upg-result-eyebrow">РЕЗУЛЬТАТ АПГРЕЙДУ</p><h3 id="resultTitle" class="font-heading text-4xl font-extrabold uppercase mb-2">—</h3><img id="resultImg" src="" alt="" class="upg-result-image h-32 mx-auto object-contain my-4 hidden" onerror="handleSkinImageError(this,'result')"><p id="resultText" class="text-sm text-gray-300 mb-4"></p><div id="resultMeta" class="upg-result-meta" aria-label="Параметри апгрейду"></div><div id="resultUpgraderActions" class="hidden grid grid-cols-2 gap-2 mb-3">
-  <button onclick="chainUpgradeWonSkin()" class="py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 text-black font-extrabold rounded-xl transition text-xs uppercase tracking-wider flex items-center justify-center gap-1"><i class="fa-solid fa-bolt"></i> Подвоїти</button>
-  <button onclick="quickSellUpgradedSkin()" class="py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-400 text-white font-extrabold rounded-xl transition text-xs uppercase tracking-wider flex items-center justify-center gap-1"><i class="fa-solid fa-sack-dollar"></i> Продати 90%</button>
+<div id="resultModal" class="modal-backdrop fixed inset-0 z-[90] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4"><div class="upg-result-shell round-result-panel glass-panel rounded-3xl max-w-md w-full p-8 border border-brand-border relative text-center"><div class="upg-result-orbit"><div id="resultIcon" class="flex items-center justify-center"></div></div><p id="resultEyebrow" class="upg-result-eyebrow">РЕЗУЛЬТАТ АПГРЕЙДУ</p><h3 id="resultTitle" class="font-heading text-4xl font-extrabold uppercase mb-2">—</h3><img id="resultImg" src="" alt="" class="upg-result-image h-32 mx-auto object-contain my-4 hidden" onerror="handleSkinImageError(this,'result')"><div id="resultSkinDetails"></div><p id="resultText" class="text-sm text-gray-300 mb-4"></p><div id="resultMeta" class="upg-result-meta round-result-summary" aria-label="Підсумок раунду"></div><p class="result-currency-note">Вартість скіна — не поповнення балансу. PC показано окремо, без сторонніх нагород.</p><div id="resultUpgraderActions" class="hidden result-secondary-actions">
+  <button type="button" onclick="chainUpgradeWonSkin()" class="result-action-secondary"><i class="fa-solid fa-bolt" aria-hidden="true"></i> В апгрейдер</button>
+  <button type="button" id="resultSellBtn" onclick="quickSellUpgradedSkin()" class="result-action-secondary">Продати 90%</button>
 </div>
-<button onclick="closeModal('resultModal')" class="w-full py-3 bg-brand-card hover:bg-gray-800 border border-brand-border text-gray-200 font-extrabold rounded-xl transition">Продовжити</button></div></div>
+<button type="button" onclick="closeModal('resultModal')" class="result-action-primary">Продовжити</button></div></div>
 
 <div id="caseModal" class="modal-backdrop fixed inset-0 z-[90] bg-black/90 backdrop-blur-md hidden items-center justify-center p-4">
-  <div class="glass-panel rounded-3xl max-w-xl w-full p-6 border border-amber-500/40 relative text-center max-h-[90vh] flex flex-col">
-    <button onclick="closeModal('caseModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
-    <div class="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-300">
+  <div class="glass-panel round-result-panel case-result-panel rounded-3xl max-w-xl w-full p-6 border border-amber-500/40 relative text-center">
+    <button type="button" onclick="closeModal('caseModal')" class="result-close" aria-label="Закрити результат"><i class="fa-solid fa-xmark text-lg" aria-hidden="true"></i></button>
+    <div class="result-case-icon mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-300">
       <i class="fa-solid fa-box-open text-2xl"></i>
     </div>
     <p class="text-xs font-extrabold uppercase tracking-[.22em] text-amber-400" id="caseResultHeader">Потужний кейс</p>
     <h3 id="caseResultTitle" class="font-heading mt-0.5 text-3xl sm:text-4xl font-extrabold uppercase text-white">ВІТАЄМО З ДРОПОМ!</h3>
+    <p id="caseResultText" class="result-description"></p>
     
     <!-- Dropped items list (single or multi-drop) -->
-    <div id="caseResultItemsGrid" class="my-4 overflow-y-auto pr-1 max-h-[46vh] space-y-3">
+    <div id="caseResultItemsGrid" class="result-items-grid">
       <!-- Generated items -->
     </div>
     
     <!-- Summary bar -->
-    <div class="flex items-center justify-between bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 mb-4">
-      <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Загальна вартість:</span>
-      <span class="font-heading text-2xl font-extrabold text-amber-300" id="caseResultTotalVal">0 PC</span>
-    </div>
+    <div id="caseResultSummary" class="round-result-summary" aria-label="Підсумок раунду"></div>
+    <p class="result-currency-note">Вартість дропа — не поповнення балансу. PC показано окремо, без сторонніх нагород.</p>
     <div id="caseResultFairProof" class="hidden"></div>
 
     <!-- Дії з результатом -->
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-      <button onclick="quickSellCaseResult()" class="py-3 px-2 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-xl transition text-xs uppercase tracking-wider flex items-center justify-center gap-1 shadow-lg shadow-emerald-500/20" title="Миттєво продати за кредити">
-        <i class="fa-solid fa-coins"></i> Продати
+    <div class="result-secondary-actions">
+      <button type="button" id="caseResultSellBtn" onclick="quickSellCaseResult()" class="result-action-secondary" title="Переглянути суму й підтвердити продаж за 90% вартості">
+        Продати 90%
       </button>
-      <button onclick="sendCaseDropToUpgrader()" class="py-3 px-2 bg-gradient-to-r from-amber-500 to-yellow-500 hover:brightness-110 text-black font-extrabold rounded-xl transition text-xs uppercase tracking-wider flex items-center justify-center gap-1 shadow-lg shadow-amber-500/20" title="Відправити скін в апгрейдер">
-        <i class="fa-solid fa-bolt"></i> Апгрейд
+      <button type="button" id="caseResultUpgradeBtn" onclick="sendCaseDropToUpgrader()" class="result-action-secondary" title="Відправити доступний скін в апгрейдер">
+        <i class="fa-solid fa-bolt" aria-hidden="true"></i> В апгрейдер
       </button>
-      <button id="caseRepeatBtn" onclick="repeatDropAction()" class="py-3 px-2 bg-blue-600 hover:bg-blue-500 text-white font-extrabold rounded-xl transition text-xs uppercase tracking-wider flex items-center justify-center gap-1 shadow-lg shadow-blue-500/20" title="Відкрити ще раз">
+      <button type="button" id="caseRepeatBtn" onclick="repeatDropAction()" class="result-action-secondary" title="Відкрити ще раз">
         <i id="caseRepeatIcon" class="fa-solid fa-rotate-right"></i> <span id="caseRepeatLabel">Ще раз</span>
       </button>
-      <button onclick="closeModal('caseModal')" class="py-3 px-2 bg-gray-700 hover:bg-gray-600 text-white font-extrabold rounded-xl transition text-xs uppercase tracking-wider flex items-center justify-center gap-1" title="Залишити в інвентарі">
-        <i class="fa-solid fa-check"></i> Забрати
-      </button>
     </div>
+    <button type="button" onclick="closeModal('caseModal')" class="result-action-primary"><i class="fa-solid fa-check" aria-hidden="true"></i> Залишити в інвентарі</button>
   </div>
 </div>
 
@@ -835,6 +832,6 @@
 
 <script src="/js/mobile-config.js" defer></script>
 <script src="/js/mobile.js?v=1" defer></script>
-<script src="/js/app.js?v=7.9.0-inventory-history.2" defer></script>
+<script src="/js/app.js?v=7.9.0-result-receipts.1" defer></script>
 </body>
 </html>

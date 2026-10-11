@@ -46,6 +46,7 @@ const ctx = vm.createContext({
   modalReturnFocus: new Map(), openModal: id => { ctx.opened = id; },
   showToast: message => { ctx.toast = message; },
   userInventory: [], CS2_SKINS: [], currentUser: { balance: 100 },
+  lastWonCaseItems: [], lastWonUpgraderSkin: null,
   gameState: { stats: {}, daily: {}, weekly: {} }, SELL_RATE: .9,
   selectedInputSkin: null, selectedTargetSkin: null, multiInputSkins: [], selectedInputMode: 'skin',
   contractItems: [null, null, null, null, null], royalePlayerSkins: [], battlePlayerItem: null, battleBotItem: null,
@@ -121,7 +122,7 @@ const balance = ctx.currentUser.balance;
 ctx.sellInventoryItem(item.id); ctx.selectInventoryItem(stale); ctx.addToMulti(stale);
 assert.equal(ctx.currentUser.balance, balance); assert.equal(ctx.userInventory.length, 1);
 assert.equal(ctx.selectedInputSkin, null); assert.equal(ctx.multiInputSkins.length, 0);
-ctx.lastWonUpgraderSkin = stale; ctx.lastWonCaseItems = [stale];
+ctx.lastWonUpgraderSkin = stale; ctx.fixtureDrops = [stale]; vm.runInContext('lastWonCaseItems = fixtureDrops', ctx);
 ctx.quickSellUpgradedSkin(); ctx.quickSellCaseResult();
 assert.equal(ctx.currentUser.balance, balance, 'Quick-result sales may not bypass an owned-item lock');
 ctx.selectedInputSkin = stale; ctx.inputValue = 1; ctx.selectedTargetSkin = ctx.CS2_SKINS[0];
@@ -162,14 +163,38 @@ item.wear = originalWear;
 ctx.requestInventorySale(item.id); ctx.confirmInventorySale(); ctx.confirmInventorySale();
 assert.equal(ctx.currentUser.balance, ctx.roundPc(balance + ctx.roundPc(item.price * .9)), 'Confirmed sale pays exactly once');
 assert.equal(ctx.userInventory.some(skin => skin.id === item.id), false);
-ctx.lastWonCaseItems = [stale]; ctx.quickSellCaseResult();
+ctx.fixtureDrops = [stale]; vm.runInContext('lastWonCaseItems = fixtureDrops', ctx); ctx.quickSellCaseResult();
 assert.equal(ctx.currentUser.balance, ctx.roundPc(balance + ctx.roundPc(item.price * .9)), 'A stale result cannot pay for an already sold item');
 const first = ctx.makeDemoItem(ctx.CS2_SKINS[0]);
 ctx.userInventory = [first, { ...first, id: 'protected-dupe', inventoryProtected: true }, { ...first, id: 'sellable-dupe' }, ctx.makeDemoItem(ctx.CS2_SKINS[1])];
 ctx.sellAllDuplicates();
+assert.equal(ctx.userInventory.length, 4, 'Duplicate sale opens a quote, not an immediate sale');
+assert.ok(element('inventorySaleContent').innerHTML.includes('Продати дублікати?'));
+ctx.closeModal('inventorySaleModal'); ctx.confirmInventorySale();
+assert.equal(ctx.userInventory.length, 4, 'Cancel preserves every duplicate');
+ctx.sellAllDuplicates(); ctx.confirmInventorySale(); ctx.confirmInventorySale();
 assert.equal(ctx.userInventory.length, 3);
 assert.ok(ctx.userInventory.some(skin => skin.id === 'protected-dupe'));
 assert.ok(ctx.userInventory.some(skin => skin.phase === 'Phase 2'), 'A different phase is not a duplicate');
+const keeper = { ...first, id: 'keeper' }, extra = { ...first, id: 'extra' };
+ctx.userInventory = [keeper, extra];
+ctx.sellAllDuplicates(); ctx.userInventory = [extra]; ctx.confirmInventorySale();
+assert.equal(ctx.userInventory.length, 1, 'A vanished keeper may not sell the final copy');
+
+// Case/contract quick sales share the same non-mutating, once-only confirmation.
+ctx.userInventory = [keeper, extra]; ctx.fixtureDrops = [keeper, extra]; vm.runInContext('lastWonCaseItems = fixtureDrops', ctx);
+const dropBalance = ctx.currentUser.balance;
+ctx.quickSellCaseResult();
+assert.ok(element('inventorySaleContent').innerHTML.includes('Продати отриманий дроп?'));
+assert.equal(ctx.currentUser.balance, dropBalance);
+ctx.closeModal('inventorySaleModal'); ctx.confirmInventorySale();
+assert.equal(vm.runInContext('lastWonCaseItems.length', ctx), 2, 'Cancel retains the drop and result actions');
+ctx.quickSellCaseResult(); extra.inventoryProtected = true; ctx.confirmInventorySale();
+assert.equal(ctx.currentUser.balance, dropBalance, 'New protection cancels the entire quick-sale quote');
+extra.inventoryProtected = false;
+ctx.quickSellCaseResult(); ctx.confirmInventorySale(); ctx.confirmInventorySale();
+assert.equal(ctx.currentUser.balance, ctx.roundPc(dropBalance + ctx.roundPc(first.price * .9) * 2));
+assert.equal(vm.runInContext('lastWonCaseItems.length', ctx), 0); assert.equal(ctx.userInventory.length, 0);
 
 // Multi-select quotes skip ineligible items, survive filters, and settle atomically.
 const batchA = { ...first, id: 'batch-a', price: 10 };
