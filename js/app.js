@@ -9093,26 +9093,32 @@ function toggleInventorySelectionMode() {
   renderProfileInventory();
 }
 
+function startInventoryBulkSale() {
+  // Leave the upgrader picker explicitly: sale selection never changes its stake.
+  closeModal('inventoryModal');
+  inventorySelectionMode = true;
+  openInventoryPage();
+}
+
 function setInventorySelection(itemId, selected) {
   const id = String(itemId);
   if (!inventorySelectionMode) return;
   if (selected && getInventorySaleQuote([id]).items.length) inventorySelection.add(id);
   else inventorySelection.delete(id);
-  renderProfileInventory();
-  [...(document.getElementById('profileInventoryGrid')?.querySelectorAll('[data-inventory-select]') || [])]
-    .find(input => input.dataset.inventorySelect === id)?.focus();
+  // Keep card nodes, focus and scroll position intact, even in large inventories.
+  renderInventorySelection();
 }
 
 function selectVisibleInventory() {
   if (!inventorySelectionMode) return;
   getInventorySaleQuote(getFilteredProfileInventory().map(item => item.id)).items
     .forEach(item => inventorySelection.add(String(item.id)));
-  renderProfileInventory();
+  renderInventorySelection();
 }
 
 function clearInventorySelection() {
   inventorySelection.clear();
-  renderProfileInventory();
+  renderInventorySelection();
 }
 
 function renderInventorySelection() {
@@ -9122,14 +9128,42 @@ function renderInventorySelection() {
   const toggle = document.getElementById('inventorySelectionToggle');
   if (toggle) {
     toggle.setAttribute('aria-pressed', String(inventorySelectionMode));
-    toggle.textContent = inventorySelectionMode ? 'Завершити вибір' : 'Обрати скіни';
+    toggle.textContent = inventorySelectionMode ? 'Скасувати вибір' : 'Продати кілька';
   }
+  const hint = document.getElementById('inventorySelectionHint');
+  if (hint) hint.textContent = inventorySelectionMode
+    ? 'Познач скіни галочками або натискай на їхні зображення. Захищені та недоступні предмети не продаються.'
+    : 'Багато предметів? Натисни «Продати кілька», познач скіни й продай їх одним підтвердженням.';
   const bar = document.getElementById('inventorySelectionBar');
   if (bar) bar.hidden = !inventorySelectionMode;
   const summary = document.getElementById('inventorySelectionSummary');
   if (summary) summary.textContent = `Обрано ${quote.items.length} · отримаєш ${formatCredits(quote.total)}`;
+  const visible = new Set(getFilteredProfileInventory().map(item => String(item.id)));
+  const hiddenCount = quote.items.filter(item => !visible.has(String(item.id))).length;
+  const note = document.getElementById('inventorySelectionNote');
+  if (note) note.textContent = hiddenCount
+    ? `Обрані поза фільтром: ${hiddenCount}. Вони теж увійдуть у продаж — перевір повний список у підтвердженні.`
+    : 'Виплата — 90% вартості. Перед продажем покажемо список і точну суму.';
+  const selectVisible = document.getElementById('inventorySelectVisible');
+  if (selectVisible) selectVisible.disabled = !getInventorySaleQuote([...visible]).items.some(item => !inventorySelection.has(String(item.id)));
+  const clear = document.getElementById('inventorySelectionClear');
+  if (clear) clear.disabled = !quote.items.length;
   const sell = document.getElementById('inventorySelectionSell');
-  if (sell) sell.disabled = !quote.items.length || isInventoryMutationBusy();
+  if (sell) {
+    sell.disabled = !quote.items.length || isInventoryMutationBusy();
+    sell.textContent = quote.items.length ? `Продати ${quote.items.length} · ${formatCredits(quote.total)}` : 'Продати вибране';
+  }
+  document.getElementById('profileInventoryGrid')?.querySelectorAll('[data-inventory-card]').forEach(card => {
+    const selected = inventorySelection.has(card.dataset.inventoryCard);
+    card.classList.toggle('is-selected', selected);
+    const input = card.querySelector('[data-inventory-select]');
+    if (input) input.checked = selected;
+    const inspect = card.querySelector('[data-profile-inspect]');
+    if (inspect && input && !input.disabled) {
+      const item = quote.items.find(item => String(item.id) === card.dataset.inventoryCard) || userInventory.find(item => String(item.id) === card.dataset.inventoryCard);
+      inspect.title = `${selected ? 'Зняти вибір' : 'Обрати для продажу'}: ${item?.name || 'Скін'}`;
+    }
+  });
 }
 
 function requestSelectedInventorySale() {
@@ -9427,7 +9461,7 @@ function renderProfileInventory() {
     const origin = source === 'steam' ? 'STEAM' : source === 'exclusive' ? 'EXCLUSIVE' : 'DROP';
     const selectable = canSell && marketPrice > 0;
     const selected = inventorySelection.has(String(s.id));
-    return `<article class="profile-inv-card rarity-surface ${s.exclusive ? 'is-exclusive' : ''} ${inventorySelectionMode ? 'is-selecting' : ''} ${selected ? 'is-selected' : ''}" style="--rarity-color:${rarity.color}">
+    return `<article data-inventory-card="${escapeHtml(String(s.id))}" class="profile-inv-card rarity-surface ${s.exclusive ? 'is-exclusive' : ''} ${inventorySelectionMode ? 'is-selecting' : ''} ${selected ? 'is-selected' : ''}" style="--rarity-color:${rarity.color}">
       <div class="profile-inv-card-top"><span class="wear-badge wear-${wear.code}">${wear.code}</span><span class="profile-inv-origin">${isBound && !canSell ? 'BOUND' : origin}</span></div>
       ${inventorySelectionMode ? `<label class="inventory-select-check"><input type="checkbox" data-inventory-select="${escapeHtml(String(s.id))}" ${selected ? 'checked' : ''} ${!selectable ? 'disabled' : ''} aria-label="Обрати для продажу: ${escapeHtml(s.name)} · ${wear.code}"><span>${!selectable ? 'Недоступний для продажу' : 'Обрати'}</span></label>` : ''}
       <button type="button" class="profile-inv-inspect" data-profile-inspect="${escapeHtml(String(s.id))}" title="${inventorySelectionMode && selectable ? selected ? 'Зняти вибір' : 'Обрати для продажу' : 'Відкрити деталі'}: ${escapeHtml(s.name)}">
@@ -9435,7 +9469,7 @@ function renderProfileInventory() {
         <div class="profile-inv-copy"><span>${escapeHtml(weapon)}</span><p class="inv-name" title="${escapeHtml(s.name)}${s.phase ? ` · ${escapeHtml(s.phase)}` : ''}">${escapeHtml(skinName)}${s.phase ? ` · ${escapeHtml(s.phase)}` : ''}</p></div>
       </button>
       <div class="profile-inv-card-footer"><p class="inv-price" title="${formatCredits(marketPrice)}"><i class="fa-solid fa-coins"></i>${formatCredits(marketPrice)}</p><div class="inv-actions">
-        <button type="button" class="sell-btn" data-profile-sell="${escapeHtml(String(s.id))}" ${!canSell ? 'disabled' : ''} aria-label="${!canSell ? 'Продаж недоступний' : `Продати за ${formatCredits(sellPrice)}`}" title="${!canSell ? (s.inventoryProtected ? 'Захищено від продажу' : 'Прив’язано до профілю') : `Продати за ${formatCredits(sellPrice)}`}"><i class="fa-solid fa-sack-dollar" aria-hidden="true"></i><span>Продати</span></button>
+        ${inventorySelectionMode ? `<button type="button" class="info-btn" data-profile-info="${escapeHtml(String(s.id))}" aria-label="Деталі: ${escapeHtml(s.name)}" title="Роздивитися скін"><i class="fa-solid fa-magnifying-glass-plus" aria-hidden="true"></i></button>` : `<button type="button" class="sell-btn" data-profile-sell="${escapeHtml(String(s.id))}" ${!canSell ? 'disabled' : ''} aria-label="${!canSell ? 'Продаж недоступний' : `Продати за ${formatCredits(sellPrice)}`}" title="${!canSell ? (s.inventoryProtected ? 'Захищено від продажу' : 'Прив’язано до профілю') : `Продати за ${formatCredits(sellPrice)}`}"><i class="fa-solid fa-sack-dollar" aria-hidden="true"></i><span>Продати</span></button>`}
         ${inventoryProtectionButton(s)}
         <button type="button" class="info-btn ${isShowcased ? 'text-amber-300 border-amber-400/60' : ''}" data-profile-showcase="${escapeHtml(String(s.id))}" aria-label="${isShowcased ? 'Прибрати з вітрини' : 'Додати на вітрину'}" title="${isShowcased ? 'Прибрати з вітрини' : 'Додати на вітрину'}"><i class="${isShowcased ? 'fa-solid' : 'fa-regular'} fa-star" aria-hidden="true"></i></button>
       </div></div>
@@ -9486,9 +9520,13 @@ function skinInspectionMarkup(it) {
   const rewardNote = isBound ? `${rewardSellable ? 'Ексклюзивну нагороду можна продати за PC; її отримання залишиться в прогресі.' : 'Цей предмет прив’язаний до профілю та не продається.'} Не можна використовувати в апгрейді, Battle, Royale чи контракті.` : '';
   return `<div class="skin-inspect-layout" style="--inspect-rarity:${color}">
     <section class="skin-inspect-visual" aria-label="Зображення скіна">
-      <div class="skin-inspect-stage" id="skinInspectStage" tabindex="0" aria-label="Зображення скіна; після наближення можна прокручувати"><div class="skin-inspect-image-wrap"><img src="${escapeHtml(getSkinImageSrc(it))}" alt="${escapeHtml(it.name)}" data-skin-name="${escapeHtml(it.name)}" onerror="handleSkinImageError(this)"></div></div>
+      <div class="skin-inspect-viewer" id="skinInspectViewer">
+        <div class="skin-inspect-stage" id="skinInspectStage" tabindex="0" aria-label="Роздивитися скін зблизька" aria-describedby="skinInspectHelp"><div class="skin-inspect-image-wrap"><img id="skinInspectImage" src="${escapeHtml(getSkinImageSrc(it))}" alt="${escapeHtml(it.name)}" data-skin-name="${escapeHtml(it.name)}" draggable="false" onerror="handleSkinImageError(this)"></div><div class="skin-inspect-lens" id="skinInspectLens" aria-hidden="true"></div><span class="skin-inspect-zoom-badge" aria-hidden="true">3×</span></div>
+        <div class="skin-inspect-zoom-pane" id="skinInspectZoomPane" aria-hidden="true"><img id="skinInspectZoomImage" src="${escapeHtml(getSkinImageSrc(it))}" alt="" draggable="false"><span>ДЕТАЛІ СКІНА · 3×</span></div>
+      </div>
       <div class="skin-inspect-toolbar"><span><i class="fa-solid fa-cube" aria-hidden="true"></i> Прев’ю з каталогу</span><button type="button" id="skinInspectZoomBtn" onclick="toggleSkinInspectionZoom()" aria-pressed="false" aria-controls="skinInspectStage"><i class="fa-solid fa-magnifying-glass-plus" aria-hidden="true"></i><span>Наблизити</span></button></div>
-      <p class="skin-inspect-image-note">Віртуальний предмет · зображення, не інтерактивна 3D-модель</p>
+      <p class="skin-inspect-help" id="skinInspectHelp"><span class="skin-inspect-desktop-help">Наведи курсор — лупа 3×. </span>«Наблизити» — перегляд без прокрутки; перетягуй зображення або використовуй стрілки. Клавіші + / − змінюють режим.</p>
+      <p class="skin-inspect-image-note">Зображення з каталогу, не 3D-модель. Чіткість деталей залежить від оригінального зображення.</p>
     </section>
     <section class="skin-inspect-info">
       <p class="skin-inspect-eyebrow">${catLabel} · ТВОЯ КОЛЕКЦІЯ</p><h3>${escapeHtml(it.name)}</h3>
@@ -9503,18 +9541,115 @@ function skinInspectionMarkup(it) {
   </div>`;
 }
 
+// Geometry is shared by the hover lens and inline touch/keyboard viewer.
+// It accounts for object-fit letterboxing, not just the image element's box.
+function skinInspectionZoomGeometry(width, height, naturalWidth, naturalHeight, paneWidth, paneHeight, x, y) {
+  const scale = 3, padding = 22;
+  const fit = Math.min(Math.max(1, width - padding * 2) / Math.max(1, naturalWidth), Math.max(1, height - padding * 2) / Math.max(1, naturalHeight));
+  const imageWidth = naturalWidth * fit, imageHeight = naturalHeight * fit;
+  const lensWidth = Math.min(width, paneWidth / scale), lensHeight = Math.min(height, paneHeight / scale);
+  const left = Math.max(0, Math.min(width - lensWidth, x * width - lensWidth / 2));
+  const top = Math.max(0, Math.min(height - lensHeight, y * height - lensHeight / 2));
+  return { left, top, lensWidth, lensHeight, imageWidth: imageWidth * scale, imageHeight: imageHeight * scale,
+    imageLeft: ((width - imageWidth) / 2 - left) * scale, imageTop: ((height - imageHeight) / 2 - top) * scale };
+}
+
+let skinInspectionZoomController = null;
+
 function toggleSkinInspectionZoom() {
-  const stage = document.getElementById('skinInspectStage');
-  const button = document.getElementById('skinInspectZoomBtn');
-  if (!stage || !button) return;
-  const zoomed = stage.classList.toggle('is-zoomed');
-  button.setAttribute('aria-pressed', String(zoomed));
-  const label = button.querySelector('span');
-  if (label) label.textContent = zoomed ? 'Зменшити' : 'Наблизити';
-  const icon = button.querySelector('i');
-  if (icon) icon.className = `fa-solid ${zoomed ? 'fa-magnifying-glass-minus' : 'fa-magnifying-glass-plus'}`;
-  stage.scrollTop = zoomed ? stage.clientHeight * .375 : 0;
-  stage.scrollLeft = zoomed ? stage.clientWidth * .375 : 0;
+  skinInspectionZoomController?.toggle();
+}
+
+function bindSkinInspectionZoom(container) {
+  skinInspectionZoomController?.dispose();
+  const stage = container.querySelector('#skinInspectStage'), viewer = container.querySelector('#skinInspectViewer');
+  const image = container.querySelector('#skinInspectImage'), zoomImage = container.querySelector('#skinInspectZoomImage');
+  const lens = container.querySelector('#skinInspectLens'), pane = container.querySelector('#skinInspectZoomPane');
+  const button = container.querySelector('#skinInspectZoomBtn');
+  if (!stage || !viewer || !image || !zoomImage || !lens || !pane || !button) return;
+  let zoomed = false, peeking = false, x = .5, y = .5, drag = null;
+  const clamp = value => Math.max(0, Math.min(1, value));
+  const placeImage = (target, geometry) => {
+    target.style.width = `${geometry.imageWidth}px`; target.style.height = `${geometry.imageHeight}px`;
+    target.style.left = `${geometry.imageLeft}px`; target.style.top = `${geometry.imageTop}px`;
+  };
+  const render = () => {
+    const width = stage.clientWidth, height = stage.clientHeight;
+    if (!width || !height) return;
+    const naturalWidth = image.naturalWidth || width, naturalHeight = image.naturalHeight || height;
+    const geometry = skinInspectionZoomGeometry(width, height, naturalWidth, naturalHeight,
+      zoomed ? width : pane.clientWidth || width * .8, zoomed ? height : pane.clientHeight || height, x, y);
+    stage.classList.toggle('is-zoomed', zoomed);
+    viewer.classList.toggle('is-peeking', peeking && !zoomed);
+    button.setAttribute('aria-pressed', String(zoomed));
+    button.querySelector('span').textContent = zoomed ? 'Зменшити' : 'Наблизити';
+    button.querySelector('i').className = `fa-solid ${zoomed ? 'fa-magnifying-glass-minus' : 'fa-magnifying-glass-plus'}`;
+    if (zoomed) placeImage(image, geometry);
+    else ['width', 'height', 'left', 'top'].forEach(name => image.style.removeProperty(name));
+    if (peeking && !zoomed) {
+      lens.style.width = `${geometry.lensWidth}px`; lens.style.height = `${geometry.lensHeight}px`;
+      lens.style.left = `${geometry.left}px`; lens.style.top = `${geometry.top}px`;
+      placeImage(zoomImage, geometry);
+    }
+  };
+  const setZoom = next => {
+    zoomed = next; peeking = false; drag = null; x = .5; y = .5; render();
+  };
+  const point = event => {
+    const bounds = stage.getBoundingClientRect();
+    x = clamp((event.clientX - bounds.left) / bounds.width);
+    y = clamp((event.clientY - bounds.top) / bounds.height);
+  };
+  const hoverAllowed = event => event.pointerType === 'mouse'
+    && window.matchMedia('(hover: hover) and (pointer: fine) and (min-width: 640px)').matches;
+  stage.addEventListener('pointerenter', event => {
+    if (hoverAllowed(event) && !zoomed) { peeking = true; point(event); render(); }
+  });
+  stage.addEventListener('pointermove', event => {
+    if (drag && event.pointerId === drag.id) {
+      x = clamp(drag.x - (event.clientX - drag.clientX) / (stage.clientWidth * 3));
+      y = clamp(drag.y - (event.clientY - drag.clientY) / (stage.clientHeight * 3));
+      render();
+    } else if (hoverAllowed(event)) {
+      peeking = !zoomed; point(event); render();
+    }
+  });
+  stage.addEventListener('pointerleave', () => { peeking = false; render(); });
+  stage.addEventListener('pointerdown', event => {
+    if (!zoomed || drag || event.button !== 0) return;
+    drag = { id: event.pointerId, clientX: event.clientX, clientY: event.clientY, x, y };
+    stage.setPointerCapture(event.pointerId); event.preventDefault();
+  });
+  const endDrag = event => { if (drag?.id === event.pointerId) drag = null; };
+  stage.addEventListener('pointerup', endDrag);
+  stage.addEventListener('pointercancel', endDrag);
+  stage.addEventListener('lostpointercapture', endDrag);
+  stage.addEventListener('keydown', event => {
+    if (event.key === '+' || event.key === '=') { event.preventDefault(); setZoom(true); }
+    else if (event.key === '-' || event.key === '0' || (event.key === 'Escape' && zoomed)) {
+      event.preventDefault(); event.stopPropagation(); setZoom(false);
+    } else if (zoomed && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home'].includes(event.key)) {
+      event.preventDefault();
+      if (event.key === 'Home') { x = .5; y = .5; }
+      else if (event.key === 'ArrowLeft') x = clamp(x - .05);
+      else if (event.key === 'ArrowRight') x = clamp(x + .05);
+      else if (event.key === 'ArrowUp') y = clamp(y - .05);
+      else y = clamp(y + .05);
+      render();
+    }
+  });
+  image.addEventListener('load', () => {
+    // Mirror the resolved/fallback URL; never request a fabricated high-res image.
+    if (zoomImage.src !== image.currentSrc) zoomImage.src = image.currentSrc;
+    render();
+  });
+  const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(render) : null;
+  resize?.observe(stage);
+  skinInspectionZoomController = {
+    toggle: () => { setZoom(!zoomed); if (zoomed) stage.focus({ preventScroll: true }); },
+    render, dispose: () => resize?.disconnect(),
+  };
+  render();
 }
 
 function showItemDetail(itemId) {
@@ -9528,10 +9663,12 @@ function showItemDetail(itemId) {
       requestInventorySale(it.id, true, 'itemDetailModal');
     });
     bindInventoryProtection(container);
+    bindSkinInspectionZoom(container);
   }
   openModal('itemDetailModal');
   const panel = document.getElementById('itemDetailModal')?.querySelector('.skin-inspect-panel');
   if (panel) panel.scrollTop = 0;
+  skinInspectionZoomController?.render();
 }
 
 function sellInventoryItem(itemId, fromProfile = false) {

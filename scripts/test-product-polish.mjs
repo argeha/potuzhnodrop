@@ -28,6 +28,10 @@ function node(id) {
     const classes = new Set();
     nodes.set(id, { id, classes, innerHTML: '', textContent: '', attributes: {}, hidden: false,
       className: '', disabled: false, scrollTop: 0, scrollLeft: 0, clientWidth: 400, clientHeight: 300,
+      style: { removeProperty(name) { delete this[name]; } }, events: {},
+      addEventListener(name, listener) { this.events[name] = listener; },
+      getBoundingClientRect: () => ({ left: 10, top: 20, width: 400, height: 300 }),
+      setPointerCapture(id) { this.captured = id; }, focus() { this.focused = true; },
       setAttribute(name, value) { this.attributes[name] = String(value); },
       querySelectorAll: () => [], querySelector: selector => node(`${id}/${selector}`),
       classList: { contains: name => classes.has(name),
@@ -41,7 +45,7 @@ let storageThrows = false;
 let fetchCalls = 0, lastFetchOptions, reloads = 0;
 let nextResponse = release, nextContentType = 'application/json', nextError = false;
 const ctx = vm.createContext({
-  window: { POTUZHNO_RELEASE: release, PotuzhnoMobile: { isNative: false }, location: { reload: () => reloads++ } },
+  window: { POTUZHNO_RELEASE: release, PotuzhnoMobile: { isNative: false }, location: { reload: () => reloads++ }, matchMedia: () => ({ matches: true }) },
   document: { getElementById: node }, navigator: { onLine: true }, AbortSignal, Date,
   PAGES: ['profile', 'hub', 'upgrader', 'case', 'tasks'],
   currentUser: { balance: 4.01, steamId: '' }, account: {}, gameState: {}, userInventory: [],
@@ -206,12 +210,50 @@ markup = ctx.skinInspectionMarkup({ ...skin, name: '<script>name</script>', phas
 assert.ok(markup.includes('&lt;script&gt;name'));
 assert.ok(markup.includes('&lt;b&gt;phase'));
 assert.ok(!markup.includes('<script>'));
+const stage = node('skinInspectStage'), image = node('skinInspectImage'), viewer = node('skinInspectViewer');
+image.naturalWidth = 1024; image.naturalHeight = 512; image.currentSrc = skin.img;
+node('skinInspectZoomPane').clientWidth = 320;
+ctx.bindSkinInspectionZoom({ querySelector: selector => node(selector.slice(1)) });
+const pointer = (type, clientX, clientY, id = 1) => ({ pointerType: type, clientX, clientY, pointerId: id, button: 0, preventDefault() {} });
+stage.events.pointerenter(pointer('mouse', 210, 170));
+assert.ok(viewer.classes.has('is-peeking'), 'Hover opens a separate magnified pane');
+assert.equal(node('skinInspectLens').style.width, `${320 / 3}px`);
+assert.equal(node('skinInspectZoomImage').style.width, '1068px', 'Use the contained source image dimensions, including letterboxing');
+const centerLeft = node('skinInspectZoomImage').style.left;
+stage.events.pointermove(pointer('mouse', 399, 170));
+assert.notEqual(node('skinInspectZoomImage').style.left, centerLeft, 'The lens follows the pointer');
+stage.events.pointerleave(); assert.ok(!viewer.classes.has('is-peeking'));
+stage.events.pointerenter(pointer('touch', 210, 170)); assert.ok(!viewer.classes.has('is-peeking'), 'Touch never activates desktop hover');
+image.events.load(); assert.equal(node('skinInspectZoomImage').src, skin.img);
 ctx.toggleSkinInspectionZoom();
 assert.equal(node('skinInspectZoomBtn').attributes['aria-pressed'], 'true');
-assert.equal(node('skinInspectStage').scrollLeft, 150);
+assert.equal(stage.scrollLeft, 0, 'Inline zoom is panned without image scrollbars');
+assert.ok(stage.focused, 'Keyboard panning works immediately after entering zoom');
+const zoomLeft = image.style.left;
+stage.events.pointerdown(pointer('touch', 210, 170));
+stage.events.pointermove(pointer('touch', 150, 170));
+assert.notEqual(image.style.left, zoomLeft, 'Touch drag pans the enlarged image');
+stage.events.pointercancel(pointer('touch', 150, 170));
+const afterCancel = image.style.left;
+stage.events.pointermove(pointer('touch', 90, 170));
+assert.equal(image.style.left, afterCancel, 'Canceled pointers cannot keep dragging');
+const key = key => ({ key, preventDefault() {}, stopPropagation() {} });
+stage.events.keydown(key('ArrowRight')); assert.notEqual(image.style.left, afterCancel);
+stage.events.keydown(key('Home')); assert.equal(image.style.left, zoomLeft);
+stage.events.keydown(key('Escape'));
+assert.equal(node('skinInspectZoomBtn').attributes['aria-pressed'], 'false');
+assert.equal(image.style.width, undefined, 'Exiting zoom restores object-fit contain');
+stage.events.keydown(key('+'));
 ctx.toggleSkinInspectionZoom();
 assert.equal(node('skinInspectZoomBtn').attributes['aria-pressed'], 'false');
 assert.equal(node('skinInspectStage').scrollLeft, 0);
+for (const [x, y] of [[0, 0], [1, 1], [-1, 2], [.5, .5]]) {
+  const geometry = ctx.skinInspectionZoomGeometry(400, 300, 1024, 512, 320, 300, x, y);
+  assert.ok(geometry.left >= 0 && geometry.left + geometry.lensWidth <= 400);
+  assert.ok(geometry.top >= 0 && geometry.top + geometry.lensHeight <= 300);
+}
+assert.ok(markup.includes('skinInspectZoomPane') && markup.includes('skinInspectHelp'));
+assert.ok(css.includes('.skin-inspect-stage{position:relative;height:330px;overflow:hidden;'));
 assert.ok(css.includes('.app-update-notice.hidden,.product-action-primary[hidden]{display:none}'));
 assert.ok(css.includes('.skin-inspect-layout{grid-template-columns:minmax(0,1fr)'));
 assert.ok(css.includes('max-height:calc(100dvh - 32px)'));

@@ -32,13 +32,13 @@
 <link rel="preconnect" href="https://community.akamai.steamstatic.com">
 <link rel="preconnect" href="https://avatars.steamstatic.com">
 <!-- Tailwind зібраний локально: інтерфейс не залежить від зовнішнього CDN. -->
-<link rel="stylesheet" href="/css/tailwind.css?v=7.9.0-product-polish.1">
+<link rel="stylesheet" href="/css/tailwind.css?v=7.9.0-collection-tools.1">
 <!-- Font Awesome -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Teko:wght@600;700&display=swap" rel="stylesheet">
 <!-- Основні стилі гри (зовнішній файл) -->
-<link rel="stylesheet" href="/css/style.css?v=7.9.0-product-polish.1">
+<link rel="stylesheet" href="/css/style.css?v=7.9.0-collection-tools.1">
 </head>
 <body class="pd-rebrand min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
 
@@ -560,10 +560,11 @@
 <h3><i class="fa-solid fa-boxes-stacked"></i>Мої скіни</h3>
 </div>
 <div class="profile-inventory-actions">
-<button type="button" id="inventorySelectionToggle" class="inventory-selection-toggle" onclick="toggleInventorySelectionMode()" aria-pressed="false">Обрати скіни</button>
+<button type="button" id="inventorySelectionToggle" class="inventory-selection-toggle" onclick="toggleInventorySelectionMode()" aria-pressed="false" aria-controls="profileInventoryGrid inventorySelectionBar">Продати кілька</button>
 <button onclick="sellAllDuplicates()" class="px-4 py-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20 text-xs font-bold transition"><i class="fa-solid fa-sack-dollar mr-1"></i>Продати дублі</button>
 </div>
 </div>
+<p class="inventory-selection-hint" id="inventorySelectionHint">Багато предметів? Натисни «Продати кілька», познач скіни й продай їх одним підтвердженням.</p>
 <div class="profile-inventory-metrics">
 <div class="inv-stat"><div class="inv-stat-label">Предметів</div><div id="invStatCount" class="inv-stat-value">0</div></div>
 <div class="inv-stat"><div class="inv-stat-label">Сума PC</div><div id="invStatValue" class="inv-stat-value text-amber-300">0</div></div>
@@ -599,13 +600,13 @@
 </select>
 </div><label class="profile-inventory-search"><i class="fa-solid fa-magnifying-glass"></i><input id="invSearch" type="search" oninput="renderProfileInventory()" placeholder="Пошук у інвентарі…"></label>
 </div>
-<div id="inventorySelectionBar" class="inventory-selection-bar" hidden><div><strong id="inventorySelectionSummary" role="status" aria-live="polite">Обрано 0</strong><small>Захищені та недоступні для продажу предмети пропускаємо.</small></div><div class="inventory-selection-actions"><button type="button" onclick="selectVisibleInventory()">Обрати видимі</button><button type="button" onclick="clearInventorySelection()">Скинути вибір</button><button type="button" id="inventorySelectionSell" class="selection-sell" onclick="requestSelectedInventorySale()" disabled>Продати вибране</button></div></div>
 <div id="profileInventoryGrid" class="profile-inventory-grid"></div>
 <div id="profileInventoryEmpty" class="hidden rounded-xl border border-dashed border-gray-700 p-12 text-center">
 <i class="fa-solid fa-box-open text-3xl text-gray-600"></i>
 <p class="mt-3 text-sm font-bold text-gray-400">Інвентар порожній</p>
 <p class="text-xs text-gray-500 mt-1">Зроби апгрейд, відкрий кейс або підключи Steam</p>
 </div>
+<div id="inventorySelectionBar" class="inventory-selection-bar" hidden><div><strong id="inventorySelectionSummary" role="status" aria-live="polite">Обрано 0</strong><small id="inventorySelectionNote">Познач скіни або обери всі за поточними фільтрами.</small></div><div class="inventory-selection-actions"><button type="button" id="inventorySelectVisible" onclick="selectVisibleInventory()">Обрати всі у фільтрі</button><button type="button" id="inventorySelectionClear" onclick="clearInventorySelection()" disabled>Скинути вибір</button><button type="button" id="inventorySelectionSell" class="selection-sell" onclick="requestSelectedInventorySale()" disabled>Продати вибране</button></div></div>
 </article>
 
 </section>
@@ -650,7 +651,7 @@
 <!-- MODALS -->
 <div id="steamModal" class="modal-backdrop fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4"><div class="glass-panel rounded-3xl max-w-md w-full overflow-hidden border border-cyan-400/30 relative shadow-2xl shadow-cyan-950/30"><div class="h-1.5 bg-gradient-to-r from-cyan-400 via-blue-500 to-violet-500"></div><div class="p-6"><button onclick="closeModal('steamModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button><div class="mb-5 flex items-center gap-3"><div class="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-300/30 bg-cyan-400/10 text-cyan-300"><i class="fa-brands fa-steam text-2xl"></i></div><div><p class="text-[10px] font-bold uppercase tracking-[0.22em] text-cyan-300">Основний акаунт · Steam OpenID</p><h3 class="font-heading text-2xl font-bold uppercase text-white">Увійти через Steam</h3></div></div><p class="mb-4 text-sm leading-6 text-gray-300">Steam ID — єдиний ключ до твого серверного прогресу. Увійди тим самим Steam на сайті або в Android — баланс, XP та віртуальний інвентар підтягнуться автоматично.</p><div class="mb-5 grid grid-cols-3 gap-2 text-center text-[11px] text-gray-300"><div class="rounded-xl border border-white/10 bg-white/5 p-2"><i class="fa-solid fa-cloud-arrow-down mb-1 text-cyan-300"></i><br>Прогрес</div><div class="rounded-xl border border-white/10 bg-white/5 p-2"><i class="fa-solid fa-images mb-1 text-blue-300"></i><br>Скіни</div><div class="rounded-xl border border-white/10 bg-white/5 p-2"><i class="fa-solid fa-shield-halved mb-1 text-violet-300"></i><br>Безпечно</div></div><button id="steamLoginContinueBtn" onclick="continueSteamLogin()" class="w-full rounded-xl bg-gradient-to-r from-cyan-400 via-blue-500 to-violet-500 py-3.5 text-sm font-extrabold text-white shadow-lg shadow-blue-950/30 transition hover:brightness-110"><i class="fa-brands fa-steam mr-2"></i>Увійти через Steam</button><p id="steamLoginHint" class="mt-4 text-center text-[11px] leading-5 text-gray-500">Пароль, Steam Guard, API-ключі та Trade Offers не запитуються. Steam лише підтверджує твій ID.</p></div></div></div>
 
-<div id="inventoryModal" class="modal-backdrop fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4"><div class="glass-panel rounded-2xl max-w-3xl w-full p-6 border border-brand-border relative max-h-[85vh] flex flex-col"><button onclick="closeModal('inventoryModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button><h3 class="font-heading text-2xl font-bold text-white uppercase mb-1">Твій інвентар</h3><p id="inventoryStatus" class="text-xs text-gray-400 mb-3">Це лише віртуальні предмети.</p><div class="mb-4 flex flex-wrap gap-2"><button id="steamInventorySyncBtn" onclick="syncSteamInventory()" class="rounded-lg border border-cyan-400/40 bg-cyan-400/10 px-3 py-2 text-xs font-bold text-cyan-200 hover:bg-cyan-400/20"><i class="fa-brands fa-steam mr-1"></i>Синхронізувати Steam</button><button onclick="sellAllDuplicates()" class="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-200 hover:bg-emerald-500/20"><i class="fa-solid fa-sack-dollar mr-1"></i>Продати дублі</button></div><div id="userInventoryGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 overflow-y-auto pr-1 flex-1"></div></div></div>
+<div id="inventoryModal" class="modal-backdrop fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4"><div class="glass-panel rounded-2xl max-w-3xl w-full p-6 border border-brand-border relative max-h-[85vh] flex flex-col"><button onclick="closeModal('inventoryModal')" aria-label="Закрити інвентар" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button><h3 class="font-heading text-2xl font-bold text-white uppercase mb-1">Твій інвентар</h3><p id="inventoryStatus" class="text-xs text-gray-400 mb-3">Це лише віртуальні предмети.</p><div class="mb-4 flex flex-wrap gap-2"><button type="button" onclick="startInventoryBulkSale()" class="inventory-selection-toggle">Продати кілька</button><button id="steamInventorySyncBtn" onclick="syncSteamInventory()" class="rounded-lg border border-cyan-400/40 bg-cyan-400/10 px-3 py-2 text-xs font-bold text-cyan-200 hover:bg-cyan-400/20"><i class="fa-brands fa-steam mr-1"></i>Синхронізувати Steam</button><button onclick="sellAllDuplicates()" class="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-200 hover:bg-emerald-500/20"><i class="fa-solid fa-sack-dollar mr-1"></i>Продати дублі</button></div><div id="userInventoryGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 overflow-y-auto pr-1 flex-1"></div></div></div>
 
 <div id="shopModal" class="modal-backdrop fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-3 sm:p-4">
   <div class="glass-panel rounded-2xl max-w-5xl w-full p-4 sm:p-6 border border-brand-border relative max-h-[90vh] flex flex-col">
@@ -837,7 +838,7 @@
 
 <script src="/js/mobile-config.js" defer></script>
 <script src="/js/mobile.js?v=1" defer></script>
-<script src="/js/release.js?v=7.9.0-product-polish.1" defer></script>
-<script src="/js/app.js?v=7.9.0-product-polish.1" defer></script>
+<script src="/js/release.js?v=7.9.0-collection-tools.1" defer></script>
+<script src="/js/app.js?v=7.9.0-collection-tools.1" defer></script>
 </body>
 </html>

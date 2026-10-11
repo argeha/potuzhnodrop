@@ -13,6 +13,7 @@ const section = (from, to) => {
 const noop = () => {};
 const elements = new Map();
 const controls = new Map();
+const selectionCards = [];
 const element = id => {
   if (!elements.has(id)) elements.set(id, {
     innerHTML: '', value: '', textContent: '', scrollTop: 0,
@@ -20,6 +21,7 @@ const element = id => {
     classList: { add: noop, remove: noop, toggle: noop, contains: () => false },
     querySelector: () => null,
     querySelectorAll(selector) {
+      if (selector === '[data-inventory-card]') return selectionCards;
       const attr = selector === '[data-shop-wear]' ? 'shop-wear' : selector === '[data-select-skin-id]' ? 'select-skin-id' : '';
       if (!attr) return [];
       const nodes = [...this.innerHTML.matchAll(new RegExp(`<[^>]+data-${attr}="([^"]+)"[^>]*>`, 'g'))].map(match => ({
@@ -56,6 +58,8 @@ const ctx = vm.createContext({
   inputValue: 1, targetValue: 20, getInputVal: () => ctx.inputValue, getTargetVal: () => ctx.targetValue,
   getSkinByKey: key => ctx.CS2_SKINS.find(item => item.id === key),
   saveState: noop, renderInventoryGrid: noop, renderProfileInventory: noop,
+  getFilteredProfileInventory: () => ctx.userInventory,
+  openInventoryPage: () => { ctx.profileOpens = (ctx.profileOpens || 0) + 1; },
   renderMultiSlots: noop, renderContractSlots: noop, renderRoyaleDeck: noop, clearBattleOpponent: noop,
   renderGameHub: noop, recalculateUpgrade: noop, updateAvatarBadge: noop,
   ensureDailyState: noop, ensureWeeklyState: noop, updateAllTimeOnSell: noop,
@@ -210,11 +214,30 @@ assert.equal(quote.items.length, 3); assert.equal(quote.skipped, 2); assert.equa
 ctx.getFilteredProfileInventory = () => [batchB, batchLocked];
 ctx.toggleInventorySelectionMode(); ctx.selectVisibleInventory(); ctx.renderInventorySelection();
 assert.ok(element('inventorySelectionSummary').textContent.includes('Обрано 1'));
+assert.equal(element('inventorySelectionSell').textContent, 'Продати 1 · 18.00 PC');
+assert.equal(element('inventorySelectVisible').disabled, true, 'Already selected/ineligible visible items cannot be selected again');
+const check = { checked: false }, selectedClasses = new Set();
+selectionCards.push({ dataset: { inventoryCard: batchReward.id }, querySelector: selector => selector === '[data-inventory-select]' ? check : null,
+  classList: { toggle: (name, on) => on ? selectedClasses.add(name) : selectedClasses.delete(name) } });
+let fullRenders = 0;
+ctx.renderProfileInventory = () => fullRenders++;
 ctx.setInventorySelection(batchReward.id, true);
+assert.equal(check.checked, true); assert.ok(selectedClasses.has('is-selected'));
+assert.equal(fullRenders, 0, 'Selection updates existing card nodes, preserving focus and scroll');
+ctx.startInventoryBulkSale();
+assert.equal(ctx.profileOpens, 1);
+assert.equal(ctx.multiInputSkins.length, 0, 'Opening bulk sale from the picker never selects upgrader stakes');
 ctx.getFilteredProfileInventory = () => [batchA]; ctx.renderInventorySelection();
 assert.ok(element('inventorySelectionSummary').textContent.includes('Обрано 2'), 'Changing filters preserves the selection');
+assert.ok(element('inventorySelectionNote').textContent.includes('Обрані поза фільтром: 2'));
+assert.equal(element('inventorySelectVisible').disabled, false);
 batchReward.inventoryProtected = true; ctx.renderInventorySelection();
 assert.ok(element('inventorySelectionSummary').textContent.includes('Обрано 1'), 'A newly protected item leaves the selection');
+assert.equal(check.checked, false);
+ctx.clearInventorySelection();
+assert.equal(element('inventorySelectionClear').disabled, true);
+assert.equal(element('inventorySelectionSell').disabled, true);
+ctx.setInventorySelection(batchB.id, true);
 batchReward.inventoryProtected = false;
 const batchBalance = ctx.currentUser.balance;
 ctx.requestInventoryBatchSale(ids);
@@ -245,6 +268,9 @@ assert.deepEqual(Array.from(ctx.userInventory, skin => skin.id).sort(), ['batch-
 assert.equal(ctx.multiInputSkins.length + ctx.royalePlayerSkins.length, 0);
 assert.equal(ctx.contractItems[0], null); assert.equal(ctx.battlePlayerItem, null);
 ctx.renderInventorySelection(); assert.ok(element('inventorySelectionSummary').textContent.includes('Обрано 0'));
+assert.ok(html.includes('onclick="startInventoryBulkSale()"'), 'The upgrader inventory provides an explicit route to bulk sale');
+assert.ok(html.includes('>Продати кілька</button>'));
+assert.ok(html.indexOf('id="inventorySelectionBar"') > html.indexOf('id="profileInventoryGrid"'), 'The sticky sale bar follows inventory cards');
 ctx.verifiedInventoryMarketPrice = originalQuote;
 
 // One card per finish, separate phases, exact supported wear and target price.
