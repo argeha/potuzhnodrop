@@ -14,7 +14,7 @@
     "mobile:sync": "npm run build:web && npx cap sync android",
     "mobile:open": "npx cap open android",
     "mobile:doctor": "npx cap doctor android",
-    "check": "node --check js/app.js && node --check src/worker.mjs && npm run build:styles && npm run build:assets && npx wrangler deploy --dry-run",
+    "check": "node --check js/app.js && node --check src/worker.mjs && node scripts/test-product-ux.mjs && npm run build:styles && npm run build:assets && npx wrangler deploy --dry-run",
     "build": "npm run check",
     "dev": "npm run build:styles && npm run build:assets && wrangler dev"
   },

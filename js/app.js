@@ -93,6 +93,8 @@ function showPage(id) {
   }
 
   document.getElementById('mobileMenu')?.classList.add('hidden');
+  document.getElementById('menuToggle')?.setAttribute('aria-expanded', 'false');
+  if (id === 'case') recordStarterTaskVisit('catalogViews');
   window.scrollTo({ top: 0, behavior: 'smooth' });
 
   if (id === 'hub') renderCommandHub();
@@ -164,6 +166,7 @@ function openInventoryPage() {
   // The inventory lives in the collection part of the profile, but it is a
   // core game surface — never make a player search through profile tabs for it.
   setProfileTab('collection');
+  recordStarterTaskVisit('inventoryViews');
   if (currentPage !== 'profile') showPage('profile');
   else {
     renderProfileInventory();
@@ -1392,6 +1395,10 @@ async function loadRuntimeContent() {
 }
 
 const TASK_POOL = [
+  { id: 'catalog_view', title: 'Переглянь каталог кейсів', goal: 1, reward: 40, icon: 'fa-boxes-stacked', starterOnly: true, value: s => s.catalogViews },
+  { id: 'inventory_view', title: 'Відкрий свій інвентар', goal: 1, reward: 40, icon: 'fa-box-open', starterOnly: true, value: s => s.inventoryViews },
+  { id: 'odds_view', title: 'Перевір склад і шанси кейсу', goal: 1, reward: 40, icon: 'fa-circle-info', starterOnly: true, value: s => s.oddsViews },
+  { id: 'rolls_1', title: 'Спробуй 1 апгрейд', goal: 1, reward: 60, icon: 'fa-bolt', starterOnly: true, value: s => s.rolls },
   { id: 'rolls_3', title: 'Зроби 3 ролли', goal: 3, reward: 100, icon: 'fa-dice', value: s => s.rolls },
   { id: 'rolls_5', title: 'Зроби 5 роллів', goal: 5, reward: 180, icon: 'fa-dice', value: s => s.rolls },
   { id: 'rolls_10', title: 'Зроби 10 роллів', goal: 10, reward: 380, icon: 'fa-dice', value: s => s.rolls },
@@ -1445,17 +1452,59 @@ function seededRandom(seed) {
 }
 
 function getDailyTasks() {
+  ensureDailyState();
+  const daily = gameState.daily;
+  const savedIds = Array.isArray(daily.taskIds) ? daily.taskIds : [];
+  if (savedIds.length === DAILY_TASK_COUNT && new Set(savedIds).size === DAILY_TASK_COUNT
+    && savedIds.every(id => TASK_POOL.some(task => task.id === id))) {
+    return savedIds.map(id => {
+      const task = TASK_POOL.find(entry => entry.id === id);
+      return { ...task, reward: economyReward(task.reward) };
+    });
+  }
   const date = getTodayKey();
   const rng = seededRandom(date + '|potuzhno');
-  const pool = TASK_POOL.map(task => ({
-    ...task,
-    reward: economyReward(task.reward)
-  }));
+  // Keep the legacy shuffle unchanged, including any pending or claimed reward.
+  const pool = TASK_POOL.filter(task => !task.starterOnly);
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
-  return pool.slice(0, DAILY_TASK_COUNT);
+  const legacy = pool.slice(0, DAILY_TASK_COUNT);
+  const totalActions = Math.max(Number(gameState.allTime?.rounds) || 0, Number(gameState.stats?.rounds) || 0)
+    + Math.max(Number(gameState.allTime?.cases) || 0, Number(gameState.stats?.cases) || 0);
+  const hasEarnedReward = daily.claimed.length > 0 || legacy.some(task => (Number(task.value(daily)) || 0) >= task.goal);
+  const starter = totalActions < 25 && getPlayerLevel() < 5 && !hasEarnedReward;
+  daily.taskTier = starter ? 'starter' : 'regular';
+  daily.taskIds = starter ? ['catalog_view', 'inventory_view', 'odds_view', 'cases_1', 'rolls_1'] : legacy.map(task => task.id);
+  // Persist only the daily selection here; rendering must not trigger cloud writes.
+  localStorage.setItem(STORAGE.game, JSON.stringify(gameState));
+  return daily.taskIds.map(id => {
+    const task = TASK_POOL.find(entry => entry.id === id);
+    return { ...task, reward: economyReward(task.reward) };
+  });
+}
+
+function recordStarterTaskVisit(field) {
+  if (!gameState || !['catalogViews', 'inventoryViews', 'oddsViews'].includes(field)) return;
+  ensureDailyState();
+  if (gameState.daily[field]) return;
+  gameState.daily[field] = 1;
+  localStorage.setItem(STORAGE.game, JSON.stringify(gameState));
+  updateTaskRewardSignal();
+}
+
+function openDailyTaskGuide(id) {
+  if (id === 'inventory_view') return openInventoryPage();
+  if (id === 'odds_view') {
+    showPage('case');
+    const first = getVisibleCaseEntries()[0];
+    if (first) void showCaseDetails(first[0]);
+    return;
+  }
+  if (id === 'catalog_view' || id.startsWith('cases_')) return showPage('case');
+  if (id === 'rolls_1') return showPage('upgrader');
+  showPage('tasks');
 }
 
 const WEEKLY_TASK_POOL = [
@@ -1943,7 +1992,7 @@ function escapeSvgText(v) {
 }
 
 function createDefaultDaily() {
-  return { date: '', rolls: 0, wins: 0, cases: 0, pistolWins: 0, rifleWins: 0, sniperWins: 0, smgWins: 0, heavyWins: 0, sells: 0, sellValue: 0, battles: 0, battleWins: 0, contracts: 0, creditInputs: 0, multiInputs: 0, targetValue: 0, bestWinValue: 0, bestStreak: 0, claimed: [] };
+  return { date: '', rolls: 0, wins: 0, cases: 0, pistolWins: 0, rifleWins: 0, sniperWins: 0, smgWins: 0, heavyWins: 0, sells: 0, sellValue: 0, battles: 0, battleWins: 0, contracts: 0, creditInputs: 0, multiInputs: 0, targetValue: 0, bestWinValue: 0, bestStreak: 0, catalogViews: 0, inventoryViews: 0, oddsViews: 0, taskIds: [], taskTier: '', claimed: [] };
 }
 
 function createDefaultWeekly() {
@@ -3964,7 +4013,6 @@ function updateAccountUI() {
   renderCloudSyncUI();
   renderFairUI();
   renderSteamProfileCard();
-  renderSteamNudge();
   renderLegendProfile();
 }
 
@@ -5953,6 +6001,8 @@ function updateBalanceUI() {
     if (profileBalance) profileBalance.textContent = formatCredits(currentUser.balance);
     const upgraderBalance = document.getElementById('upgraderBalance');
     if (upgraderBalance) upgraderBalance.textContent = formatCredits(currentUser.balance);
+    if (currentPage === 'case') renderCaseCatalog();
+    if (document.getElementById('caseDetailsModal')?.classList.contains('flex')) updateCaseDetailsAction();
   }
 }
 
@@ -6598,12 +6648,15 @@ function renderCommunityFeed(events) {
   const feed = document.getElementById('liveFeed');
   if (!feed || !Array.isArray(events)) return;
   const key = events.map(event => event?.id || '').join('|');
-  if (key === communityFeedKey) return;
+  if (key === communityFeedKey) {
+    updateCommunityStripVisibility();
+    return;
+  }
   communityFeedKey = key;
   feed.replaceChildren();
   const validEvents = events.filter(event => event?.skin?.name && event?.name);
   if (!validEvents.length) {
-    feed.innerHTML = '<p class="px-2 text-[11px] font-bold text-gray-500">Поки тихо — відкрий кейс першим.</p>';
+    updateCommunityStripVisibility();
     return;
   }
   [...validEvents].reverse().forEach(event => {
@@ -7035,8 +7088,6 @@ function renderCommandHub() {
     return { task, current, done: current >= task.goal, claimed: claimed.has(task.id), percent: task.goal ? Math.round((current / task.goal) * 100) : 0 };
   }).filter(entry => !entry.claimed).sort((left, right) => Number(right.done) - Number(left.done) || right.percent - left.percent).slice(0, 3);
   const pendingClaims = openTasks.filter(entry => entry.done).length;
-  const duplicateCount = [...getInventoryDuplicateCounts().values()].reduce((sum, count) => sum + Math.max(0, count - 1), 0);
-  const completedCollections = COLLECTION_DEFINITIONS.filter(collection => getCollectionProgress(collection).complete).length;
 
   const greeting = document.getElementById('hubGreeting');
   if (greeting) greeting.textContent = pendingClaims
@@ -7051,17 +7102,15 @@ function renderCommandHub() {
   const ring = document.getElementById('hubLevelRing');
   if (ring) ring.style.setProperty('--hub-progress', `${progress.percent}%`);
 
-  renderNewcomerGuide();
-
   const pulse = document.getElementById('hubPulseStats');
   if (pulse) pulse.innerHTML = [
     { icon: 'fa-coins', label: 'Баланс', value: formatCredits(currentUser?.balance || 0), accent: 'amber' },
-    { icon: 'fa-gem', label: 'Вартість колекції', value: formatCredits(collectionValue), accent: 'cyan' },
-    { icon: 'fa-fire', label: 'Серія', value: `${Math.max(0, Number(gameState.dailyStreak?.current) || 0)} дн.`, accent: 'orange' },
-    { icon: 'fa-copy', label: 'Дублі', value: duplicateCount ? `×${duplicateCount}` : '—', accent: 'violet' }
+    { icon: 'fa-gem', label: 'Вартість колекції', value: formatCredits(collectionValue), accent: 'cyan' }
   ].map(stat => `<div class="command-hub-pulse-card is-${stat.accent}"><i class="fa-solid ${stat.icon}"></i><span>${stat.label}</span><strong>${stat.value}</strong></div>`).join('');
 
   const focus = document.getElementById('hubDailyFocus');
+  const focusTitle = document.getElementById('hubFocusTitle');
+  if (focusTitle) focusTitle.textContent = gameState.daily.taskTier === 'starter' ? 'Перші кроки' : 'Сьогодні';
   if (focus) {
     focus.innerHTML = !tasksEnabled
       ? '<div class="command-hub-empty"><i class="fa-solid fa-eye-slash"></i><strong>Завдання тимчасово приховано</strong><span>Адміністрація готує наступну добірку цілей.</span></div>'
@@ -7069,26 +7118,20 @@ function renderCommandHub() {
       ? openTasks.map(entry => {
         const goalLabel = entry.task.goal >= 1000 ? formatCredits(entry.task.goal) : String(entry.task.goal);
         const currentLabel = entry.task.goal >= 1000 ? formatCredits(entry.current) : String(entry.current);
-        return `<div class="command-hub-focus-item ${entry.done ? 'is-ready' : ''}"><i class="fa-solid ${entry.task.icon}"></i><div><strong>${escapeHtml(entry.task.title)}</strong><span>${currentLabel} / ${goalLabel}</span><div><i style="width:${entry.percent}%"></i></div></div>${entry.done ? `<button type="button" data-hub-claim="${escapeHtml(entry.task.id)}">Забрати</button>` : '<button type="button" data-hub-open-tasks>До цілі</button>'}</div>`;
+        return `<div class="command-hub-focus-item ${entry.done ? 'is-ready' : ''}"><i class="fa-solid ${entry.task.icon}"></i><div><strong>${escapeHtml(entry.task.title)}</strong><span>${currentLabel} / ${goalLabel}</span><div><i style="width:${entry.percent}%"></i></div></div>${entry.done ? `<button type="button" data-hub-claim="${escapeHtml(entry.task.id)}">Забрати</button>` : `<button type="button" data-hub-task="${escapeHtml(entry.task.id)}">До цілі</button>`}</div>`;
       }).join('')
       : '<div class="command-hub-empty"><i class="fa-solid fa-circle-check"></i><strong>На сьогодні все готово</strong><span>Повернись завтра за новими цілями.</span></div>';
     focus.querySelectorAll('[data-hub-claim]').forEach(button => button.addEventListener('click', () => claimDailyTask(button.dataset.hubClaim)));
-    focus.querySelectorAll('[data-hub-open-tasks]').forEach(button => button.addEventListener('click', () => showPage('tasks')));
+    focus.querySelectorAll('[data-hub-task]').forEach(button => button.addEventListener('click', () => openDailyTaskGuide(button.dataset.hubTask)));
   }
 
   const collection = document.getElementById('hubCollectionPreview');
   if (collection) {
     const highlights = [...userInventory].sort((left, right) => verifiedInventoryMarketPrice(right) - verifiedInventoryMarketPrice(left)).slice(0, 3);
-    const collectionRows = COLLECTION_DEFINITIONS.map(definition => {
-      const state = getCollectionProgress(definition);
-      const percent = state.total ? Math.round((state.count / state.total) * 100) : 0;
-      return `<div class="command-hub-collection-progress"><span>${escapeHtml(definition.title)}</span><strong>${state.count}/${state.total}</strong><i><b style="width:${percent}%"></b></i></div>`;
-    }).join('');
-    collection.innerHTML = `<div class="command-hub-showcase">${highlights.length ? highlights.map(item => `<button type="button" data-hub-skin="${escapeHtml(String(item.id))}" title="Деталі: ${escapeHtml(item.name)}"><img src="${escapeHtml(getSkinImageSrc(item))}" alt="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><span>${escapeHtml(item.name)}</span><small>${formatCredits(verifiedInventoryMarketPrice(item))}</small></button>`).join('') : '<div class="command-hub-empty"><i class="fa-solid fa-box-open"></i><strong>Інвентар ще порожній</strong><span>Перший предмет з’явиться тут.</span></div>'}</div><div class="command-hub-collection-summary"><span>Завершено колекцій</span><strong>${completedCollections} / ${COLLECTION_DEFINITIONS.length}</strong></div><div class="command-hub-collection-list">${collectionRows}</div>`;
+    collection.innerHTML = `<div class="command-hub-showcase">${highlights.length ? highlights.map(item => `<button type="button" data-hub-skin="${escapeHtml(String(item.id))}" title="Деталі: ${escapeHtml(item.name)}"><img src="${escapeHtml(getSkinImageSrc(item))}" alt="${escapeHtml(item.name)}" loading="lazy" onerror="handleSkinImageError(this)"><span>${escapeHtml(item.name)}</span><small>${formatCredits(verifiedInventoryMarketPrice(item))}</small></button>`).join('') : '<div class="command-hub-empty"><i class="fa-solid fa-box-open"></i><strong>Інвентар ще порожній</strong><span>Перший предмет з’явиться тут.</span></div>'}</div>`;
     collection.querySelectorAll('[data-hub-skin]').forEach(button => button.addEventListener('click', () => showItemDetail(button.dataset.hubSkin)));
   }
   renderRuntimePromos();
-  renderSignalSeasonHub();
 }
 
 function getSignalCampaignProgress() {
@@ -7856,28 +7899,12 @@ function acceptRiskNotice() {
   el?.classList.add('hidden');
   el?.classList.remove('flex');
   unlockGameMusic();
-  // Steam-login suggestions appear only after the safety notice is acknowledged.
-  setTimeout(() => {
-    renderSteamNudge();
-  }, 250);
-}
-
-function renderSteamNudge() {
-  const nudge = document.getElementById('steamNudge');
-  if (!nudge) return;
-  const shouldShow = localStorage.getItem(STORAGE.consent) === 'accepted'
-    && !currentUser?.steamId
-    && localStorage.getItem(STORAGE.steamNudge) !== 'dismissed';
-  nudge.classList.toggle('hidden', !shouldShow);
-}
-
-function dismissSteamNudge() {
-  localStorage.setItem(STORAGE.steamNudge, 'dismissed');
-  renderSteamNudge();
 }
 
 function toggleMobileMenu() {
-  document.getElementById('mobileMenu')?.classList.toggle('hidden');
+  const menu = document.getElementById('mobileMenu');
+  menu?.classList.toggle('hidden');
+  document.getElementById('menuToggle')?.setAttribute('aria-expanded', String(menu && !menu.classList.contains('hidden')));
 }
 
 const modalReturnFocus = new Map();
@@ -7920,7 +7947,10 @@ function openModal(id) {
   if (!modalReturnFocus.has(id)) modalReturnFocus.set(id, document.activeElement);
   el.classList.remove('hidden');
   el.classList.add('flex');
-  if (id === 'inventoryModal') refreshInventoryModal();
+  if (id === 'inventoryModal') {
+    recordStarterTaskVisit('inventoryViews');
+    refreshInventoryModal();
+  }
   if (id === 'accountModal') updateAccountUI();
   if (id === 'prestigeModal') updatePrestigeUI();
   if (id === 'shopModal') {
@@ -10109,15 +10139,37 @@ function getCasePreviewItems(caseType, count = 4) {
   return pool.slice(0, count);
 }
 
+function getCaseAvailability(caseId) {
+  const cost = getCaseCost(caseId);
+  const balance = Math.max(0, Number(currentUser?.balance) || 0);
+  const hasTicket = getCaseTicketCount() > 0;
+  return { cost, balance, missing: roundPc(Math.max(0, cost - balance)),
+    available: cost > 0 && (balance >= cost || hasTicket),
+    useTicket: cost > balance && hasTicket };
+}
+
+async function openCatalogCase(caseId) {
+  const state = getCaseAvailability(caseId);
+  if (!state.cost) return;
+  if (!state.available) {
+    openModal('topupModal');
+    return;
+  }
+  if (state.useTicket) setCaseMultiplier(1);
+  await openPowerCase(caseId);
+  if (state.useTicket && currentActiveCaseId === caseId
+    && document.getElementById('caseReelModal')?.classList.contains('flex')) setCaseTicketMode(true);
+}
+
 function renderCaseCatalog() {
   const grid = document.getElementById('casesCatalogGrid');
   if (!grid) return;
+  document.getElementById('caseBalanceHint')?.classList.add('hidden');
 
   // Keep the page responsive during the first compact catalogue fetch. The
   // previous starter list did not contain each theme and produced a misleading
   // "catalog unavailable" warning on otherwise healthy connections.
   if (currentPage === 'case' && !completeSkinCatalogReady) {
-    void loadCompleteSkinCatalog();
     const summary = document.getElementById('caseCatalogSummary');
     const count = document.getElementById('caseCatalogCount');
     if (summary) summary.textContent = 'Синхронізуємо склад і фіксовані ціни кейсів…';
@@ -10127,6 +10179,18 @@ function renderCaseCatalog() {
       <p class="font-heading text-xl font-extrabold uppercase tracking-wide text-white">Готуємо каталоги кейсів</p>
       <p class="mt-2 text-sm text-slate-400">Завантажуємо компактний склад без блокування гри…</p>
     </div>`;
+    // A session-cache hit can finish synchronously. Paint loading first so it
+    // cannot overwrite the catalogue rendered by loadCompleteSkinCatalog().
+    void loadCompleteSkinCatalog().then(() => {
+      if (currentPage !== 'case') return;
+      if (completeSkinCatalogReady) {
+        renderCaseCatalog();
+      } else {
+        if (summary) summary.textContent = 'Каталог не завантажився. Баланс не списано.';
+        if (count) count.textContent = '—';
+        grid.innerHTML = '<div class="col-span-full rounded-2xl border border-brand-border p-6 text-center"><p class="text-sm text-gray-300">Не вдалося завантажити склад кейсів.</p><button type="button" onclick="renderCaseCatalog()" class="mt-3 rounded-lg border border-amber-500/40 px-4 py-2 text-sm text-amber-300">Спробувати ще раз</button></div>';
+      }
+    });
     return;
   }
 
@@ -10141,13 +10205,23 @@ function renderCaseCatalog() {
     if (currentCaseCategory === 'all' || isCollectionView) return true;
     return c.category === currentCaseCategory;
   });
+  const balanceHint = document.getElementById('caseBalanceHint');
+  if (balanceHint) {
+    const states = filtered.map(([id]) => getCaseAvailability(id)).filter(state => state.cost > 0);
+    const availableCount = states.filter(state => state.available).length;
+    const missing = states.length ? Math.min(...states.map(state => state.missing)) : 0;
+    balanceHint.classList.toggle('hidden', !states.length || availableCount === states.length);
+    balanceHint.innerHTML = `<div><strong>Баланс ${formatCredits(currentUser?.balance || 0)}</strong><span>${availableCount
+      ? `Доступно ${availableCount} з ${states.length} кейсів у цій добірці`
+      : `Для найдешевшого кейсу бракує ${formatCredits(missing)}`}</span></div><button type="button" onclick="openModal('topupModal')">Отримати PC <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>`;
+  }
   const categoryTitles = {
     all: 'Каталог',
-    hot: 'Лімітовані кейси',
+    hot: 'Тематичні кейси',
     knives: 'Ножі',
     gloves: 'Рукавиці',
     weapons: 'Зброя та AWP',
-    budget: 'Доступні кейси',
+    budget: 'Бюджетні кейси',
     collections: 'Колекції кейсів'
   };
   const summary = document.getElementById('caseCatalogSummary');
@@ -10179,15 +10253,17 @@ function renderCaseCatalog() {
     const wishlistMatches = getCaseWishlistMatches(id);
     const contextParts = [
       wishlistMatches.length ? `<span><i class="fa-solid fa-heart"></i>${wishlistMatches.length} у бажаному</span>` : '',
-      collection.total ? `<span><i class="fa-solid ${collection.claimed ? 'fa-trophy' : 'fa-book-atlas'}"></i>${collection.claimed ? 'Трофей здобуто' : `${collection.count}/${collection.total} колекція`}</span>` : ''
+      collection.total && (isCollectionView || collection.count > 0 || collection.claimed) ? `<span><i class="fa-solid ${collection.claimed ? 'fa-trophy' : 'fa-book-atlas'}"></i>${collection.claimed ? 'Трофей здобуто' : `${collection.count}/${collection.total} колекція`}</span>` : ''
     ].filter(Boolean);
     const contextMarkup = contextParts.length
       ? `<p class="case-catalog-context">${contextParts.join('<b aria-hidden="true">·</b>')}</p>`
       : '';
     const openCost = caseCost ? formatCredits(caseCost) : 'Недоступний';
+    const availability = getCaseAvailability(id);
+    const actionLabel = !caseCost ? 'Недоступний' : !availability.available ? 'Бракує PC' : availability.useTicket ? 'Квитком' : 'Відкрити';
+    const unavailableReason = !caseCost ? 'Ціна недоступна' : `Бракує ${formatCredits(availability.missing)}`;
     return `
       <div class="case-catalog-card tier-${c.category || 'hot'} group">
-        <span class="case-catalog-badge ${c.badgeClass || 'badge-hot'}">${c.badge || 'HOT'}</span>
         <div class="case-catalog-art">
           <div class="w-28 h-28 sm:w-32 sm:h-32 case-preview-svg group-hover:scale-105 transition-transform duration-300">
             ${createCaseArtwork(id, c.name, c.theme, c.artwork)}
@@ -10203,8 +10279,8 @@ function renderCaseCatalog() {
           ${contextMarkup}
         </div>
         <div class="case-catalog-actions">
-          <button type="button" onclick="openPowerCase('${id}')" class="case-catalog-open" aria-label="Відкрити ${escapeHtml(c.name)} за ${escapeHtml(openCost)}" ${caseCost ? '' : 'disabled'}>
-            <span><i class="fa-solid fa-box-open"></i> Відкрити</span>
+          <button type="button" onclick="openCatalogCase('${id}')" class="case-catalog-open" aria-label="${availability.available ? `Відкрити ${escapeHtml(c.name)} ${availability.useTicket ? 'квитком' : `за ${escapeHtml(openCost)}`}` : `${escapeHtml(c.name)}: ${escapeHtml(unavailableReason)}`}" title="${availability.available ? actionLabel : unavailableReason}" ${availability.available ? '' : 'disabled'}>
+            <span><i class="fa-solid ${availability.available ? 'fa-box-open' : 'fa-lock'}" aria-hidden="true"></i> ${actionLabel}</span>
           </button>
           <button type="button" onclick="showCaseDetails('${id}')" class="case-catalog-details" title="Склад кейсу та шанси" aria-label="Склад кейсу та шанси: ${escapeHtml(c.name)}">
             <i class="fa-solid fa-list"></i><span>Склад</span>
@@ -10909,8 +10985,8 @@ async function showCaseDetails(caseType) {
     return `
       <div class="bg-brand-card border border-brand-border rounded-xl p-2.5 flex flex-col items-center hover:border-amber-500/40 transition">
         <div class="relative w-full">
-          <img src="${escapeHtml(getSkinImageSrc(s))}" alt="" class="h-16 w-full object-contain" onerror="handleSkinImageError(this)">
-          <span class="case-chance-badge" style="color:${badgeColor};border-color:${badgeColor}40">CHANCE ${chanceStr}</span>
+          <img src="${escapeHtml(getSkinImageSrc(s))}" alt="${escapeHtml(s.name)}" class="h-16 w-full object-contain" onerror="handleSkinImageError(this)">
+          <span class="case-chance-badge" style="color:${badgeColor};border-color:${badgeColor}40">${chanceStr}</span>
         </div>
         <p class="mt-2 text-[10px] font-extrabold text-white truncate w-full text-center" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</p>
         <p class="text-amber-300 font-extrabold text-xs mt-0.5">${formatCredits(s.price)}</p>
@@ -10918,12 +10994,59 @@ async function showCaseDetails(caseType) {
     `;
   }).join('');
 
+  setCaseDetailsTab('skins');
+  updateCaseDetailsAction();
+  recordStarterTaskVisit('oddsViews');
   openModal('caseDetailsModal');
 }
 
+function setCaseDetailsTab(tab) {
+  const tabs = { skins: 'Skins', stats: 'Stats', collection: 'Collection' };
+  if (!tabs[tab]) return;
+  Object.entries(tabs).forEach(([key, suffix]) => {
+    const button = document.getElementById(`caseTab${suffix}`);
+    const panel = document.getElementById(`casePanel${suffix}`);
+    const active = key === tab;
+    button?.setAttribute('aria-selected', String(active));
+    if (button) button.tabIndex = active ? 0 : -1;
+    panel?.classList.toggle('hidden', !active);
+  });
+}
+
+function handleCaseDetailsTabKey(event) {
+  const tabs = ['skins', 'stats', 'collection'];
+  const ids = ['caseTabSkins', 'caseTabStats', 'caseTabCollection'];
+  const index = ids.indexOf(event.target.id);
+  if (index < 0 || !['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? 2
+    : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+  setCaseDetailsTab(tabs[next]);
+  document.getElementById(ids[next])?.focus();
+}
+
+function updateCaseDetailsAction() {
+  const state = getCaseAvailability(currentDetailsCaseId);
+  const button = document.getElementById('caseDetailsAction');
+  const hint = document.getElementById('caseDetailsBalanceHint');
+  if (button) {
+    button.disabled = !state.cost;
+    button.textContent = !state.cost ? 'Недоступний' : !state.available ? 'Отримати PC' : state.useTicket ? 'Відкрити квитком' : 'Відкрити кейс';
+  }
+  if (hint) {
+    hint.classList.toggle('hidden', !state.cost || state.available);
+    hint.textContent = `Баланс ${formatCredits(state.balance)} · бракує ${formatCredits(state.missing)}. PC — лише віртуальні кредити.`;
+  }
+}
+
 function openCurrentCaseFromDetails() {
+  if (!getCaseAvailability(currentDetailsCaseId).available) {
+    closeModal('caseDetailsModal');
+    openModal('topupModal');
+    return;
+  }
   closeModal('caseDetailsModal');
-  openPowerCase(currentDetailsCaseId || 'budget_covert');
+  void openCatalogCase(currentDetailsCaseId || 'budget_covert');
 }
 
 function renderCaseTopDrops() {
@@ -13363,6 +13486,12 @@ function addActivityEvent({ player, skin, outcome = 'attempt', profile = null, c
   el.addEventListener('click', openLiveFeedProfile);
   feed.prepend(el);
   while (feed.children.length > 14) feed.removeChild(feed.lastElementChild);
+  updateCommunityStripVisibility();
+}
+
+function updateCommunityStripVisibility() {
+  const hasEvents = Boolean(document.querySelector('#liveFeed .live-feed-item'));
+  document.getElementById('communityStrip')?.classList.toggle('hidden', !hasEvents);
 }
 
 let liveFeedStarted = false;
@@ -13966,7 +14095,6 @@ window.continueSteamLogin = continueSteamLogin;
 window.syncSteamInventory = syncSteamInventory;
 window.disconnectSteam = disconnectSteam;
 window.deleteSteamAccount = deleteSteamAccount;
-window.dismissSteamNudge = dismissSteamNudge;
 window.handleSteamAvatarError = handleSteamAvatarError;
 window.handleCaseArtworkError = handleCaseArtworkError;
 window.saveAccountNick = saveAccountNick;
