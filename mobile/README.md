@@ -46,6 +46,40 @@ npm run mobile:open
 Android Studio and the Android SDK are required to build an AAB. The AAB is
 what gets uploaded to Play Console; an APK is only for local testing.
 
+### Keeping Android Studio current
+
+Android packages a local snapshot, not the live website. A Cloudflare deploy
+alone cannot update an already installed APK. Stop the running app and use
+**Run** in Android Studio to rebuild and install over it; do not uninstall or
+clear storage, because that removes local guest progress and sign-in.
+
+Every normal Gradle build (including Android Studio Run, debug APK and release
+AAB) now runs `preparePotuzhnoWebAssets` before `preBuild`. It builds styles and
+the shared client, runs local `cap copy android`, and checks every copied file
+against `dist/` plus the source release fingerprint. A failed preparation stops
+the build instead of silently shipping stale UI. The application ID, API origin
+and installed user data remain unchanged. Version: `7.9.0`, Android code `35`.
+
+Node.js 22.12–24 and project dependencies (`npm ci`) must be installed. Android
+Studio must see `node` on PATH; restart the IDE after installing Node. If needed,
+set `POTUZHNO_NODE_BINARY` to the absolute Node executable before launching the
+IDE, or pass `-PpotuzhnoNodeExecutable=C:/Program Files/nodejs/node.exe` to
+Gradle (quote the whole argument when running it in a shell).
+
+For a manual refresh or diagnostic, from the repository root:
+
+```powershell
+npm run mobile:prepare
+node scripts/prepare-android-assets.mjs --verify-only
+```
+
+Use `npm run mobile:sync` again when native plugins or their dependencies
+change; the automatic build step deliberately copies assets without rewriting
+the Gradle plugin configuration during a build. On an emulator/device, verify
+the release/build ID in the profile matches `dist/release.json`. An already
+installed app still needs Run or installation of a newly built APK for every
+future code update; no over-the-air update system was added.
+
 ### Signed AAB
 
 The Android Gradle Plugin in this project requires **JDK 21**. Install it,
