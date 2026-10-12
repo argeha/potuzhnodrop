@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { randomUUID } from 'node:crypto';
 
 // Exercise the production arena in isolation: no player storage, network or PC.
 const source = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
@@ -41,7 +42,27 @@ const context = vm.createContext({
   document: { getElementById: element },
   window: { setTimeout: (fn, ms) => { timers.set(++nextTimer, { fn, ms }); return nextTimer; }, clearTimeout: id => timers.delete(id) },
   Date: { now: () => context.clock }, clock: 1_000_000,
-  Math, getTodayKey: () => context.day, day: '2026-10-11',
+  Math, getTodayKey: () => context.day, getTodayUtc: () => context.day, day: '2026-10-11',
+  account: { presenceId: randomUUID() }, hasSteamIdentity: () => false, isCloudProfile: () => false,
+  makeUuid: randomUUID, escapeHtml: value => value,
+  requestJson: async (_url, options) => {
+    const body = JSON.parse(options.body);
+    context.networkCalls++;
+    if (context.networkFailure) throw new Error('Offline');
+    if (context.serverDay !== context.day) { context.serverDay = context.day; context.serverUsed = 0; context.serverAttempts.clear(); }
+    const quota = () => ({ day: context.day, limit: 10, used: context.serverUsed, remaining: 10 - context.serverUsed, resetAt: context.clock + 86_400_000 });
+    if (body.action === 'start') {
+      context.attemptIds.push(body.attemptId);
+      if (!context.serverAttempts.has(body.attemptId)) {
+        if (context.serverUsed === 10) { const error = new Error('Daily limit'); error.status = 429; error.quota = quota(); throw error; }
+        context.serverUsed++; context.serverAttempts.add(body.attemptId);
+      }
+      if (context.lostResponse) { context.lostResponse = false; throw new Error('Lost server reply'); }
+    }
+    return { allowed: true, attemptId: body.attemptId, quota: quota() };
+  },
+  serverDay: '2026-10-11', serverUsed: 0, networkCalls: 0, networkFailure: false,
+  serverAttempts: new Set(), lostResponse: false, attemptIds: [],
   getActiveSeason: () => context.season,
   clampNumber: (value, min, max, fallback) => Number.isFinite(Number(value)) ? Math.max(min, Math.min(max, Number(value))) : fallback,
   roundPc: value => Math.round(value * 100) / 100,
@@ -59,14 +80,21 @@ const context = vm.createContext({
 vm.runInContext(extract('const TARGET_ARENA_STAKES =', 'let powerRunExpanded ='), context);
 vm.runInContext('let targetArenaExpanded = false;', context);
 vm.runInContext(extract('function createDefaultTargetArena()', 'function createDefaultAllTime()'), context);
-vm.runInContext(extract('function getTargetArenaState()', 'function renderLegacyTargetArena()'), context);
+vm.runInContext(extract('function getTargetArenaIdentity()', 'function renderLegacyTargetArena()'), context);
 vm.runInContext(extract('function targetArenaPayoutMarkup(', 'function getBattlePassProgress()'), context);
+// Rendering fixtures never launch background network work; admissions still
+// execute the production async request/validation code above.
+context.refreshTargetArenaQuota = () => null;
 const state = () => context.getTargetArenaState();
 const session = () => vm.runInContext('targetArenaSession', context);
 const reset = balance => {
   vm.runInContext('targetArenaSession = null; targetArenaLastResult = null; targetArenaExpanded = true;', context);
+  vm.runInContext('targetArenaStartPending = false; targetArenaPendingAttempt = null;', context);
   timers.clear(); context.currentUser.balance = balance; context.gameState = { targetArena: context.createDefaultTargetArena() };
   context.saves = context.eventCalls = context.balanceUpdates = 0;
+  context.serverUsed = 0; context.serverDay = context.day; context.networkFailure = false; context.networkCalls = 0;
+  context.serverAttempts.clear(); context.lostResponse = false; context.attemptIds = [];
+  context.applyTargetArenaQuota({quota: {day: context.day,limit: 10,used: 0,remaining: 10,resetAt: context.clock + 86_400_000}},context.getTargetArenaIdentity());
 };
 
 // Every boundary uses points, not hit count; profitable tiers are genuine gains.
@@ -75,10 +103,10 @@ for (const [score, multiplier] of [[0, 0], [4, 0], [5, .1], [8, .1], [9, .3], [1
 }
 for (const [score, expected] of [[4, 75], [5, 77.5], [9, 82.5], [13, 100], [17, 106.25], [21, 112.5]]) {
   reset(100);
-  context.startTargetArena(25);
+  await context.startTargetArena(25);
   assert.equal(context.currentUser.balance, 75);
   const active = session();
-  context.startTargetArena(250);
+  await context.startTargetArena(250);
   assert.equal(session(), active, 'Do not double-charge an active round');
   active.score = score; active.hits = 7; active.maxStreak = 4;
   context.finishTargetArena();
@@ -94,7 +122,7 @@ reset(4.01);
 context.renderTargetArena();
 assert.ok(element('targetArena').innerHTML.includes('Бракує 20.99 PC'));
 assert.ok(/data-arena-start disabled/.test(element('targetArena').innerHTML));
-context.startTargetArena(25);
+await context.startTargetArena(25);
 assert.equal(session(), null);
 assert.equal(state().dailyRounds, 0, 'Insufficient funds do not use a daily attempt');
 assert.equal(context.saves, 0);
@@ -107,7 +135,7 @@ assert.equal(context.modal, 'topupModal');
 
 reset(100);
 for (let attempt = 0; attempt < 10; attempt++) {
-  context.startTargetArena(25);
+  await context.startTargetArena(25);
   session().score = 21;
   context.finishTargetArena();
 }
@@ -116,7 +144,7 @@ assert.equal(state().rounds, 10);
 assert.equal(context.currentUser.balance, 225);
 context.gameState = JSON.parse(JSON.stringify(context.gameState));
 assert.equal(state().dailyRounds, 10, 'Reloading saved progress must not reset the daily cap');
-context.startTargetArena(25);
+await context.startTargetArena(25);
 assert.equal(session(), null, 'The eleventh paid attempt must be rejected before charging');
 assert.equal(context.currentUser.balance, 225);
 assert.ok(element('targetArena').innerHTML.includes('10 спроб використано'));
@@ -124,7 +152,7 @@ assert.ok(element('targetArena').innerHTML.includes('10 спроб викори�
 const beforePractice = JSON.stringify(context.gameState);
 const beforeEvents = context.eventCalls;
 const beforeSaves = context.saves;
-context.startTargetArena(250, true);
+await context.startTargetArena(250, true);
 assert.equal(session().stake, 0);
 session().score = 999; session().hits = 100; session().maxStreak = 100;
 context.finishTargetArena();
@@ -136,7 +164,7 @@ assert.ok(context.targetArenaResultMarkup().includes('БЕЗ PC І НАГОРО�
 context.day = '2026-10-12';
 assert.equal(state().dailyRounds, 0);
 assert.equal(state().rounds, 10, 'Daily reset preserves lifetime statistics');
-context.startTargetArena(25);
+await context.startTargetArena(25);
 assert.equal(state().dailyRounds, 1);
 assert.equal(context.currentUser.balance, 200);
 
@@ -157,7 +185,7 @@ context.season = null;
 reset(0);
 let decoy = false;
 context.getTargetArenaDescriptor = () => ({key: decoy ? 'decoy' : 'elite', decoy, depth: {key:'far',label:'ДАЛЬНЯ ЛІНІЯ',scale:.4,minX:.64,maxX:.88,minY:.17,maxY:.53,nextMs:680},asset:'fixture.png',label:'Fixture',icon:'fa-bullseye',points:4,bonusMs:390});
-context.startTargetArena(25, true);
+await context.startTargetArena(25, true);
 assert.equal(context.scrolled.selector, 'targetArena');
 assert.equal(context.scrolled.block, 'start', 'Keep the timer below the sticky header at launch');
 element('#targetArenaTarget').handlers.click();
@@ -180,4 +208,35 @@ context.clock += 20_000;
 [...timers.values()].find(timer => timer.ms === 60).fn();
 assert.equal(session(), null);
 assert.equal(context.currentUser.balance, 0);
-console.log('Arena regressions passed: payouts, double-charge protection, daily limit/reset, legacy progress, safe practice, themes and live feedback.');
+// Server rejection/network failure never charges PC or falls back to local rewards.
+reset(100); context.networkFailure = true;
+await context.startTargetArena(25);
+assert.equal(session(), null); assert.equal(context.currentUser.balance, 100); assert.equal(context.saves, 0);
+const offlineCalls = context.networkCalls;
+await context.startTargetArena(25, true); context.finishTargetArena();
+assert.equal(context.networkCalls, offlineCalls, 'Practice needs no server permission');
+assert.equal(context.currentUser.balance, 100);
+reset(100); context.serverUsed = 10;
+context.gameState.targetArena.dailyRounds = 0;
+await context.startTargetArena(25);
+assert.equal(session(), null); assert.equal(context.currentUser.balance, 100, 'A stale/local counter cannot bypass server admission');
+assert.ok(element('targetArena').innerHTML.includes('10 спроб використано'));
+
+// Multiple clicks while the server request is pending consume/charge once.
+reset(100);
+const pendingStart = context.startTargetArena(25);
+await context.startTargetArena(250);
+assert.equal(context.currentUser.balance, 100, 'PC stays intact before server confirmation');
+await pendingStart;
+assert.equal(context.serverUsed, 1); assert.equal(context.currentUser.balance, 75);
+session().score = 0; context.finishTargetArena();
+reset(100); context.lostResponse = true;
+await context.startTargetArena(25);
+assert.equal(context.serverUsed, 1); assert.equal(context.currentUser.balance, 100);
+assert.equal(session(), null);
+await context.startTargetArena(25);
+assert.equal(context.serverUsed, 1, 'Retrying a lost reply must reuse the same server admission');
+assert.equal(context.attemptIds[0], context.attemptIds[1]);
+assert.equal(context.currentUser.balance, 75);
+session().score = 0; context.finishTargetArena();
+console.log('Arena regressions passed: server-first admission, offline safety, once-only charges, payouts, daily reset, preserved records, practice and seasonal scoring.');

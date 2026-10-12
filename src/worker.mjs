@@ -39,6 +39,9 @@ const CASE = /^[a-z0-9_]{2,40}$/
 const MAX_PROFILE_PAYLOAD_BYTES = 1_700_000
 const MAX_PROFILE_REQUEST_BYTES = MAX_PROFILE_PAYLOAD_BYTES + 8_192
 const MAX_PRICE = 1_000_000
+const ARENA_DAILY_LIMIT = 10
+const ARENA_QUOTA_KEY = 'arena:daily-quota:v1'
+const ARENA_STAKES = new Set([25, 100, 250])
 const WAIT_TTL = 10_000
 const MATCH_TTL = 10 * 60_000
 const BATTLE_MATCH_START_DELAY = 5_000
@@ -208,6 +211,7 @@ const ADMIN_ASSIGNABLE_ROLES = Object.freeze({
 })
 const RATE_LIMITS = {
   profile: { limit: 24, windowMs: 60_000 },
+  arena: { limit: 36, windowMs: 60_000 },
   publicProfile: { limit: 60, windowMs: 60_000 },
   fair: { limit: 80, windowMs: 60_000 },
   matchmaking: { limit: 140, windowMs: 60_000 },
@@ -605,6 +609,7 @@ function rateLimitGroup(path) {
   if (path === '/api/admin/login' || path === '/api/admin/activate-invite') return 'adminLogin'
   if (path.startsWith('/api/admin/')) return 'admin'
   if (path === '/api/profile/sync') return 'profile'
+  if (path === '/api/arena') return 'arena'
   if (path === '/api/rewards') return 'rewards'
   if (path === '/api/public-profile' || path === '/api/public-avatar') return 'publicProfile'
   if (path.startsWith('/api/fair/')) return 'fair'
@@ -1937,6 +1942,7 @@ export class PotuzhnoState {
       // These routes are reachable only through a Durable Object stub. The public
       // Worker never dispatches /__internal/* to this class.
       if (path === '/__internal/steam-session') return await this.internalSteamSession(request)
+      if (path === '/__internal/arena-quota') return await this.internalArenaQuota(request)
       if (path === '/__internal/mobile-session') return await this.internalMobileSession(request)
       if (path === '/__internal/session-subject') return await this.internalSessionSubject(request)
       if (path === '/__internal/steam-session-valid') return await this.internalSteamSessionValidity(request)
@@ -1953,6 +1959,7 @@ export class PotuzhnoState {
       if (path === '/__internal/community-delete-account') return await this.internalCommunityDeleteAccount(request)
       if (path === '/api/profile/sync') return await this.profile(request)
       if (path === '/api/rewards') return await this.rewards(request)
+      if (path === '/api/arena') return await this.arenaQuota(request)
       if (path === '/api/public-profile') return await this.publicProfile(request)
       if (path === '/api/public-avatar') return await this.publicAvatar(request)
       if (path === '/api/fair/roll') return await this.fairRoll(request)
@@ -2098,6 +2105,7 @@ export class PotuzhnoState {
           ? { id: String(identity.id), writeKey: String(identity.writeKey) }
           : null
         await transaction.delete(key)
+        await transaction.delete(ARENA_QUOTA_KEY)
         await transaction.put('steam-account:deleted-at', deletedAt)
         return { existed: true, publicProfile }
       })
@@ -3033,6 +3041,93 @@ export class PotuzhnoState {
       referral: { state: referralState(activated.entry?.payload) },
       status: 200,
     }
+  }
+
+  // Only the daily admission counter lives here. Gameplay/payout tiers remain
+  // unchanged; this is not a claim of server-side shot or balance validation.
+  async consumeArenaQuota(body, accountKey = '', accountId = '', recoveryHash = '') {
+    const action = String(body?.action || '')
+    if (!['status', 'start'].includes(action)) return json({ error: 'Невідома дія тиру.' }, 400)
+    const attemptId = String(body?.attemptId || '')
+    if (action === 'start' && (!ID.test(attemptId) || !ARENA_STAKES.has(body?.stake))) {
+      return json({ error: 'Некоректна спроба тиру.' }, 400)
+    }
+    const result = await this.storage.transaction(async transaction => {
+      const now = Date.now()
+      const day = new Date(now).toISOString().slice(0, 10)
+      const entry = accountKey ? await transaction.get(accountKey) : null
+      if (accountKey && (!entry || !isPayload(entry.payload)
+        || (accountKey === 'steam-account' && entry.steamId !== accountId)
+        || (accountKey.startsWith('profile:') && !equalHash(entry.recoveryHash, recoveryHash)))) {
+        return { error: 'Серверний профіль ще не підключено.', status: 404 }
+      }
+      if (entry && adminProfileModeration(entry.payload?.moderation, now).blocked) {
+        return { error: 'Профіль заблоковано.', status: 423 }
+      }
+      const stored = await transaction.get(ARENA_QUOTA_KEY)
+      // Migrate the existing server save once, never accept a browser counter.
+      const legacy = entry?.payload?.gameState?.targetArena
+      const quota = stored?.day === day
+        ? { ...stored, attempts: Array.isArray(stored.attempts) ? stored.attempts.slice(0, ARENA_DAILY_LIMIT) : [] }
+        : { day, used: !stored && legacy?.dailyDate === day ? boundedInteger(legacy.dailyRounds, 0, ARENA_DAILY_LIMIT, 0) : 0, attempts: [] }
+      quota.used = boundedInteger(quota.used, 0, ARENA_DAILY_LIMIT, 0)
+      const previous = quota.attempts.find(attempt => attempt.id === attemptId)
+      if (action === 'start' && previous && previous.stake !== body.stake) {
+        return { error: 'Спроба вже має інший внесок.', status: 409 }
+      }
+      const allowed = action !== 'start' || Boolean(previous) || quota.used < ARENA_DAILY_LIMIT
+      if (action === 'start' && allowed && !previous) {
+        quota.used += 1
+        quota.attempts.push({ id: attemptId, stake: body.stake })
+      }
+      await transaction.put(ARENA_QUOTA_KEY, quota)
+      return {
+        allowed, duplicate: Boolean(previous), attemptId: action === 'start' ? attemptId : undefined,
+        quota: { day, limit: ARENA_DAILY_LIMIT, used: quota.used, remaining: ARENA_DAILY_LIMIT - quota.used,
+          resetAt: Date.parse(`${day}T00:00:00.000Z`) + 86_400_000 }
+      }
+    })
+    if (result.error) return json({ error: result.error }, result.status)
+    return result.allowed ? json(result) : json({ ...result, code: 'arena_daily_limit', error: '10 спроб із PC на сьогодні використано. Доступне безкоштовне тренування.' }, 429)
+  }
+
+  async internalArenaQuota(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try { body = await this.readBody(request, 4_096) } catch { return json({ error: 'Некоректний запит тиру.' }, 400) }
+    const steamId = String(body?.steamId || '')
+    if (!/^\d{17}$/.test(steamId)) return json({ error: 'Некоректна Steam-сесія.' }, 403)
+    return this.consumeArenaQuota(body, 'steam-account', steamId)
+  }
+
+  async arenaQuota(request) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    let body
+    try { body = await this.readBody(request, 4_096) } catch { return json({ error: 'Некоректний запит тиру.' }, 400) }
+    if (body?.identity === 'cloud') {
+      const accountId = String(body?.accountId || '')
+      const recoveryCode = String(body?.recoveryCode || '')
+      if (!ID.test(accountId) || !RECOVERY_CODE.test(recoveryCode)) return json({ error: 'Не вдалося підтвердити профіль.', status: 403 }, 403)
+      const entry = await this.storage.get(`profile:${accountId}`)
+      const recoveryHash = await sha256(recoveryCode)
+      if (!entry || !equalHash(entry.recoveryHash, recoveryHash)) return json({ error: 'Не вдалося підтвердити профіль.' }, 403)
+      return this.consumeArenaQuota(body, `profile:${accountId}`, accountId, recoveryHash)
+    }
+    if (body?.identity === 'guest') {
+      if (!ID.test(String(body?.deviceId || ''))) return json({ error: 'Некоректний гостьовий профіль.' }, 400)
+      // Anonymous demo profiles are per-device. Cross-device identity requires
+      // Steam or the same authenticated legacy Cloud Profile.
+      return this.consumeArenaQuota(body)
+    }
+    if (body?.identity !== 'steam') return json({ error: 'Некоректний профіль тиру.' }, 400)
+    const session = await this.getSteamSession(request)
+    if (!session) return json({ error: 'Сесія Steam завершилась. Увійди через Steam ще раз.' }, 401)
+    const profile = this.env.POTUZHNO_STATE.get(this.env.POTUZHNO_STATE.idFromName(`steam-account:${session.steamId}`))
+    const response = await profile.fetch(new Request('https://internal/__internal/arena-quota', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...body, steamId: session.steamId })
+    }))
+    return new Response(response.body, { status: response.status, headers: JSON_HEADERS })
   }
 
   async rewards(request) {
@@ -4859,12 +4954,13 @@ async function stateForRequest(request, env, path) {
   if (path === '/api/profile/sync' && request.method === 'POST') {
     const body = await requestBodyForRouting(request)
     if (ID.test(String(body?.accountId || ''))) name = `profile:${body.accountId}`
-  } else if (path === '/api/rewards') {
+  } else if (path === '/api/rewards' || path === '/api/arena') {
     // Cloud profiles authenticate with their recovery code and can be routed
     // straight to their account object. Steam and Android sessions must stay
     // on their short-lived, authenticated session object.
     const body = await requestBodyForRouting(request)
-    if (ID.test(String(body?.accountId || ''))) name = `profile:${body.accountId}`
+    if (path === '/api/arena' && body?.identity === 'guest' && ID.test(String(body?.deviceId || ''))) name = `arena-guest:${body.deviceId}`
+    else if (ID.test(String(body?.accountId || '')) && (path !== '/api/arena' || body?.identity === 'cloud')) name = `profile:${body.accountId}`
     else {
       const mobileToken = mobileSessionToken(request)
       if (mobileToken) name = `mobile:${mobileToken}`

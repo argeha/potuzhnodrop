@@ -51,7 +51,7 @@ const ctx = vm.createContext({
   currentUser: { balance: 4.01, steamId: '' }, account: {}, gameState: {}, userInventory: [],
   hasSteamIdentity: () => Boolean(ctx.currentUser.steamId), hasReadySteamAccount: () => ctx.steamReady,
   isCloudProfile: value => Boolean(value?.id), isInventoryMutationBusy: () => ctx.busy,
-  busy: false, steamReady: false, isCaseOpening: false, isFreeCaseOpening: false, targetArenaSession: null,
+  busy: false, steamReady: false, isCaseOpening: false, isFreeCaseOpening: false, targetArenaSession: null, targetArenaStartPending: false,
   cloudAutoSyncStarted: false, cloudAutoSyncDirty: false, cloudAutoSyncInFlight: false, cloudAutoSyncLastError: '', cloudAutoSyncLastAt: 0,
   steamAccountAutoSyncDirty: false, steamAccountAutoSyncInFlight: false, steamAccountAutoSyncPending: false,
   steamAccountAutoSyncVersion: 0, steamAccountAutoSyncLastError: '', steamAccountAutoSyncLastAt: 0,
@@ -158,7 +158,7 @@ assert.equal(node('appUpdateReloadBtn').hidden, false);
 assert.ok(node('appReleaseNotes').innerHTML.includes('&lt;img'));
 assert.ok(!node('appReleaseNotes').innerHTML.includes('<script>'));
 assert.ok(!node('appReleaseNotes').innerHTML.includes('javascript:'), 'Untrusted notes cannot add navigation or executable URLs');
-for (const flag of ['busy', 'isCaseOpening', 'isFreeCaseOpening', 'targetArenaSession', 'steamAccountAutoSyncDirty', 'steamAccountAutoSyncInFlight', 'steamAccountBootstrapPromise']) {
+for (const flag of ['busy', 'isCaseOpening', 'isFreeCaseOpening', 'targetArenaSession', 'targetArenaStartPending', 'steamAccountAutoSyncDirty', 'steamAccountAutoSyncInFlight', 'steamAccountBootstrapPromise']) {
   ctx[flag] = true;
   assert.ok(ctx.getAppReloadBlocker(), flag);
   assert.equal(ctx.reloadAppForUpdate(), false, `Recheck ${flag} at click time, not only at render time`);

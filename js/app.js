@@ -1873,6 +1873,11 @@ let targetArenaSession = null;
 let targetArenaLastResult = null;
 let targetArenaTimer = 0;
 let targetArenaMoveTimer = 0;
+let targetArenaQuota = null;
+let targetArenaQuotaRequest = null;
+let targetArenaQuotaSequence = 0;
+let targetArenaStartPending = false;
+let targetArenaPendingAttempt = null;
 let powerRunExpanded = false;
 let targetArenaExpanded = false;
 let battlePassExpanded = false;
@@ -3445,10 +3450,75 @@ function claimPowerRun() {
   showToast(`Power Run: ${reward.label} і +${reward.xp} XP додано.`, 'success');
 }
 
+function getTargetArenaIdentity() {
+  if (hasSteamIdentity()) return { key: `steam:${currentUser?.steamId || account?.steamId}`, body: { identity: 'steam' } };
+  if (isCloudProfile(account?.cloud)) return { key: `cloud:${account.cloud.id}`, body: { identity: 'cloud', accountId: account.cloud.id, recoveryCode: account.cloud.recoveryCode } };
+  return { key: `guest:${account?.presenceId || ''}`, body: { identity: 'guest', deviceId: account?.presenceId || '' } };
+}
+
+function applyTargetArenaQuota(data, identity) {
+  const quota = data?.quota;
+  if (!quota || !/^\d{4}-\d{2}-\d{2}$/.test(String(quota.day)) || quota.limit !== TARGET_ARENA_DAILY_LIMIT
+    || !Number.isInteger(quota.used) || quota.used < 0 || quota.used > quota.limit
+    || quota.remaining !== quota.limit - quota.used || !Number.isSafeInteger(quota.resetAt)) {
+    throw new Error('Сервер повернув некоректний ліміт тиру.');
+  }
+  if (getTargetArenaIdentity().key !== identity.key) return false;
+  targetArenaQuota = { ...quota, identity: identity.key, checkedAt: Date.now(), error: '' };
+  return true;
+}
+
+async function requestTargetArenaQuota(action, attempt = null) {
+  const identity = getTargetArenaIdentity();
+  const sequence = ++targetArenaQuotaSequence;
+  try {
+    const data = await requestJson('/api/arena', {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...identity.body, action, ...(attempt ? { attemptId: attempt.id, stake: attempt.stake } : {}) })
+    }, 8_000);
+    if (sequence === targetArenaQuotaSequence) applyTargetArenaQuota(data, identity);
+    if (action === 'start' && (data.allowed !== true || data.attemptId !== attempt?.id)) throw new Error('Сервер не підтвердив спробу тиру.');
+    return data;
+  } catch (error) {
+    if (sequence === targetArenaQuotaSequence && getTargetArenaIdentity().key === identity.key) {
+      if (error.quota) applyTargetArenaQuota({ quota: error.quota }, identity);
+      else targetArenaQuota = { identity: identity.key, checkedAt: Date.now(), error: error.status === 401
+        ? 'Увійди через Steam ще раз, щоб перевірити спільний ліміт.'
+        : error.status === 404 ? 'Чекаємо підключення серверного профілю. Онови перевірку.'
+        : error.status === 423 ? 'Профіль заблоковано. Спроби з PC недоступні.'
+        : 'Ліміт недоступний. Онови перевірку або тренуйся без PC.' };
+    }
+    throw error;
+  }
+}
+
+function refreshTargetArenaQuota({ force = false } = {}) {
+  const identity = getTargetArenaIdentity();
+  if (targetArenaQuotaRequest || targetArenaStartPending || targetArenaSession) return targetArenaQuotaRequest;
+  if (!force && targetArenaQuota?.identity === identity.key && Date.now() - targetArenaQuota.checkedAt < 12_000) return null;
+  const previous = targetArenaQuota;
+  targetArenaQuotaRequest = requestTargetArenaQuota('status').catch(() => null).finally(() => {
+    targetArenaQuotaRequest = null;
+    const changed = previous?.identity !== targetArenaQuota?.identity || previous?.day !== targetArenaQuota?.day
+      || previous?.used !== targetArenaQuota?.used || previous?.error !== targetArenaQuota?.error;
+    if (changed && !targetArenaSession && !targetArenaStartPending) renderTargetArena();
+  });
+  return targetArenaQuotaRequest;
+}
+
+function startTargetArenaQuotaTracking() {
+  const refresh = () => { if (!document.hidden) void refreshTargetArenaQuota({ force: true }); };
+  document.addEventListener('visibilitychange', refresh);
+  window.addEventListener('focus', refresh);
+  window.setInterval(() => {
+    if (targetArenaExpanded && !document.getElementById('targetArena')?.closest('.page-view')?.classList.contains('hidden')) refresh();
+  }, 30_000);
+}
+
 function getTargetArenaState() {
   if (!gameState) return createDefaultTargetArena();
   const stored = gameState.targetArena && typeof gameState.targetArena === 'object' ? gameState.targetArena : {};
-  const today = getTodayKey();
+  const today = getTodayUtc();
   const arena = {
     rounds: clampNumber(stored.rounds, 0, 1_000_000, 0),
     bestScore: clampNumber(stored.bestScore, 0, 999, 0),
@@ -3627,21 +3697,26 @@ function renderTargetArena() {
   }
   const arena = getTargetArenaState();
   const theme = getTargetArenaTheme();
+  const identity = getTargetArenaIdentity();
+  const quotaReady = targetArenaQuota?.identity === identity.key && !targetArenaQuota.error && Date.now() < targetArenaQuota.resetAt;
+  const quotaError = targetArenaQuota?.identity === identity.key ? targetArenaQuota.error : '';
+  const retrying = targetArenaPendingAttempt?.identity === identity.key && targetArenaPendingAttempt.stake === targetArenaSelectedStake;
+  void refreshTargetArenaQuota();
   const iconHtml = '<i class="fa-solid ' + theme.icon + '"></i>';
   const balance = Number(currentUser?.balance) || 0;
   const missing = Math.max(0, roundPc(targetArenaSelectedStake - balance));
-  const remaining = TARGET_ARENA_DAILY_LIMIT - arena.dailyRounds;
-  const stakeMarkup = TARGET_ARENA_STAKES.map(stake => `<button type="button" data-arena-stake="${stake}" aria-pressed="${targetArenaSelectedStake === stake}" class="${targetArenaSelectedStake === stake ? 'is-selected' : ''}">${formatCredits(stake)}</button>`).join('');
-  const compactAction = `<div class="target-arena-compact"><div class="arena-facts"><span><i class="fa-regular fa-clock"></i> 15 секунд</span><span><i class="fa-solid fa-layer-group"></i> 3 лінії</span><span>До +50% PC</span><span>${remaining}/${TARGET_ARENA_DAILY_LIMIT} спроб із PC</span></div><button type="button" data-arena-open aria-expanded="false"><i class="fa-solid fa-crosshairs"></i> Відкрити тир <i class="fa-solid fa-arrow-right"></i></button></div>`;
+  const remaining = quotaReady ? targetArenaQuota.remaining : null;
+  const stakeMarkup = TARGET_ARENA_STAKES.map(stake => `<button type="button" data-arena-stake="${stake}" aria-pressed="${targetArenaSelectedStake === stake}" class="${targetArenaSelectedStake === stake ? 'is-selected' : ''}"${targetArenaStartPending ? ' disabled' : ''}>${formatCredits(stake)}</button>`).join('');
+  const compactAction = `<div class="target-arena-compact"><div class="arena-facts"><span><i class="fa-regular fa-clock"></i> 15 секунд</span><span><i class="fa-solid fa-layer-group"></i> 3 лінії</span><span>До +50% PC</span><span>${remaining ?? '—'}/${TARGET_ARENA_DAILY_LIMIT} спроб із PC</span></div><button type="button" data-arena-open aria-expanded="false"><i class="fa-solid fa-crosshairs"></i> Відкрити тир <i class="fa-solid fa-arrow-right"></i></button></div>`;
   const fullControls = `${targetArenaResultMarkup()}<div class="arena-setup">
     ${targetArenaPreviewMarkup(theme)}
     <div class="arena-control-panel"><div class="arena-control-title"><span>ПІДГОТОВКА ДО СПРОБИ</span><b>Точність вирішує.</b><p>Влучай у мішені. Дальня лінія дає більше очок і додаткового часу.</p></div>
-      <div class="arena-daily"><span>Спроб із PC залишилося</span><b>${remaining} / ${TARGET_ARENA_DAILY_LIMIT}</b><small>Нові спроби опівночі · тренування без ліміту</small></div>
+      <div class="arena-daily" aria-live="polite"><span>Спроб із PC залишилося</span><b>${remaining ?? '—'} / ${TARGET_ARENA_DAILY_LIMIT}</b><small>Нові спроби о 00:00 UTC · тренування без ліміту</small><small>${identity.body.identity === 'guest' ? 'Гостьовий ліміт — для цього пристрою. Для спільного ліміту увійди в той самий Steam.' : 'Спільний серверний ліміт для цього профілю на всіх пристроях.'}</small></div>
       <div class="target-arena-stakes"><span>ВНЕСОК У PC</span><div>${stakeMarkup}</div></div>
       <div class="arena-balance"><span>Твій баланс</span><b>${formatCredits(balance)}</b></div>
-      ${!remaining ? '<p class="arena-shortfall"><i class="fa-solid fa-circle-info"></i> 10 спроб використано. Тренуйся безкоштовно — нові спроби завтра.</p>' : missing ? `<p class="arena-shortfall"><i class="fa-solid fa-circle-info"></i> Бракує ${formatCredits(missing)} для цієї спроби.</p>` : ''}
-      <button type="button" class="target-arena-start" data-arena-start ${missing || !remaining ? 'disabled' : ''}><i class="fa-solid fa-play"></i> Почати · ${formatCredits(targetArenaSelectedStake)}</button>
-      <button type="button" class="arena-practice" data-arena-practice><i class="fa-solid fa-crosshairs"></i> Тренування · без PC</button>
+      ${quotaError ? `<p class="arena-shortfall">${escapeHtml(quotaError)}</p><button type="button" class="arena-practice" data-arena-sync>Перевірити ліміт знову</button>` : remaining === null ? '<p class="arena-shortfall">Перевіряємо серверний ліміт…</p>' : !remaining && !retrying ? '<p class="arena-shortfall"><i class="fa-solid fa-circle-info"></i> 10 спроб використано. Тренуйся безкоштовно — нові спроби завтра.</p>' : missing ? `<p class="arena-shortfall"><i class="fa-solid fa-circle-info"></i> Бракує ${formatCredits(missing)} для цієї спроби.</p>` : ''}
+      <button type="button" class="target-arena-start" data-arena-start ${targetArenaStartPending || missing || ((!quotaReady || !remaining) && !retrying) ? 'disabled' : ''}><i class="fa-solid fa-play"></i> ${targetArenaStartPending ? 'Підтверджуємо…' : retrying ? 'Повторити запуск' : `Почати · ${formatCredits(targetArenaSelectedStake)}`}</button>
+      <button type="button" class="arena-practice" data-arena-practice ${targetArenaStartPending ? 'disabled' : ''}><i class="fa-solid fa-crosshairs"></i> Тренування · без PC</button>
       ${missing && remaining ? '<button type="button" class="arena-earn" data-arena-earn>Як заробити PC <i class="fa-solid fa-arrow-right"></i></button>' : ''}
       <small class="arena-risk-note">Внесок списується при старті. Результат залежить від набраних очок — не кожна спроба повертає внесок.</small>
     </div>
@@ -3650,6 +3725,7 @@ function renderTargetArena() {
   root.innerHTML = `<article class="target-arena-card arena-v2 arena-theme-${theme.key} ${theme.cardClass} ${targetArenaExpanded ? 'is-expanded' : 'is-compact'}" aria-label="${theme.name}" style="--arena-backdrop-image:url('${theme.backdrop}')"><div class="target-arena-head"><div class="target-arena-icon">${iconHtml}</div><div><p>${theme.kicker}</p><h2>${theme.name}</h2><span>Тримай фокус. Влучай точно. Перевір свою реакцію.</span></div><div class="target-arena-record"><span>ОСОБИСТИЙ РЕКОРД</span><b>${arena.bestScore}<small>очок</small></b><small>Спроб: ${arena.rounds}</small></div></div>${targetArenaExpanded ? fullControls : compactAction}</article>`;
   root.querySelector('[data-arena-open]')?.addEventListener('click', () => {
     targetArenaExpanded = true;
+    void refreshTargetArenaQuota({ force: true });
     renderTargetArena();
   });
   root.querySelector('[data-arena-close]')?.addEventListener('click', () => {
@@ -3657,12 +3733,14 @@ function renderTargetArena() {
     renderTargetArena();
   });
   root.querySelectorAll('[data-arena-stake]').forEach(button => button.addEventListener('click', () => {
+    if (targetArenaStartPending) return;
     targetArenaSelectedStake = Number(button.dataset.arenaStake);
     renderTargetArena();
     root.querySelector(`[data-arena-stake="${targetArenaSelectedStake}"]`)?.focus({ preventScroll: true });
   }));
   root.querySelector('[data-arena-earn]')?.addEventListener('click', () => openModal('topupModal'));
   root.querySelector('[data-arena-practice]')?.addEventListener('click', () => startTargetArena(targetArenaSelectedStake, true));
+  root.querySelector('[data-arena-sync]')?.addEventListener('click', () => { void refreshTargetArenaQuota({ force: true }); });
   root.querySelector('[data-arena-start]')?.addEventListener('click', () => startTargetArena(targetArenaSelectedStake));
 }
 
@@ -3791,23 +3869,39 @@ function renderActiveTargetArena(root) {
   updateTimer();
 }
 
-function startTargetArena(stake, practice = false) {
+async function startTargetArena(stake, practice = false) {
   const safeStake = TARGET_ARENA_STAKES.includes(Number(stake)) ? Number(stake) : TARGET_ARENA_STAKES[0];
-  if (targetArenaSession || !currentUser || !gameState) return;
+  if (targetArenaSession || targetArenaStartPending || !currentUser || !gameState) return;
   const isPractice = practice === true;
-  const arena = getTargetArenaState();
-  if (!isPractice && arena.dailyRounds >= TARGET_ARENA_DAILY_LIMIT) {
-    showToast('10 спроб із PC на сьогодні використано. Доступне безкоштовне тренування.', 'info');
-    renderTargetArena();
-    return;
-  }
+  getTargetArenaState();
   if (!isPractice && currentUser.balance < safeStake) {
     showToast(`Для Елітного тиру потрібно ${formatCredits(safeStake)}.`, 'warn');
     return;
   }
   if (!isPractice) {
+    const player = currentUser, state = gameState, identity = getTargetArenaIdentity();
+    const attempt = targetArenaPendingAttempt?.identity === identity.key && targetArenaPendingAttempt.stake === safeStake
+      ? targetArenaPendingAttempt : { id: makeUuid(), identity: identity.key, stake: safeStake };
+    targetArenaPendingAttempt = attempt;
+    targetArenaStartPending = true;
+    renderTargetArena();
+    try {
+      const data = await requestTargetArenaQuota('start', attempt);
+      targetArenaPendingAttempt = null;
+      if (player !== currentUser || state !== gameState || getTargetArenaIdentity().key !== identity.key) return;
+      if (currentUser.balance < safeStake) { showToast('Баланс змінився. Спробу не почато, PC не списано.', 'warn'); return; }
+      const confirmedArena = getTargetArenaState();
+      confirmedArena.dailyDate = data.quota.day;
+      confirmedArena.dailyRounds = data.quota.used;
+    } catch (error) {
+      if (error.status) targetArenaPendingAttempt = null;
+      showToast(error.message || 'Не вдалося підтвердити спробу. PC не списано.', 'warn');
+      return;
+    } finally {
+      targetArenaStartPending = false;
+      if (!targetArenaSession) renderTargetArena();
+    }
     currentUser.balance = roundPc(currentUser.balance - safeStake);
-    arena.dailyRounds += 1;
   }
   targetArenaLastResult = null;
   const startedAt = Date.now();
@@ -3891,6 +3985,11 @@ function renderBattlePass() {
     return;
   }
   root.classList.remove('hidden');
+  const oldViewport = root.querySelector('.bp-track-viewport');
+  const scrollPosition = oldViewport ? { left: oldViewport.scrollLeft, top: oldViewport.scrollTop, x: window.scrollX, y: window.scrollY } : null;
+  const focused = root.contains(document.activeElement) ? document.activeElement : null;
+  const focusCell = focused?.dataset?.bpCell;
+  const focusId = focused?.id;
   const progress = getBattlePassProgress();
   const { pass, unlocked, currentTier, inTier } = progress;
   const runtimePass = getRuntimeBattlePass();
@@ -3917,7 +4016,7 @@ function renderBattlePass() {
     const visual = copy.skin
       ? `<img class="bp-reward-skin" src="${escapeHtml(getSkinImageSrc(reward.skin))}" alt="" data-skin-name="${escapeHtml(reward.skin.name)}" decoding="async" onerror="handleSkinImageError(this)">`
       : `<i class="fa-solid ${copy.icon}"></i>`;
-    return `<button type="button" class="bp-reward bp-${lane} ${copy.ticket ? 'bp-ticket' : ''} is-${state}" ${data} ${disabled} title="${escapeHtml(copy.title)}">
+    return `<button type="button" data-bp-cell="${lane}:${entry.tier}" class="bp-reward bp-${lane} ${copy.ticket ? 'bp-ticket' : ''} is-${state}" ${data} ${disabled} title="${escapeHtml(copy.title)}">
       <span class="bp-reward-tier">${entry.tier}</span>
       ${visual}
       <strong>${escapeHtml(copy.skin ? copy.title.replace(/^★\s*/, '').split('|').pop().trim() : copy.title)}</strong>
@@ -3934,7 +4033,7 @@ function renderBattlePass() {
       <button type="button" id="battlePassBuyBtn" class="bp-buy-btn ${pass.premium ? 'is-owned' : ''}"><i class="fa-solid ${pass.premium ? 'fa-circle-check' : 'fa-crown'}"></i>${pass.premium ? 'POTUZHNO PASS АКТИВНИЙ' : `ВІДКРИТИ ЗА ${formatCredits(BATTLE_PASS_SEASON.price)}`}</button>
     </div>
     <div class="bp-track-note"><span><i class="fa-solid fa-bolt"></i> Кожен ігровий XP зараховується у пропуск</span><span><i class="fa-solid fa-ticket"></i> Квитків: <b>${getCaseTicketCount()}</b></span><span>Відкрито рівнів: <b>${unlocked} / ${BATTLE_PASS_SEASON.tiers}</b></span></div>
-    <div class="bp-track-viewport"><div class="bp-track">
+    <div class="bp-track-viewport" tabindex="-1" aria-label="Нагороди POTUZHNO PASS"><div class="bp-track">
       <div class="bp-tier-spacer"></div><div class="bp-tier-numbers">${tierNumbers}</div>
       <div class="bp-lane-label bp-lane-free"><i class="fa-solid fa-angle-double-down"></i><strong>FREE</strong><small>базові нагороди</small></div><div class="bp-reward-row">${BATTLE_PASS_REWARDS.map(entry => rewardCell('free', entry)).join('')}</div>
       <div class="bp-lane-label bp-lane-premium"><i class="fa-solid fa-crown"></i><strong>POTUZHNO PASS</strong><small>${pass.premium ? 'преміум активний' : formatCredits(BATTLE_PASS_SEASON.price)}</small></div><div class="bp-reward-row">${BATTLE_PASS_REWARDS.map(entry => rewardCell('premium', entry)).join('')}</div>
@@ -3953,6 +4052,14 @@ function renderBattlePass() {
   root.querySelectorAll('[data-bp-locked]').forEach(button => button.addEventListener('click', () => {
     showToast(`Відкрий Potuzhno Pass за ${formatCredits(BATTLE_PASS_SEASON.price)}.`, 'info');
   }));
+  if (scrollPosition) {
+    const viewport = root.querySelector('.bp-track-viewport');
+    viewport.scrollLeft = scrollPosition.left;
+    viewport.scrollTop = scrollPosition.top;
+    const replacement = focusCell ? root.querySelector(`[data-bp-cell="${focusCell}"]`) : focusId ? document.getElementById(focusId) : focused ? viewport : null;
+    (replacement?.disabled ? viewport : replacement)?.focus({ preventScroll: true });
+    if (window.scrollX !== scrollPosition.x || window.scrollY !== scrollPosition.y) window.scrollTo({ left: scrollPosition.x, top: scrollPosition.y, behavior: 'instant' });
+  }
 }
 
 function buyBattlePass() {
@@ -4612,7 +4719,7 @@ function hasAppUpdate() {
 }
 
 function getAppReloadBlocker() {
-  if (isInventoryMutationBusy() || isCaseOpening || isFreeCaseOpening || targetArenaSession) return 'Спочатку заверши поточний раунд. Оновлення не перериватиме гру.';
+  if (isInventoryMutationBusy() || isCaseOpening || isFreeCaseOpening || targetArenaSession || targetArenaStartPending) return 'Спочатку заверши поточний раунд. Оновлення не перериватиме гру.';
   if (localProgressSaveError) return 'Останні зміни не записано локально. Не перезавантажуй вкладку.';
   if (steamAccountBootstrapPromise || progressManualSaveInFlight || progressCloudBusy || steamAccountRemoteRefreshInFlight
       || (hasSteamIdentity() && (steamAccountAutoSyncDirty || steamAccountAutoSyncInFlight || steamAccountAutoSyncLastError))
@@ -4830,6 +4937,7 @@ async function requestJson(url, options = {}, timeout = 7000) {
       error.status = response.status;
       error.code = cleanText(data?.code || '', 48);
       error.moderation = data?.moderation;
+      error.quota = data?.quota;
       throw error;
     }
     return data;
@@ -14751,6 +14859,7 @@ window.addEventListener('DOMContentLoaded', () => {
   initCanvas();
   loadState();
   startProductStatus();
+  startTargetArenaQuotaTracking();
   void loadRuntimeContent();
   captureReferralFromUrl();
   void enableHalloweenAdminPreview();
