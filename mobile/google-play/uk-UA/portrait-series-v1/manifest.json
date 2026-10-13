@@ -1,0 +1,83 @@
+{
+  "locale": "uk-UA",
+  "sourceKind": "user-supplied-android-emulator-captures",
+  "decorativeBackdrop": "built-in image_gen",
+  "uiProcessing": "bezel-only crop plus proportional fitting; screenshot pixels are not AI-generated",
+  "files": [
+    {
+      "file": "png/01-cases-1080x1920.png",
+      "width": 1080,
+      "height": 1920,
+      "type": "styled-user-supplied-android-screenshot",
+      "source": "inputs/01-cases-android-original.png",
+      "sourceSha256": "32c5056acf0aa5d1575fd28cb5fc2170a350707d35ba93e7b81e93ad60fe5507",
+      "sourceWidth": 505,
+      "sourceHeight": 905,
+      "crop": {
+        "left": 29,
+        "top": 56,
+        "width": 398,
+        "height": 802
+      },
+      "scaledAppWidth": 766,
+      "scaledAppHeight": 1544,
+      "uiRegeneratedByAI": false,
+      "fittedUiPixelIdentityVerified": true,
+      "layoutVerified": true,
+      "playApprovalVerified": false,
+      "rawHighResolutionScreenshotRecommended": true,
+      "captionHeightFraction": 0.18229166666666666,
+      "alt": "Справжній Android-каталог ПОТУЖНО DROP з кейсами Dragon’s Lair та Covert Ops, віртуальними цінами та фільтрами"
+    },
+    {
+      "file": "png/02-upgrader-1080x1920.png",
+      "width": 1080,
+      "height": 1920,
+      "type": "styled-user-supplied-android-screenshot",
+      "source": "inputs/02-upgrader-android-original.png",
+      "sourceSha256": "ce37ed70d5e30bc735f06ce0024bdb182b6f73804eb9586a34e23b88d8b0194d",
+      "sourceWidth": 611,
+      "sourceHeight": 890,
+      "crop": {
+        "left": 64,
+        "top": 44,
+        "width": 399,
+        "height": 798
+      },
+      "scaledAppWidth": 772,
+      "scaledAppHeight": 1544,
+      "uiRegeneratedByAI": false,
+      "fittedUiPixelIdentityVerified": true,
+      "layoutVerified": true,
+      "playApprovalVerified": false,
+      "rawHighResolutionScreenshotRecommended": true,
+      "captionHeightFraction": 0.18229166666666666,
+      "alt": "Android-апгрейдер ПОТУЖНО DROP: вибір внеску, цілі та множника до запуску раунду"
+    },
+    {
+      "file": "png/03-inventory-1080x1920.png",
+      "width": 1080,
+      "height": 1920,
+      "type": "styled-user-supplied-android-screenshot",
+      "source": "inputs/03-inventory-android-original.png",
+      "sourceSha256": "524e5982a0a5ef17ae96c73844b0f89203b05956116b5626cfdd6cd48a7ee4b1",
+      "sourceWidth": 773,
+      "sourceHeight": 848,
+      "crop": {
+        "left": 98,
+        "top": 17,
+        "width": 398,
+        "height": 802
+      },
+      "scaledAppWidth": 766,
+      "scaledAppHeight": 1544,
+      "uiRegeneratedByAI": false,
+      "fittedUiPixelIdentityVerified": true,
+      "layoutVerified": true,
+      "playApprovalVerified": false,
+      "rawHighResolutionScreenshotRecommended": true,
+      "captionHeightFraction": 0.18229166666666666,
+      "alt": "Справжній Android-інвентар ПОТУЖНО DROP зі скінами AWP Gungnir і M4A4 Howl, зносом, цінами у PC та діями з предметами"
+    }
+  ]
+}

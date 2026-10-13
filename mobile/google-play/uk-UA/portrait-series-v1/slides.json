@@ -1,0 +1,26 @@
+[
+  {
+    "id": "01-cases",
+    "source": "inputs/01-cases-android-original.png",
+    "crop": { "left": 29, "top": 56, "width": 398, "height": 802 },
+    "headline": ["КЕЙСИ НА", "ТВІЙ СМАК"],
+    "subtitle": "Каталог, склад та шанси",
+    "alt": "Справжній Android-каталог ПОТУЖНО DROP з кейсами Dragon’s Lair та Covert Ops, віртуальними цінами та фільтрами"
+  },
+  {
+    "id": "02-upgrader",
+    "source": "inputs/02-upgrader-android-original.png",
+    "crop": { "left": 64, "top": 44, "width": 399, "height": 798 },
+    "headline": ["ТВОЯ ЦІЛЬ.", "ТВІЙ АПГРЕЙД."],
+    "subtitle": "Внесок, ціль і шанс до запуску",
+    "alt": "Android-апгрейдер ПОТУЖНО DROP: вибір внеску, цілі та множника до запуску раунду"
+  },
+  {
+    "id": "03-inventory",
+    "source": "inputs/03-inventory-android-original.png",
+    "crop": { "left": 98, "top": 17, "width": 398, "height": 802 },
+    "headline": ["ТВОЯ", "КОЛЕКЦІЯ СКІНІВ"],
+    "subtitle": "Фільтри, захист та керування",
+    "alt": "Справжній Android-інвентар ПОТУЖНО DROP зі скінами AWP Gungnir і M4A4 Howl, зносом, цінами у PC та діями з предметами"
+  }
+]
