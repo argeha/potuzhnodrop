@@ -1,0 +1,49 @@
+{
+  "locale": "uk-UA",
+  "capturedClientRelease": "7.9.0-reliability.1",
+  "capturedBuildId": "3bd9909d9688ed1ed4dc5791dc3cfc87e6d5e0ada900790ecef931e3c6d31647",
+  "assets": [
+    {
+      "file": "feature-graphic-1024x500-v1.png",
+      "type": "feature-graphic",
+      "width": 1024,
+      "height": 500,
+      "channels": 3
+    },
+    {
+      "file": "feature-graphic-1024x500-v2.png",
+      "type": "feature-graphic",
+      "width": 1024,
+      "height": 500,
+      "channels": 3
+    },
+    {
+      "file": "app-icon-512.png",
+      "type": "app-icon",
+      "width": 512,
+      "height": 512,
+      "channels": 4
+    },
+    {
+      "file": "screenshots-web/01-cases-mobile.jpg",
+      "type": "web-reference-not-native-apk",
+      "width": 534,
+      "height": 949,
+      "channels": 3
+    },
+    {
+      "file": "screenshots-web/02-upgrader-mobile.jpg",
+      "type": "web-reference-not-native-apk",
+      "width": 534,
+      "height": 949,
+      "channels": 3
+    },
+    {
+      "file": "screenshots-web/03-collection-mobile.jpg",
+      "type": "web-reference-not-native-apk",
+      "width": 534,
+      "height": 949,
+      "channels": 3
+    }
+  ]
+}
