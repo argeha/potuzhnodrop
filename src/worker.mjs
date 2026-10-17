@@ -1103,6 +1103,7 @@ function communityResponse(state, visitorHash) {
       const player = state.players[event.playerId]
       return {
         ...event,
+        name: player?.name || event.name,
         xp: player?.xp || 0,
         wins: player?.wins || 0,
         rounds: player?.rounds || 0,
@@ -3669,6 +3670,11 @@ export class PotuzhnoState {
       try {
         const steamProfile = await this.resolveSteamProfile(sessionSteamId)
         player.avatar = cleanAvatar(steamProfile?.avatar)
+        // Repair placeholders sent by older clients using the authenticated
+        // Steam identity. A chosen game nickname is deliberately preserved.
+        if (/^(?:гість|гость|guest|гравець|player|гравець_.*|steam_\d{4})$/iu.test(player.name)) {
+          player.name = cleanText(steamProfile?.name, 24) || player.name
+        }
       } catch {
         player.avatar = ''
       }
@@ -4177,55 +4183,15 @@ export class PotuzhnoState {
     if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
     const session = await this.getSteamSession(request)
     if (!session) return json({ error: 'Сесія Steam завершилась. Увійди через Steam ще раз.' }, 401)
-    const steamId = session.steamId
-    const cursor = new URL(request.url).searchParams.get('cursor') || ''
-    if (cursor && !/^\d{1,24}$/.test(cursor)) return json({ error: 'Некоректна сторінка інвентарю Steam.' }, 400)
-    const inventoryUrl = new URL(`https://steamcommunity.com/inventory/${steamId}/730/2`)
-    inventoryUrl.searchParams.set('l', 'ukrainian')
-    inventoryUrl.searchParams.set('count', '500')
-    if (cursor) inventoryUrl.searchParams.set('start_assetid', cursor)
-    let response
-    try {
-      response = await timedFetch(inventoryUrl.href)
-    } catch {
-      return json({ error: 'Steam тимчасово не віддає інвентар.' }, 502)
-    }
-    if (!response.ok) {
-      const message = response.status === 403 ? 'Інвентар Steam закритий. Зроби його публічним у налаштуваннях приватності.' : 'Steam тимчасово не віддає інвентар.'
-      return json({ error: message }, response.status === 403 ? 403 : 502)
-    }
-    let data
-    try {
-      data = await response.json()
-    } catch {
-      return json({ error: 'Steam повернув некоректну відповідь.' }, 502)
-    }
-    const descriptions = new Map((data.descriptions || []).map(item => [`${item.classid}_${item.instanceid}`, item]))
-    const items = (data.assets || []).slice(0, 500).map(asset => {
-      const item = descriptions.get(`${asset.classid}_${asset.instanceid}`)
-      const rawIcon = item?.icon_url_large || item?.icon_url
-      const icon = typeof rawIcon === 'string' && /^[A-Za-z0-9_\-/]+$/.test(rawIcon) ? rawIcon : ''
-      if (!item || !icon) return null
-      return {
-        id: cleanText(asset.assetid, 64),
-        name: cleanText(item.market_hash_name || item.name || 'CS2 Skin', 160),
-        rarity: cleanText(item.tags?.find(tag => tag.category === 'Rarity')?.localized_tag_name || 'CS2', 48),
-        rarityColor: cleanColor(item.tags?.find(tag => tag.category === 'Rarity')?.color),
-        img: `https://community.cloudflare.steamstatic.com/economy/image/${icon}/360fx360f`,
-        tradable: Boolean(item.tradable),
-      }
-    }).filter(Boolean)
-    const hasMore = data.more_items === true || data.more_items === 1
-    const nextCursor = hasMore && /^\d{1,24}$/.test(String(data.last_assetid || '')) ? String(data.last_assetid) : null
+    // Keep a fail-closed response for older web/Android clients. Do not call
+    // Steam Community inventory, even when the real inventory is public.
     return json({
-      items,
-      profile: await this.resolveSteamProfile(steamId),
-      // Steam asset IDs may exceed Number.MAX_SAFE_INTEGER. Keep the cursor
-      // opaque so pagination never loses precision for large inventories.
-      cursor: cursor || null,
-      hasMore: Boolean(nextCursor),
-      nextCursor,
-    }, 200, { 'Cache-Control': 'private, no-store' })
+      error: 'Імпорт Steam-інвентарю вимкнено. Steam використовується лише для входу та прогресу гри.',
+      code: 'STEAM_INVENTORY_IMPORT_DISABLED',
+      items: [],
+      hasMore: false,
+      nextCursor: null,
+    }, 410, { 'Cache-Control': 'private, no-store' })
   }
 
   async readSkinCatalog() {

@@ -838,9 +838,6 @@ function getCaseReelConfig(soundDurationMs = 0) {
   };
 }
 
-// The Steam community endpoint returns up to 500 assets at a time. Keeping the
-// work bounded gives the UI a responsive, recoverable sync even for huge inventories.
-const STEAM_SYNC_PAGE_LIMIT = 6;
 
 let battlePlayerItem = null;
 let battleBotItem = null;
@@ -891,13 +888,13 @@ const UPGRADE_RETURN_RATE = 0.90;
 const CONTRACT_RETURN_MIN = 0.55;
 const CONTRACT_RETURN_MAX = 0.85;
 const DAILY_CALENDAR_REWARDS = Object.freeze([
-  { day: 1, credits: 1, icon: 'fa-coins', title: '+1 PC' },
-  { day: 2, credits: 1.1, icon: 'fa-coins', title: '+1.10 PC' },
-  { day: 3, credits: 1.25, icon: 'fa-bolt', title: '+1.25 PC' },
-  { day: 4, credits: 1.45, icon: 'fa-fire', title: '+1.45 PC' },
-  { day: 5, credits: 1.7, icon: 'fa-shield-halved', title: '+1.70 PC' },
-  { day: 6, credits: 2, icon: 'fa-ticket', title: '+2 PC' },
-  { day: 7, credits: 3, icon: 'fa-gem', title: '+3 PC + колекційний скін', collectible: true }
+  { day: 1, credits: 10, icon: 'fa-coins', title: '+10 PC' },
+  { day: 2, credits: 11, icon: 'fa-coins', title: '+11 PC' },
+  { day: 3, credits: 12.5, icon: 'fa-bolt', title: '+12.50 PC' },
+  { day: 4, credits: 14.5, icon: 'fa-fire', title: '+14.50 PC' },
+  { day: 5, credits: 17, icon: 'fa-shield-halved', title: '+17 PC' },
+  { day: 6, credits: 20, icon: 'fa-ticket', title: '+20 PC' },
+  { day: 7, credits: 30, icon: 'fa-gem', title: '+30 PC + колекційний скін', collectible: true }
 ]);
 const DAILY_CALENDAR_COLLECTIBLES = Object.freeze([
   'Glock-18 | Water Elemental',
@@ -4249,7 +4246,7 @@ function updateAccountUI() {
   renderSteamAccountPanel();
   renderPerformancePanel();
   const n = document.getElementById('profileName');
-  if (n) n.textContent = account?.nick || 'Гість';
+  if (n) n.textContent = getPlayerDisplayName();
   const headerName = document.getElementById('headerSteamName');
   if (headerName && currentUser?.steamId) {
     headerName.textContent = cleanText(currentUser.name || account?.nick || 'Steam', 20) || 'Steam';
@@ -4312,11 +4309,9 @@ function renderSteamProfileCard() {
   const status = document.getElementById('profileSteamStatus');
   const statusText = {
     checking: 'Перевіряємо з’єднання зі Steam…',
-    connected: profile.visibility === 'public'
-      ? 'Публічний профіль · підключено'
-      : 'Steam підключено · доступність інвентарю залежить від приватності',
-    syncing: 'Steam синхронізується — перевіряємо нові предмети…',
-    expired: 'Сесія Steam завершилась. Увійди знову, щоб синхронізувати предмети.',
+    connected: 'Steam підключено · ігровий прогрес синхронізується без імпорту предметів',
+    syncing: 'Оновлюємо ім’я та аватар Steam…',
+    expired: 'Сесія Steam завершилась. Увійди знову для синхронізації прогресу гри.',
     error: steamConnectionMessage || 'Steam тимчасово недоступний. Профіль збережено локально.',
     disconnected: 'Steam відключено від цього браузера.'
   };
@@ -4326,8 +4321,6 @@ function renderSteamProfileCard() {
     status.classList.toggle('text-amber-200', steamConnectionState === 'expired');
     status.classList.toggle('text-red-200', steamConnectionState === 'error');
   }
-  const count = document.getElementById('profileSteamImportedCount');
-  if (count) count.textContent = String(getSteamImportRecord(profile.steamId).assetIds.length);
   const link = document.getElementById('profileSteamLink');
   if (link) link.href = profile.profileUrl;
   const sync = document.getElementById('steamProfileSyncBtn');
@@ -4411,7 +4404,7 @@ function buildPublicProfilePayload() {
   const campaign = getSignalCampaignProgress();
   const profileStyle = getProfileStyleDefinition();
   return {
-    name: cleanText(account?.nick || currentUser?.name || 'Гравець', 24) || 'Гравець',
+    name: getPlayerDisplayName(),
     avatar: cleanImageUrl(currentUser?.avatar || account?.steamProfile?.avatar),
     level: getPlayerLevel(),
     prestige: clampNumber(gameState?.prestige, 0, 99, 0),
@@ -6560,7 +6553,7 @@ function renderProfileProgress() {
   if (!gameState) return;
   const level = getPlayerLevel(), p = getLevelProgress(), s = gameState.stats;
   const wr = s.rounds ? Math.round((s.wins / s.rounds) * 100) : 0;
-  const name = account?.nick || currentUser?.name || 'Гість';
+  const name = getPlayerDisplayName();
   const n = document.getElementById('profileName');
   if (n) n.textContent = name;
   const pl = document.getElementById('profileLevel');
@@ -7025,7 +7018,7 @@ function getCommunityPlayerPayload() {
   const collectionValue = userInventory.reduce((total, item) => total + verifiedInventoryMarketPrice(item), 0);
   const publicPresentation = buildPublicProfilePayload();
   return {
-    name: cleanText(account?.nick || currentUser?.name || 'Гравець', 24) || 'Гравець',
+    name: getPlayerDisplayName(),
     profileId: account?.publicProfile?.enabled ? account.publicProfile.id : '',
     // Steam identity is already verified before its game-state snapshot has
     // finished loading. Send it immediately so a just-opened Android client
@@ -8555,9 +8548,7 @@ function closeModal(id) {
 function refreshInventoryModal() {
   const status = document.getElementById('inventoryStatus');
   if (status) {
-    status.textContent = currentUser?.steamId
-      ? 'Показано віртуальні копії публічних предметів. Кожен Steam asset імпортується лише один раз; предмети не передаються сайту.'
-      : 'Стартові предмети існують лише в цій грі. Підключи Steam, щоб побачити безпечну віртуальну копію публічного інвентарю.';
+    status.textContent = 'Це твій інвентар гри. Предмети зі Steam не імпортуються; Steam зберігає лише прив’язку до ігрового прогресу.';
   }
   renderInventoryGrid();
 }
@@ -8573,7 +8564,7 @@ function resetSteamLoginModal() {
     button.innerHTML = '<i class="fa-brands fa-steam mr-2"></i>Увійти через Steam';
   }
   const hint = document.getElementById('steamLoginHint');
-  if (hint) hint.textContent = 'Пароль, Steam Guard, API-ключі та Trade Offers не запитуються. Потрібен лише публічний профіль та інвентар.';
+  if (hint) hint.textContent = 'Steam лише підтверджує твій ID. Пароль, Steam Guard, API-ключі та Trade Offers не запитуються; Steam-інвентар не імпортується.';
 }
 
 function startSteamLogin() {
@@ -8595,20 +8586,6 @@ function continueSteamLogin() {
 
 function getSteamImportRecord(steamId) {
   return normalizeSteamImportRecord(getSteamImportMap()[steamId], steamId) || { steamId, assetIds: [], lastSyncAt: 0 };
-}
-
-function getKnownSteamAssetIds(steamId) {
-  const known = new Set(getSteamImportRecord(steamId).assetIds);
-  userInventory.forEach(item => {
-    const legacyImported = String(item?.id || '').startsWith('steam-demo-');
-    const ownerId = /^\d{17}$/.test(String(item?.steamOwnerId || ''))
-      ? String(item.steamOwnerId)
-      : String(item?.id || '').match(/^steam-copy-(\d{17})-/)?.[1] || '';
-    if (ownerId && ownerId !== steamId) return;
-    const assetId = cleanText(item?.steamAssetId || (legacyImported ? item?.sourceSkinId : ''), 64);
-    if (assetId) known.add(assetId);
-  });
-  return known;
 }
 
 function fallbackSteamProfile(steamId) {
@@ -8639,10 +8616,23 @@ async function restoreSteamSession() {
   }
 }
 
+function isDefaultPlayerNickname(value) {
+  const nick = cleanText(value, 24);
+  return !nick || /^(?:гість|гость|guest|гравець|player|гравець_.*|steam_\d{4})$/iu.test(nick);
+}
+
+function getPlayerDisplayName() {
+  const nick = cleanText(account?.nick, 24);
+  if (!isDefaultPlayerNickname(nick)) return nick;
+  const steamName = (currentUser?.steamId || account?.steamId)
+    ? cleanText(currentUser?.steamProfile?.name || account?.steamProfile?.name, 24) : '';
+  return steamName || cleanText(currentUser?.name, 24) || nick || 'Гравець';
+}
+
 function applySteamIdentity(steamId, rawProfile, { skipAutoSync = false } = {}) {
   const profile = normalizeSteamProfile(rawProfile, steamId) || fallbackSteamProfile(steamId);
   const currentNick = cleanText(account?.nick, 24);
-  const useSteamName = !currentNick || currentNick.startsWith('Гравець_') || /^Steam_\d{4}$/.test(currentNick);
+  const useSteamName = isDefaultPlayerNickname(currentNick);
   const importRecord = getSteamImportRecord(steamId);
   const steamImports = getSteamImportMap();
   steamImports[steamId] = importRecord;
@@ -8657,6 +8647,7 @@ function applySteamIdentity(steamId, rawProfile, { skipAutoSync = false } = {}) 
   };
   if (sameSteamAccount) account.steamAccount = sameSteamAccount;
   else delete account.steamAccount;
+  delete account.isGuest;
   currentUser = {
     ...(currentUser || {}),
     steamId,
@@ -8670,43 +8661,6 @@ function applySteamIdentity(steamId, rawProfile, { skipAutoSync = false } = {}) 
   applyLoggedInUI();
   updateAccountUI();
   saveState({ skipCloudAutoSync: true, skipSteamAutoSync: skipAutoSync });
-}
-
-function importSteamItems(steamId, items) {
-  const known = getKnownSteamAssetIds(steamId);
-  const imported = [];
-  (Array.isArray(items) ? items : []).forEach((item, index) => {
-    const assetId = cleanText(item?.id, 64);
-    const img = cleanImageUrl(item?.img);
-    if (!assetId || known.has(assetId) || !img) return;
-    known.add(assetId);
-    const wear = rollWear();
-    const basePrice = estimateInventoryPrice(item, index);
-    imported.push({
-      id: `steam-copy-${steamId}-${assetId}`,
-      steamAssetId: assetId,
-      steamOwnerId: steamId,
-      steamImported: true,
-      sourceSkinId: assetId,
-      name: cleanText(item?.name, 160) || 'CS2 Skin',
-      rarity: cleanText(item?.rarity, 48) || 'CS2',
-      rarityColor: cleanColor(item?.rarityColor),
-      img,
-      basePrice,
-      wear,
-      marketPrice: 0,
-      price: 0,
-      virtual: true,
-      addedAt: Date.now()
-    });
-  });
-  userInventory.push(...imported);
-  setSteamImportRecord(steamId, {
-    steamId,
-    assetIds: [...known].slice(-5_000),
-    lastSyncAt: Date.now()
-  });
-  return imported;
 }
 
 function setSteamSyncUI(syncing) {
@@ -8726,17 +8680,9 @@ function setSteamSyncUI(syncing) {
   });
 }
 
-async function fetchSteamInventoryPage(cursor = '') {
-  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
-  const response = await fetch(`/api/steam/inventory${query}`, { cache: 'no-store', credentials: 'same-origin' });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(cleanText(data?.error || 'Не вдалося завантажити Steam-інвентар.', 180));
-  return data;
-}
-
-async function performSteamInventorySync() {
+async function performSteamProfileSync() {
   const status = document.getElementById('inventoryStatus');
-  if (status) status.textContent = 'Оновлюємо публічний Steam-профіль і перевіряємо нові предмети…';
+  if (status) status.textContent = 'Оновлюємо Steam-профіль без імпорту предметів…';
   setSteamConnectionState('syncing');
   setSteamSyncUI(true);
   try {
@@ -8744,62 +8690,41 @@ async function performSteamInventorySync() {
     const profile = session.profile;
     const steamId = profile?.steamId;
     if (!/^\d{17}$/.test(String(steamId || ''))) throw new Error('Steam-профіль не підтверджено.');
-    applySteamIdentity(steamId, profile);
-    let cursor = '';
-    let pages = 0;
-    let inventoryProfile = profile;
-    const items = [];
-    do {
-      pages += 1;
-      if (status) status.textContent = `Скануємо Steam-інвентар: сторінка ${pages}${pages > 1 ? ` · знайдено ${items.length}` : ''}…`;
-      const data = await fetchSteamInventoryPage(cursor);
-      inventoryProfile = normalizeSteamProfile(data.profile, steamId) || inventoryProfile;
-      items.push(...(Array.isArray(data.items) ? data.items : []));
-      cursor = data.hasMore && /^\d{1,24}$/.test(String(data.nextCursor || '')) ? String(data.nextCursor) : '';
-    } while (cursor && pages < STEAM_SYNC_PAGE_LIMIT);
-    applySteamIdentity(steamId, inventoryProfile);
-    const imported = importSteamItems(steamId, items);
-    // Imports enter with no invented value. Start a bounded server quote batch
-    // immediately; unavailable entries remain visibly unpriced.
-    if (imported.length) void refreshRecentInventoryMarketPrices(80);
-    const truncated = Boolean(cursor);
-    if (status) status.textContent = imported.length
-      ? `Steam синхронізовано: додано ${imported.length} нових віртуальних копій${truncated ? ' з перших 3 000 предметів' : ''}.`
-      : `Steam синхронізовано: нових предметів немає. Продані у грі копії не повертаються${truncated ? '; перевірено перші 3 000 предметів' : ''}.`;
-    applyLoggedInUI();
-    updateAccountUI();
-    renderInventoryGrid();
-    renderProfileInventory();
-    updateAvatarBadge();
-    saveState();
-    renderGameHub();
-    checkAchievements();
+    // Identity refresh is separate from the existing game-save sync. Never
+    // load Steam assets, merge an external inventory or reprice owned skins.
+    applySteamIdentity(steamId, profile, { skipAutoSync: true });
+    refreshInventoryModal();
     setSteamConnectionState('connected');
-    showToast(imported.length ? `Steam: +${imported.length} нових предметів` : 'Steam уже синхронізований', 'success');
-  } catch (e) {
-    const message = e?.message || 'Не вдалося завантажити інвентар';
+    showToast('Steam-профіль оновлено. Предмети зі Steam не імпортуються.', 'success');
+    return true;
+  } catch (error) {
+    const message = error?.message || 'Не вдалося оновити Steam-профіль';
     const needsLogin = /сесі|підтверджено|увійди/i.test(String(message));
-    if (status) status.textContent = `${message}. ${needsLogin ? 'Підключи Steam ще раз.' : 'Профіль збережено, повтори синхронізацію пізніше.'}`;
+    if (status) status.textContent = `${message}. ${needsLogin ? 'Підключи Steam ще раз.' : 'Ігровий інвентар збережено, повтори пізніше.'}`;
     setSteamConnectionState(needsLogin ? 'expired' : 'error', message);
     showToast(message, 'warn');
     if (needsLogin) startSteamLogin();
+    return false;
   } finally {
     setSteamSyncUI(false);
   }
 }
 
-async function syncSteamInventory() {
+async function syncSteamProfile() {
   if (steamSyncPromise) {
-    showToast('Steam уже синхронізується', 'info');
+    showToast('Steam-профіль уже оновлюється', 'info');
     return steamSyncPromise;
   }
-  steamSyncPromise = performSteamInventorySync();
+  steamSyncPromise = performSteamProfileSync();
   try {
     return await steamSyncPromise;
   } finally {
     steamSyncPromise = null;
   }
 }
+
+// Compatibility for old inline handlers: this now refreshes identity only.
+const syncSteamInventory = syncSteamProfile;
 
 async function disconnectSteam() {
   if (!currentUser?.steamId || steamSyncPromise) return;
@@ -8878,10 +8803,12 @@ async function processSteamCallback() {
     const session = await fetchSteamSession();
     applySteamIdentity(session.profile.steamId, session.profile, { skipAutoSync: true });
     await bootstrapSteamAccount(session.profile, { announce: true });
+    setSteamConnectionState('connected');
   } catch (error) {
-    showToast(error?.message || 'Не вдалося підключити Steam-збереження.', 'warn');
+    const message = error?.message || 'Не вдалося підключити Steam-збереження.';
+    setSteamConnectionState('error', message);
+    showToast(message, 'warn');
   }
-  await syncSteamInventory();
   return true;
 }
 
@@ -15096,6 +15023,7 @@ window.leaveBattleRoom = leaveBattleRoom;
 window.startSteamLogin = startSteamLogin;
 window.continueSteamLogin = continueSteamLogin;
 window.syncSteamInventory = syncSteamInventory;
+window.syncSteamProfile = syncSteamProfile;
 window.disconnectSteam = disconnectSteam;
 window.deleteSteamAccount = deleteSteamAccount;
 window.dismissSteamNudge = dismissSteamNudge;
