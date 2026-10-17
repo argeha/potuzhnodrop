@@ -860,10 +860,14 @@ const DEMO_STARTING_BALANCE = 12;
 const ECONOMY_TASK_REWARD_MULTIPLIER = 0.004;
 const DAILY_TASK_MIN_REWARD = 0.20;
 const WEEKLY_TASK_MIN_REWARD = 1;
+// Boost daily/weekly missions only; achievements and collection payouts also
+// use economyReward and deliberately keep their existing amounts.
+const TASK_COIN_REWARD_MULTIPLIER = 5;
 // No application-level daily cap. Real payouts still require a configured
 // provider and a server-verified completion receipt, never a button click.
 const REWARDED_COIN_AMOUNT = 25;
 const REWARDED_DAILY_LIMIT = null;
+const LEVEL_COIN_REWARD_AMOUNT = 50;
 const REFERRAL_MILESTONES = Object.freeze([
   { id: 'level_3', label: 'LVL 3', ownerReward: 20, recruitReward: 3 },
   { id: 'level_10', label: 'LVL 10', ownerReward: 30, recruitReward: 5 },
@@ -1522,6 +1526,10 @@ function seededRandom(seed) {
   };
 }
 
+function taskCoinReward(amount, minimum = DAILY_TASK_MIN_REWARD) {
+  return roundPc(economyReward(amount, minimum) * TASK_COIN_REWARD_MULTIPLIER);
+}
+
 function getDailyTasks() {
   ensureDailyState();
   const daily = gameState.daily;
@@ -1530,7 +1538,7 @@ function getDailyTasks() {
     && savedIds.every(id => TASK_POOL.some(task => task.id === id))) {
     return savedIds.map(id => {
       const task = TASK_POOL.find(entry => entry.id === id);
-      return { ...task, reward: economyReward(task.reward) };
+      return { ...task, reward: taskCoinReward(task.reward) };
     });
   }
   const date = getTodayKey();
@@ -1552,7 +1560,7 @@ function getDailyTasks() {
   localStorage.setItem(STORAGE.game, JSON.stringify(gameState));
   return daily.taskIds.map(id => {
     const task = TASK_POOL.find(entry => entry.id === id);
-    return { ...task, reward: economyReward(task.reward) };
+    return { ...task, reward: taskCoinReward(task.reward) };
   });
 }
 
@@ -1607,7 +1615,7 @@ function getWeeklyTasks() {
   const rng = seededRandom(key + '|potuzhno-w');
   const pool = WEEKLY_TASK_POOL.map(task => ({
     ...task,
-    reward: economyReward(task.reward, WEEKLY_TASK_MIN_REWARD)
+    reward: taskCoinReward(task.reward, WEEKLY_TASK_MIN_REWARD)
   }));
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
@@ -9067,19 +9075,35 @@ async function openRewardedAd() {
 
 const topupWatchAd = openRewardedAd;
 
-function topupLevelReward() {
-  const k = STORAGE.topup;
+function getLevelRewardReceipt() {
   let st = {};
-  try { st = JSON.parse(localStorage.getItem(k) || '{}'); } catch {}
+  try { st = JSON.parse(localStorage.getItem(STORAGE.topup) || '{}'); } catch {}
+  if (!st || typeof st !== 'object' || Array.isArray(st)) st = {};
+  const prestige = Math.max(0, Math.floor(Number(gameState.prestige) || 0));
+  // Keep one high-water mark per prestige. Migrating the old receipt must
+  // not pay a level again merely because its reward increased to 50 PC.
+  const claims = st.levelClaims && typeof st.levelClaims === 'object' && !Array.isArray(st.levelClaims)
+    ? st.levelClaims : { [prestige]: Math.max(0, Number(st.levelClaimed) || 0) };
+  st.levelClaims = claims;
+  return { st, claims, prestige };
+}
+
+function topupLevelReward() {
+  if (!currentUser || !gameState) return;
   const lvl = getPlayerLevel();
-  if (st.levelClaimed === lvl) {
+  if (!Number.isSafeInteger(lvl) || lvl < 2) {
+    showToast('Досягни нового рівня, щоб отримати бонус', 'info');
+    return;
+  }
+  const { st, claims, prestige } = getLevelRewardReceipt();
+  if ((Number(claims[prestige]) || 0) >= lvl) {
     showToast('Уже отримано', 'warn');
     return;
   }
-  // Levels are permanent progression, not an uncapped source of PC.
-  const reward = roundPc(Math.min(4, 0.5 + Math.max(0, lvl - 1) * 0.1));
+  const reward = LEVEL_COIN_REWARD_AMOUNT;
+  claims[prestige] = lvl;
   st.levelClaimed = lvl;
-  localStorage.setItem(k, JSON.stringify(st));
+  localStorage.setItem(STORAGE.topup, JSON.stringify(st));
   currentUser.balance = roundPc(currentUser.balance + reward);
   updateBalanceUI();
   saveState();
@@ -9091,7 +9115,7 @@ function updateTopupUI() {
   const adReward = document.getElementById('topupAdRewardLabel');
   if (adReward) adReward.textContent = `+${formatCredits(REWARDED_COIN_AMOUNT)} · ${REWARDED_DAILY_LIMIT === null ? 'без ліміту' : `до ${REWARDED_DAILY_LIMIT}/день`}`;
   const el = document.getElementById('topupLevelRewardLabel');
-  if (el) el.textContent = `+${formatCredits(roundPc(Math.min(4, 0.5 + Math.max(0, getPlayerLevel() - 1) * 0.1)))}`;
+  if (el) el.textContent = `+${formatCredits(LEVEL_COIN_REWARD_AMOUNT)}`;
   const referral = document.getElementById('topupReferralRewardLabel');
   if (referral) referral.textContent = `${formatCredits(REFERRAL_MILESTONES.reduce((sum, milestone) => sum + milestone.ownerReward, 0))}+`;
 }
@@ -9103,6 +9127,9 @@ function doPrestige() {
     return;
   }
   if (!window.confirm('Скинути XP та рівень? Отримаєш +10% XP назавжди.')) return;
+  // Freeze a legacy receipt under the old prestige before resetting levels,
+  // so it cannot block new-level rewards in the next prestige.
+  localStorage.setItem(STORAGE.topup, JSON.stringify(getLevelRewardReceipt().st));
   gameState.prestige = (gameState.prestige || 0) + 1;
   gameState.xp = 0;
   addXp(0);

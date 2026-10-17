@@ -34,6 +34,7 @@ const context = vm.createContext({
   STORAGE: { game: 'test-game' },
   getTodayKey: () => '2026-10-11',
   economyReward: value => value,
+  TASK_COIN_REWARD_MULTIPLIER: 5, DAILY_TASK_MIN_REWARD: 0.20,
   getPlayerLevel: () => context.playerLevel,
   ensureDailyState: () => {},
   updateTaskRewardSignal: () => { context.signalUpdates++; },

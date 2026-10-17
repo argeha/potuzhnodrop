@@ -13,18 +13,23 @@ const section = (from, to) => {
 const nodes = new Map();
 const node = id => { if (!nodes.has(id)) nodes.set(id, { textContent: '' }); return nodes.get(id); };
 const stored = new Map(), messages = [];
-let saves = 0, level = 27;
+let saves = 0, level = 27, runtimeTaskMultiplier = 1, earnedXp = 0;
 const ctx = vm.createContext({
-  document: { getElementById: node }, currentUser: { balance: 100 },
-  STORAGE: { topup: 'fixture-topup' },
+  document: { getElementById: node }, currentUser: { balance: 100 }, gameState: { prestige: 0 },
+  STORAGE: { topup: 'fixture-topup', game: 'fixture-game' },
   localStorage: { getItem: key => stored.get(key) || null, setItem: (key, value) => stored.set(key, value) },
   getPlayerLevel: () => level, roundPc: amount => Math.round(amount * 100) / 100,
+  getRuntimeEconomy: () => ({ taskRewardMultiplier: runtimeTaskMultiplier }),
+  getTodayKey: () => '2026-10-17', ensureDailyState: () => {}, ensureWeeklyState: () => {},
+  addXp: amount => { earnedXp += amount; }, XP_DAILY_TASK: 25, XP_WEEKLY_TASK: 50,
+  renderGameHub: () => {}, soundCoin: () => {}, setTimeout: callback => callback(),
+  PRESTIGE_LEVEL_REQUIRED: 30, window: { confirm: () => true }, closeModal: () => {}, soundWin: () => {},
   formatCredits: amount => `${Number(amount).toLocaleString('en-US', { maximumFractionDigits: 2 })} PC`,
   updateBalanceUI: () => {}, saveState: () => { saves++; }, checkAchievements: () => {},
   showToast: (message, type) => messages.push({ message, type })
 });
-vm.runInContext(section('const REWARDED_COIN_AMOUNT', '// Return rates'), ctx);
-vm.runInContext(section('async function openRewardedAd()', 'function doPrestige()'), ctx);
+vm.runInContext(section('const ECONOMY_TASK_REWARD_MULTIPLIER', '// Return rates'), ctx);
+vm.runInContext(section('async function openRewardedAd()', 'function estimateInventoryPrice('), ctx);
 const policy = JSON.parse(vm.runInContext('JSON.stringify({ amount:REWARDED_COIN_AMOUNT, limit:REWARDED_DAILY_LIMIT, milestones:REFERRAL_MILESTONES })', ctx));
 assert.equal(policy.amount, 25);
 assert.equal(policy.limit, null, 'No application-level daily advertisement cap');
@@ -33,7 +38,7 @@ assert.equal(policy.milestones.reduce((sum, entry) => sum + entry.ownerReward, 0
 ctx.updateTopupUI();
 assert.equal(node('topupAdRewardLabel').textContent, '+25 PC · без ліміту');
 assert.equal(node('topupReferralRewardLabel').textContent, '200 PC+');
-assert.ok(node('topupLevelRewardLabel').textContent.includes('3.1 PC'), 'Do not change an unspecified level reward');
+assert.equal(node('topupLevelRewardLabel').textContent, '+50 PC');
 assert.ok(html.includes('id="topupAdRewardLabel"') && html.includes('+25 PC · без ліміту'));
 assert.ok(html.includes('id="rewardedAdStatus"') && html.includes('Рекламний слот ще не підключено.'));
 assert.ok(html.includes('id="profileReferralReward">200 PC'));
@@ -45,9 +50,77 @@ assert.equal(stored.size, 0); assert.equal(saves, 0);
 assert.ok(messages.every(entry => entry.type === 'info' && entry.message.includes('+25 PC')
   && entry.message.includes('не підключено') && entry.message.includes('не нараховуються')));
 ctx.topupLevelReward();
-assert.equal(ctx.currentUser.balance, 103.1);
+assert.equal(ctx.currentUser.balance, 150);
 ctx.topupLevelReward();
-assert.equal(ctx.currentUser.balance, 103.1, 'Existing level claim protection remains in place');
+assert.equal(ctx.currentUser.balance, 150, 'Repeated clicks cannot claim the same level');
+// Re-evaluate the actual functions to model a reload using the saved receipt.
+vm.runInContext(section('function topupLevelReward()', 'function doPrestige()'), ctx);
+ctx.topupLevelReward();
+assert.equal(ctx.currentUser.balance, 150, 'A reload does not replay the level reward');
+level = 28; ctx.topupLevelReward();
+assert.equal(ctx.currentUser.balance, 200, 'The next earned level pays exactly 50 PC');
+level = 27; ctx.topupLevelReward();
+assert.equal(ctx.currentUser.balance, 200, 'A lower level cannot bypass the high-water mark');
+ctx.gameState.prestige = 1; level = 1; ctx.topupLevelReward();
+assert.equal(ctx.currentUser.balance, 200, 'A prestige reset is not an earned level');
+level = 2; ctx.topupLevelReward(); ctx.topupLevelReward();
+assert.equal(ctx.currentUser.balance, 250, 'New levels in a new prestige pay once');
+ctx.gameState.prestige = 0; level = 28; ctx.topupLevelReward();
+assert.equal(ctx.currentUser.balance, 250, 'Returning to a previously claimed prestige cannot replay a reward');
+stored.set('fixture-topup', JSON.stringify({levelClaimed:28}));
+ctx.topupLevelReward();
+assert.equal(ctx.currentUser.balance, 250, 'Legacy level receipts are not paid again at the higher amount');
+level = 29; ctx.topupLevelReward();
+assert.equal(ctx.currentUser.balance, 300, 'The next unclaimed level receives the new amount after migration');
+stored.set('fixture-topup', JSON.stringify({levelClaimed:30}));
+level = 30; ctx.doPrestige(); level = 2; ctx.topupLevelReward();
+assert.equal(ctx.currentUser.balance, 350, 'Prestige migrates legacy receipts before reset, so new levels are not blocked');
+assert.equal(JSON.parse(stored.get('fixture-topup')).levelClaims['0'], 30);
+ctx.topupLevelReward();
+assert.equal(ctx.currentUser.balance, 350);
+
+// Exercise the real task definitions, selection, reward math and claim guards.
+vm.runInContext(section('function economyReward(', 'const FREE_CASE_COOLDOWN'), ctx);
+vm.runInContext(section('const TASK_POOL = [', 'const ACHIEVEMENT_DEFINITIONS = ['), ctx);
+vm.runInContext(section('function createDefaultDaily()', 'function createDefaultPowerRun()'), ctx);
+vm.runInContext(section('function claimDailyTask(', 'function renderWeeklyTasks()'), ctx);
+vm.runInContext(section('function claimWeeklyTask(', 'function renderAchievements()'), ctx);
+assert.equal(vm.runInContext('TASK_COIN_REWARD_MULTIPLIER', ctx), 5);
+assert.equal(ctx.economyReward(100), 0.4, 'Unrelated achievements and collection math must not be boosted');
+const taskRanges = JSON.parse(vm.runInContext(`JSON.stringify({
+  daily:TASK_POOL.map(task=>taskCoinReward(task.reward)),
+  weekly:WEEKLY_TASK_POOL.map(task=>taskCoinReward(task.reward,WEEKLY_TASK_MIN_REWARD))
+})`, ctx));
+assert.equal(Math.min(...taskRanges.daily), 1); assert.equal(Math.max(...taskRanges.daily), 19);
+assert.equal(Math.min(...taskRanges.weekly), 14); assert.equal(Math.max(...taskRanges.weekly), 30);
+runtimeTaskMultiplier = 1.5;
+assert.equal(ctx.taskCoinReward(100), 3, 'The published admin multiplier is applied once, not bypassed or doubled');
+runtimeTaskMultiplier = 1;
+const dailyIds = ['catalog_view', 'inventory_view', 'odds_view', 'cases_1', 'rolls_1'];
+ctx.gameState.daily = { ...ctx.createDefaultDaily(), taskIds: dailyIds, taskTier: 'starter' };
+ctx.gameState.weekly = ctx.createDefaultWeekly();
+const selectedBefore = ctx.getDailyTasks();
+assert.deepEqual(Array.from(selectedBefore, task => task.id), dailyIds, 'A reward increase must not reroll saved tasks');
+const balanceBeforeTasks = ctx.currentUser.balance;
+ctx.claimDailyTask('catalog_view'); ctx.claimWeeklyTask(ctx.getWeeklyTasks()[0].id);
+assert.equal(ctx.currentUser.balance, balanceBeforeTasks, 'Incomplete missions cannot be claimed');
+ctx.gameState.daily.catalogViews = 1;
+ctx.claimDailyTask('catalog_view'); ctx.claimDailyTask('catalog_view');
+assert.equal(ctx.currentUser.balance, balanceBeforeTasks + 1, 'Completed starter mission pays the boosted amount once');
+assert.equal(earnedXp, 25, 'Task coin boosts must not multiply XP');
+assert.deepEqual(Array.from(ctx.gameState.daily.claimed), ['catalog_view']);
+for (const key of Object.keys(ctx.gameState.weekly)) {
+  if (typeof ctx.gameState.weekly[key] === 'number') ctx.gameState.weekly[key] = 1_000_000;
+}
+const weekly = ctx.getWeeklyTasks()[0];
+ctx.claimWeeklyTask(weekly.id); ctx.claimWeeklyTask(weekly.id);
+assert.equal(ctx.currentUser.balance, balanceBeforeTasks + 1 + weekly.reward, 'Weekly missions pay the shown boosted amount once');
+assert.equal(earnedXp, 75);
+assert.deepEqual(Array.from(ctx.gameState.weekly.claimed), [weekly.id]);
+ctx.gameState = JSON.parse(JSON.stringify(ctx.gameState));
+ctx.claimDailyTask('catalog_view'); ctx.claimWeeklyTask(weekly.id);
+assert.equal(ctx.currentUser.balance, balanceBeforeTasks + 1 + weekly.reward, 'Restored claim markers prevent re-paying completed missions');
+assert.equal(earnedXp, 75);
 
 // All identities, balances and receipts below are isolated test fixtures.
 class MemoryStorage {
@@ -139,7 +212,7 @@ const publicResponse = await worker.fetch(new Request('https://fixture.invalid/_
   body: JSON.stringify({ accountId: owner, referredSteamId: recruit, claim: policy.milestones[0] })
 }), { ASSETS: { fetch: async () => new Response('Not found', { status: 404 }) } });
 assert.equal(publicResponse.status, 404, 'The browser cannot call internal reward-credit routes');
-console.log('Bonus rewards passed: 200 PC server milestones, exact once-only payouts, legacy receipts, Steam identity locks, 25 PC uncapped ad policy, honest unavailable ads and no click-to-mint.');
+console.log('Bonus rewards passed: 50 PC level claims, reload/legacy/prestige guards, 5x daily/weekly coins with unchanged selection/XP/claim markers, 200 PC server milestones, Steam identity locks and no click-to-mint.');
 
 // Optional visual QA uses the actual modal, constants, functions and styles,
 // but only disposable in-memory data. No real saves, auth, ads or payouts.
@@ -149,7 +222,7 @@ if (process.argv.includes('--preview')) {
   const start = html.indexOf('<div id="topupModal"');
   const modal = html.slice(start, html.indexOf('\n', start));
   const setup = `
-    const currentUser={balance:100};const STORAGE={topup:'test-only'};const memory=new Map();
+    const currentUser={balance:100};const gameState={prestige:0};const STORAGE={topup:'test-only'};const memory=new Map();
     const fixtureStorage={getItem:key=>memory.get(key)||null,setItem:(key,value)=>memory.set(key,value)};
     const getPlayerLevel=()=>27,roundPc=value=>Math.round(value*100)/100;
     const formatCredits=value=>Number(value).toLocaleString('en-US',{maximumFractionDigits:2})+' PC';
