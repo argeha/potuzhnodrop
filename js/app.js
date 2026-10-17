@@ -788,15 +788,17 @@ function setProfileVisibility(value) {
   if (account) account.profileVisibility = profileVisibility;
 }
 
-// Case reels are deliberately lighter on entry-level phones and on devices
-// where the visitor explicitly asks the browser to reduce motion. This keeps
-// the result visible and centred instead of dropping frames while dozens of
-// remote skin previews are decoded at once.
+// One render-only policy for explicit lite mode and automatic weak-device
+// detection. Never use it for chances, rewards, matchmaking or target timers.
+let lightweightMotionQuery;
 function prefersLightweightMotion() {
   if (gameState?.performanceMode === 'lite') return true;
-  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  if (lightweightMotionQuery === undefined) {
+    lightweightMotionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)') || null;
+  }
+  const reduceMotion = lightweightMotionQuery?.matches;
   const saveData = navigator.connection?.saveData === true;
-  const lowMemory = Number(navigator.deviceMemory) > 0 && Number(navigator.deviceMemory) <= 2;
+  const lowMemory = Number(navigator.deviceMemory) > 0 && Number(navigator.deviceMemory) <= 4;
   const fewCores = Number(navigator.hardwareConcurrency) > 0 && Number(navigator.hardwareConcurrency) <= 2;
   return Boolean(reduceMotion || saveData || lowMemory || fewCores);
 }
@@ -806,38 +808,55 @@ function getPerformanceMode() {
 }
 
 function applyPerformanceMode() {
-  const isLite = getPerformanceMode() === 'lite';
+  const isLite = prefersLightweightMotion();
+  const quality = isLite ? 'lite' : 'full';
+  const changed = document.documentElement.dataset.renderQuality !== quality;
   document.body.classList.toggle('performance-lite', isLite);
-  document.documentElement.dataset.performance = isLite ? 'lite' : 'auto';
+  document.documentElement.dataset.performance = getPerformanceMode();
+  document.documentElement.dataset.renderQuality = quality;
+  if (changed && typeof refreshPerformanceCanvases === 'function') refreshPerformanceCanvases();
 }
 
 function setPerformanceMode(mode) {
   if (!gameState) return;
-  gameState.performanceMode = mode === 'lite' ? 'lite' : 'auto';
+  const nextMode = mode === 'lite' ? 'lite' : 'auto';
+  if (getPerformanceMode() === nextMode) return;
+  gameState.performanceMode = nextMode;
   applyPerformanceMode();
   saveState();
   renderPerformancePanel();
-  if (currentPage === 'case') renderCaseCatalog();
-  if (document.getElementById('shopModal')?.classList.contains('flex')) filterShop();
-  showToast(gameState.performanceMode === 'lite'
-    ? 'Легкий режим увімкнено: менше анімацій і декоративних карток.'
+  // Changing graphics must not rebuild/reprice the whole case catalogue or
+  // refilter thousands of wear variants just to display fewer cards.
+  if (document.getElementById('shopModal')?.classList.contains('flex')) {
+    visibleSkinCount = getCatalogRenderPageSize();
+    renderShopGrid(filteredSkins);
+  }
+  if (typeof renderCommunityFeed === 'function' && typeof communitySnapshot !== 'undefined') {
+    communityFeedKey = null;
+    renderCommunityFeed(communitySnapshot?.events || []);
+  }
+  showToast(prefersLightweightMotion()
+    ? 'Полегшення увімкнено: без декоративних анімацій, менше карток і легші колеса.'
     : 'Автоматичний режим продуктивності увімкнено.', 'success');
 }
 
 function getCaseReelConfig(soundDurationMs = 0) {
-  const manualLite = getPerformanceMode() === 'lite';
-  const base = prefersLightweightMotion()
-    ? { cards: manualLite ? 18 : 24, winnerIndex: manualLite ? 13 : 18, duration: manualLite ? 1_450 : 2_350 }
+  const lightweight = prefersLightweightMotion();
+  const base = lightweight
+    ? { cards: 12, winnerIndex: 8, duration: 900 }
     : { cards: 34, winnerIndex: 27, duration: 3_850 };
   const soundtrackDuration = Math.round(Number(soundDurationMs) || 0);
   return {
     ...base,
-    // A valid soundtrack duration always wins: the reel reaches its result
-    // exactly when its music ends. The fallback keeps offline playback fluid.
-    duration: !manualLite && soundtrackDuration >= 1_000 ? soundtrackDuration : base.duration
+    // Full mode follows the soundtrack; weak devices always use the short
+    // visual track. The already-selected winner is identical in both modes.
+    duration: !lightweight && soundtrackDuration >= 1_000 ? soundtrackDuration : base.duration
   };
 }
 
+function getLiveFeedRenderLimit() {
+  return prefersLightweightMotion() ? 6 : 14;
+}
 
 let battlePlayerItem = null;
 let battleBotItem = null;
@@ -4239,7 +4258,10 @@ function renderPerformancePanel() {
   }
   const mode = getPerformanceMode();
   const automaticSavings = mode === 'auto' && prefersLightweightMotion();
-  panel.innerHTML = `<div class="flex items-start justify-between gap-3"><div><p class="text-[11px] font-extrabold text-violet-100"><i class="fa-solid fa-gauge-high mr-1.5 text-violet-300"></i>Швидкодія</p><p class="mt-1 text-[10px] leading-4 text-gray-400">Легкий режим прибирає декоративні прев’ю поза екраном і скорочує анімації. Шанси, ціни та результати не змінюються.</p></div><span class="shrink-0 rounded-md border ${mode === 'lite' ? 'border-emerald-400/35 bg-emerald-500/10 text-emerald-200' : 'border-gray-600/50 bg-black/20 text-gray-300'} px-2 py-1 text-[8px] font-extrabold">${mode === 'lite' ? 'ЛЕГКИЙ' : automaticSavings ? 'АВТО · ЕКОНОМНО' : 'АВТО'}</span></div><div class="mt-3 grid grid-cols-2 gap-2"><button type="button" onclick="setPerformanceMode('auto')" class="rounded-lg border px-2 py-2 text-[10px] font-extrabold transition ${mode === 'auto' ? 'border-cyan-400/45 bg-cyan-400/10 text-cyan-100' : 'border-gray-700 bg-black/20 text-gray-400 hover:border-gray-500'}">Автоматично</button><button type="button" onclick="setPerformanceMode('lite')" class="rounded-lg border px-2 py-2 text-[10px] font-extrabold transition ${mode === 'lite' ? 'border-emerald-400/45 bg-emerald-500/10 text-emerald-100' : 'border-gray-700 bg-black/20 text-gray-400 hover:border-gray-500'}">Легкий режим</button></div>`;
+  const focusedMode = panel.contains(document.activeElement)
+    ? document.activeElement?.getAttribute('data-performance-mode') : null;
+  panel.innerHTML = `<div class="flex items-start justify-between gap-3"><div><p class="text-[11px] font-extrabold text-violet-100"><i class="fa-solid fa-gauge-high mr-1.5 text-violet-300"></i>Швидкодія</p><p class="mt-1 text-[10px] leading-4 text-gray-400">Менше карток і деталізації коліс, без декоративних анімацій, розмиття та сяйва. Авто вмикає полегшення на слабких пристроях. Шанси, ціни й нагороди незмінні.</p></div><span class="shrink-0 rounded-md border ${mode === 'lite' ? 'border-emerald-400/35 bg-emerald-500/10 text-emerald-200' : 'border-gray-600/50 bg-black/20 text-gray-300'} px-2 py-1 text-[8px] font-extrabold">${mode === 'lite' ? 'ЛЕГКИЙ' : automaticSavings ? 'АВТО · ЕКОНОМНО' : 'АВТО'}</span></div><div class="mt-3 grid grid-cols-2 gap-2"><button type="button" data-performance-mode="auto" aria-pressed="${mode === 'auto'}" onclick="setPerformanceMode('auto')" class="rounded-lg border px-2 py-2 text-[10px] font-extrabold transition ${mode === 'auto' ? 'border-cyan-400/45 bg-cyan-400/10 text-cyan-100' : 'border-gray-700 bg-black/20 text-gray-400 hover:border-gray-500'}">Автоматично</button><button type="button" data-performance-mode="lite" aria-pressed="${mode === 'lite'}" onclick="setPerformanceMode('lite')" class="rounded-lg border px-2 py-2 text-[10px] font-extrabold transition ${mode === 'lite' ? 'border-emerald-400/45 bg-emerald-500/10 text-emerald-100' : 'border-gray-700 bg-black/20 text-gray-400 hover:border-gray-500'}">Легкий режим</button></div>`;
+  if (focusedMode) panel.querySelector(`[data-performance-mode="${focusedMode}"]`)?.focus({ preventScroll: true });
 }
 
 function updateAccountUI() {
@@ -6099,21 +6121,36 @@ function createCaseDropItems(winners, rolls, isFree = false) {
 
 const CANVAS_SIZE = 260;
 let canvasCtx = null;
+const upgradeCanvasFrame = { chancePercent: 0, pointerAngle: 0 };
+
+function refreshPerformanceCanvases() {
+  if (canvasCtx) {
+    initCanvas();
+    renderCanvas(upgradeCanvasFrame.chancePercent, upgradeCanvasFrame.pointerAngle);
+  }
+  if (royaleWheelCtx) {
+    initRoyaleCanvas();
+    drawRoyaleWheel(royaleWheelAngle);
+  }
+}
 
 function initCanvas() {
   const c = document.getElementById('upgradeCanvas');
   if (!c) return;
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const dpr = prefersLightweightMotion() ? 1 : Math.min(window.devicePixelRatio || 1, 2);
   c.width = CANVAS_SIZE * dpr;
   c.height = CANVAS_SIZE * dpr;
   c.style.width = CANVAS_SIZE + 'px';
   c.style.height = CANVAS_SIZE + 'px';
   canvasCtx = c.getContext('2d');
-  canvasCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  canvasCtx?.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
 function renderCanvas(chancePercent, pointerAngle = 0) {
   if (!canvasCtx) return;
+  upgradeCanvasFrame.chancePercent = chancePercent;
+  upgradeCanvasFrame.pointerAngle = pointerAngle;
+  const lightweight = prefersLightweightMotion();
   const ctx = canvasCtx, size = CANVAS_SIZE, cx = size / 2, cy = size / 2;
   const outerR = size / 2 - 4;   // tick ring
   const arcR   = size / 2 - 18;  // main coloured arc
@@ -6129,7 +6166,7 @@ function renderCanvas(chancePercent, pointerAngle = 0) {
   ctx.stroke();
 
   // ── Degree tick marks ───────────────────────────────────────────────────
-  const TICKS = 60;
+  const TICKS = lightweight ? 30 : 60;
   for (let i = 0; i < TICKS; i++) {
     const a = (i / TICKS) * Math.PI * 2 - Math.PI / 2;
     const isMajor = i % 5 === 0;
@@ -6152,19 +6189,22 @@ function renderCanvas(chancePercent, pointerAngle = 0) {
     // neon glow shadow
     ctx.save();
     ctx.shadowColor = 'rgba(245, 158, 11, 0.75)';
-    ctx.shadowBlur = 22;
+    ctx.shadowBlur = lightweight ? 0 : 22;
 
     ctx.beginPath();
     // Arc always drawn starting from top (-Math.PI/2) clockwise matching the rotation
     ctx.arc(cx, cy, arcR, st, st + sweep);
     ctx.lineWidth = 22;
     ctx.lineCap = sweepFrac >= 0.98 ? 'butt' : 'round';
-    const g = ctx.createLinearGradient(0, 0, size, size);
-    g.addColorStop(0, '#f59e0b');
-    g.addColorStop(0.35, '#fde047');
-    g.addColorStop(0.7, '#fbbf24');
-    g.addColorStop(1, '#f97316');
-    ctx.strokeStyle = g;
+    ctx.strokeStyle = '#fbbf24';
+    if (!lightweight) {
+      const g = ctx.createLinearGradient(0, 0, size, size);
+      g.addColorStop(0, '#f59e0b');
+      g.addColorStop(0.35, '#fde047');
+      g.addColorStop(0.7, '#fbbf24');
+      g.addColorStop(1, '#f97316');
+      ctx.strokeStyle = g;
+    }
     ctx.stroke();
     ctx.restore();
   }
@@ -6183,7 +6223,7 @@ function renderCanvas(chancePercent, pointerAngle = 0) {
     const py = cy + Math.sin(a) * arcR;
 
     // motion trail (3 fading dots)
-    for (let t = 1; t <= 3; t++) {
+    for (let t = 1; t <= (lightweight ? 0 : 3); t++) {
       const ta = a - (t * 0.07);
       const tx = cx + Math.cos(ta) * arcR;
       const ty = cy + Math.sin(ta) * arcR;
@@ -6196,7 +6236,7 @@ function renderCanvas(chancePercent, pointerAngle = 0) {
     // line from centre to dot
     ctx.save();
     ctx.shadowColor = '#fbbf24';
-    ctx.shadowBlur = 8;
+    ctx.shadowBlur = lightweight ? 0 : 8;
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.lineTo(px, py);
@@ -6208,7 +6248,7 @@ function renderCanvas(chancePercent, pointerAngle = 0) {
     // glow dot
     ctx.save();
     ctx.shadowColor = '#fbbf24';
-    ctx.shadowBlur = 20;
+    ctx.shadowBlur = lightweight ? 0 : 20;
     ctx.beginPath();
     ctx.arc(px, py, 7, 0, Math.PI * 2);
     ctx.fillStyle = '#fff';
@@ -7124,11 +7164,12 @@ function renderLeaderboard() {
 function renderCommunityFeed(events) {
   const feed = document.getElementById('liveFeed');
   if (!feed || !Array.isArray(events)) return;
-  const key = events.map(event => event?.id || '').join('|');
+  const limit = getLiveFeedRenderLimit();
+  const key = `${limit}:` + events.map(event => event?.id || '').join('|');
   if (key === communityFeedKey) return;
   communityFeedKey = key;
   feed.replaceChildren();
-  const validEvents = events.filter(event => event?.skin?.name && event?.name);
+  const validEvents = events.filter(event => event?.skin?.name && event?.name).slice(0, limit);
   if (!validEvents.length) {
     feed.innerHTML = '<p class="px-2 text-[11px] font-bold text-gray-500">Поки тихо — відкрий кейс першим.</p>';
     return;
@@ -12892,7 +12933,13 @@ const ROYALE_LIVE_MAX_SKINS = 10;
 function initRoyaleCanvas() {
   const c = document.getElementById('royaleWheelCanvas');
   if (!c) return;
+  const pixels = prefersLightweightMotion() ? 300 : 440;
+  if (c.width !== pixels || c.height !== pixels) {
+    c.width = pixels;
+    c.height = pixels;
+  }
   royaleWheelCtx = c.getContext('2d');
+  royaleWheelCtx?.setTransform(pixels / 440, 0, 0, pixels / 440, 0, 0);
 }
 
 // ── Compute values ─────────────────────────────────────────────────────────
@@ -13434,17 +13481,23 @@ function royalePhaseLabel() {
 function drawRoyaleWheel(rotationRad = 0) {
   const ctx = royaleWheelCtx;
   if (!ctx) return;
-  const size = ctx.canvas.width;
+  const lightweight = prefersLightweightMotion();
+  // Logical geometry stays fixed while lite mode uses a smaller backing
+  // bitmap. Sector boundaries, participant labels and the winner stay put.
+  const size = 440;
   const cx = size / 2;
   const cy = size / 2;
   const radius = size * 0.445;
   ctx.clearRect(0, 0, size, size);
 
-  const backdrop = ctx.createRadialGradient(cx, cy, 8, cx, cy, radius + 22);
-  backdrop.addColorStop(0, '#10192b');
-  backdrop.addColorStop(0.72, '#070d1b');
-  backdrop.addColorStop(1, 'rgba(7,10,20,0)');
-  ctx.fillStyle = backdrop;
+  ctx.fillStyle = '#0b1220';
+  if (!lightweight) {
+    const backdrop = ctx.createRadialGradient(cx, cy, 8, cx, cy, radius + 22);
+    backdrop.addColorStop(0, '#10192b');
+    backdrop.addColorStop(0.72, '#070d1b');
+    backdrop.addColorStop(1, 'rgba(7,10,20,0)');
+    ctx.fillStyle = backdrop;
+  }
   ctx.beginPath();
   ctx.arc(cx, cy, radius + 18, 0, Math.PI * 2);
   ctx.fill();
@@ -13454,10 +13507,13 @@ function drawRoyaleWheel(rotationRad = 0) {
   if (!total) {
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    const empty = ctx.createRadialGradient(cx, cy, 5, cx, cy, radius);
-    empty.addColorStop(0, '#1b2840');
-    empty.addColorStop(1, '#0b1220');
-    ctx.fillStyle = empty;
+    ctx.fillStyle = '#111c2c';
+    if (!lightweight) {
+      const empty = ctx.createRadialGradient(cx, cy, 5, cx, cy, radius);
+      empty.addColorStop(0, '#1b2840');
+      empty.addColorStop(1, '#0b1220');
+      ctx.fillStyle = empty;
+    }
     ctx.fill();
   } else {
     let start = rotationRad - Math.PI / 2;
@@ -13472,11 +13528,14 @@ function drawRoyaleWheel(rotationRad = 0) {
       ctx.arc(cx, cy, radius, start + 0.006, end - 0.006);
       ctx.closePath();
       ctx.clip();
-      const sector = ctx.createRadialGradient(cx, cy, 24, cx, cy, radius);
-      sector.addColorStop(0, `${color}ee`);
-      sector.addColorStop(0.58, color);
-      sector.addColorStop(1, '#090f1d');
-      ctx.fillStyle = sector;
+      ctx.fillStyle = color;
+      if (!lightweight) {
+        const sector = ctx.createRadialGradient(cx, cy, 24, cx, cy, radius);
+        sector.addColorStop(0, `${color}ee`);
+        sector.addColorStop(0.58, color);
+        sector.addColorStop(1, '#090f1d');
+        ctx.fillStyle = sector;
+      }
       ctx.fillRect(0, 0, size, size);
       ctx.restore();
 
@@ -13495,7 +13554,7 @@ function drawRoyaleWheel(rotationRad = 0) {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.shadowColor = 'rgba(0,0,0,.75)';
-        ctx.shadowBlur = 6;
+        ctx.shadowBlur = lightweight ? 0 : 6;
         ctx.fillStyle = '#f8fafc';
         ctx.font = `800 ${share < 0.11 ? 11 : 14}px Inter, sans-serif`;
         ctx.fillText(entry.isYou ? 'ТИ' : entry.name.replace(/^AI_/, ''), 0, -8);
@@ -13508,15 +13567,17 @@ function drawRoyaleWheel(rotationRad = 0) {
     });
   }
 
-  for (let mark = 0; mark < 48; mark++) {
-    const angle = (mark / 48) * Math.PI * 2 - Math.PI / 2;
+  const marks = lightweight ? 24 : 48;
+  const majorEvery = lightweight ? 3 : 6;
+  for (let mark = 0; mark < marks; mark++) {
+    const angle = (mark / marks) * Math.PI * 2 - Math.PI / 2;
     const outer = radius + 7;
-    const inner = outer - (mark % 6 === 0 ? 10 : 5);
+    const inner = outer - (mark % majorEvery === 0 ? 10 : 5);
     ctx.beginPath();
     ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
     ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer);
-    ctx.strokeStyle = mark % 6 === 0 ? 'rgba(251,191,36,.8)' : 'rgba(203,213,225,.28)';
-    ctx.lineWidth = mark % 6 === 0 ? 2 : 1;
+    ctx.strokeStyle = mark % majorEvery === 0 ? 'rgba(251,191,36,.8)' : 'rgba(203,213,225,.28)';
+    ctx.lineWidth = mark % majorEvery === 0 ? 2 : 1;
     ctx.stroke();
   }
   ctx.beginPath();
@@ -14360,7 +14421,7 @@ function addActivityEvent({ player, skin, outcome = 'attempt', profile = null, c
     </span>`;
   el.addEventListener('click', openLiveFeedProfile);
   feed.prepend(el);
-  while (feed.children.length > 14) feed.removeChild(feed.lastElementChild);
+  while (feed.children.length > getLiveFeedRenderLimit()) feed.removeChild(feed.lastElementChild);
 }
 
 let liveFeedStarted = false;
@@ -14650,7 +14711,7 @@ function resetShopFilters() {
 
 let filterShopTimeout = null;
 function getCatalogRenderPageSize() {
-  return getPerformanceMode() === 'lite' ? 36 : 80;
+  return prefersLightweightMotion() ? 24 : 80;
 }
 
 function debounceFilterShop() {
@@ -14899,6 +14960,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Master interval timer for reset texts, daily roll, gift and free case cooldowns
   setInterval(() => {
+    if (document.hidden) return;
     if (document.getElementById('appUpdatesModal')?.classList.contains('flex')) renderAppReleaseUI();
     if (!gameState) return;
     const halloweenDate = getHalloweenEventStatus().date;

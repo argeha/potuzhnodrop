@@ -58,7 +58,13 @@ AAB) now runs `preparePotuzhnoWebAssets` before `preBuild`. It builds styles and
 the shared client, runs local `cap copy android`, and checks every copied file
 against `dist/` plus the source release fingerprint. A failed preparation stops
 the build instead of silently shipping stale UI. The application ID, API origin
-and installed user data remain unchanged. Version: `7.9.0`, Android code `38`.
+and installed user data remain unchanged. Version: `7.9.0`, Android code `39`.
+
+The performance release removes off-screen auto-containment and full catalogue
+rebuilds on graphics changes. Lite/automatically detected low-power mode uses
+plain decoration, simpler canvas bitmaps and smaller visual batches, without
+an artificial animation FPS cap or changes to odds, inventory or rewards.
+Settings are reachable from the header, menu and a separate profile action.
 
 Steam login restores only the saved game inventory, never the real Steam
 inventory. Manual Steam refresh updates the name/avatar only; the deprecated

@@ -56,7 +56,7 @@ const context = vm.createContext({
   resolveCaseConfig: id => ({ id, name: id }), getRuntimeEconomy: () => ({ casePriceMultiplier: 1 }),
   getCaseCatalogCandidates: () => caseCandidates, getFreeCaseCatalogCandidates: () => caseCandidates,
   getShopCatalogSource: () => catalog, isUsableSkin: skin => !!skin?.name,
-  getPerformanceMode: () => 'balanced', getInputVal: () => context.inputValue,
+  getPerformanceMode: () => 'auto', prefersLightweightMotion: () => false, getInputVal: () => context.inputValue,
   inputValue: 0, recalculateUpgrade: noOp,
   getSkinByKey: id => catalog.find(skin => String(skin.id) === String(id)),
   renderShopGrid: skins => { context.rendered = skins; },
