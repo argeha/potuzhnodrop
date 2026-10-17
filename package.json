@@ -15,7 +15,7 @@
     "mobile:sync": "npm run build:web && npx cap sync android",
     "mobile:open": "npx cap open android",
     "mobile:doctor": "npx cap doctor android",
-    "check": "node --check js/app.js && node --check src/worker.mjs && node scripts/test-product-ux.mjs && node scripts/test-target-arena.mjs && node scripts/test-arena-pass-reliability.mjs && node scripts/test-skin-drops.mjs && node scripts/test-inventory-safety.mjs && node scripts/test-round-history.mjs && node scripts/test-result-receipts.mjs && node scripts/test-product-polish.mjs && node scripts/test-android-assets.mjs && npm run build:styles && npm run build:assets && npx wrangler deploy --dry-run",
+    "check": "node --check js/app.js && node --check src/worker.mjs && node scripts/test-product-ux.mjs && node scripts/test-target-arena.mjs && node scripts/test-arena-pass-reliability.mjs && node scripts/test-skin-drops.mjs && node scripts/test-inventory-safety.mjs && node scripts/test-round-history.mjs && node scripts/test-result-receipts.mjs && node scripts/test-product-polish.mjs && node scripts/test-bonus-rewards.mjs && node scripts/test-android-assets.mjs && npm run build:styles && npm run build:assets && npx wrangler deploy --dry-run",
     "build": "npm run check",
     "dev": "npm run build:styles && npm run build:assets && wrangler dev"
   },

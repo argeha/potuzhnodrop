@@ -58,7 +58,7 @@ AAB) now runs `preparePotuzhnoWebAssets` before `preBuild`. It builds styles and
 the shared client, runs local `cap copy android`, and checks every copied file
 against `dist/` plus the source release fingerprint. A failed preparation stops
 the build instead of silently shipping stale UI. The application ID, API origin
-and installed user data remain unchanged. Version: `7.9.0`, Android code `35`.
+and installed user data remain unchanged. Version: `7.9.0`, Android code `36`.
 
 Node.js 22.12–24 and project dependencies (`npm ci`) must be installed. Android
 Studio must see `node` on PATH; restart the IDE after installing Node. If needed,

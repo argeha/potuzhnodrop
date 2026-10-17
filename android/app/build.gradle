@@ -17,7 +17,7 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // Google Play requires a monotonically increasing code for every
         // upload. The displayed version deliberately matches the web bundle.
-        versionCode 35
+        versionCode 36
         versionName "7.9.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {

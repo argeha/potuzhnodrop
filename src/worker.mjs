@@ -169,9 +169,9 @@ const REFERRAL_WEEKLY_OWNER_REWARD = 4
 const REFERRAL_WEEKLY_OWNER_LIMIT = 40
 const REFERRAL_WEEKLY_XP_LIMIT = 12_000
 const REFERRAL_MILESTONES = Object.freeze([
-  { id: 'level_3', level: 3, minAgeMs: 24 * 60 * 60_000, ownerReward: 10, recruitReward: 3, label: 'LVL 3' },
-  { id: 'level_10', level: 10, minAgeMs: 7 * 24 * 60 * 60_000, ownerReward: 20, recruitReward: 5, label: 'LVL 10' },
-  { id: 'level_20', level: 20, minAgeMs: 21 * 24 * 60 * 60_000, ownerReward: 40, recruitReward: 10, label: 'LVL 20' },
+  { id: 'level_3', level: 3, minAgeMs: 24 * 60 * 60_000, ownerReward: 20, recruitReward: 3, label: 'LVL 3' },
+  { id: 'level_10', level: 10, minAgeMs: 7 * 24 * 60 * 60_000, ownerReward: 30, recruitReward: 5, label: 'LVL 10' },
+  { id: 'level_20', level: 20, minAgeMs: 21 * 24 * 60 * 60_000, ownerReward: 50, recruitReward: 10, label: 'LVL 20' },
   { id: 'prestige_1', prestige: 1, minAgeMs: 30 * 24 * 60 * 60_000, ownerReward: 100, recruitReward: 25, label: 'Перший престиж' },
 ])
 const REFERRAL_MILESTONE_BY_ID = new Map(REFERRAL_MILESTONES.map(entry => [entry.id, entry]))

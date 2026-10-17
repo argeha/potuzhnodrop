@@ -860,12 +860,14 @@ const DEMO_STARTING_BALANCE = 12;
 const ECONOMY_TASK_REWARD_MULTIPLIER = 0.004;
 const DAILY_TASK_MIN_REWARD = 0.20;
 const WEEKLY_TASK_MIN_REWARD = 1;
-const REWARDED_COIN_AMOUNT = 0.10;
-const REWARDED_DAILY_LIMIT = 20;
+// No application-level daily cap. Real payouts still require a configured
+// provider and a server-verified completion receipt, never a button click.
+const REWARDED_COIN_AMOUNT = 25;
+const REWARDED_DAILY_LIMIT = null;
 const REFERRAL_MILESTONES = Object.freeze([
-  { id: 'level_3', label: 'LVL 3', ownerReward: 10, recruitReward: 3 },
-  { id: 'level_10', label: 'LVL 10', ownerReward: 20, recruitReward: 5 },
-  { id: 'level_20', label: 'LVL 20', ownerReward: 40, recruitReward: 10 },
+  { id: 'level_3', label: 'LVL 3', ownerReward: 20, recruitReward: 3 },
+  { id: 'level_10', label: 'LVL 10', ownerReward: 30, recruitReward: 5 },
+  { id: 'level_20', label: 'LVL 20', ownerReward: 50, recruitReward: 10 },
   { id: 'prestige_1', label: 'Перший престиж', ownerReward: 100, recruitReward: 25 },
 ]);
 const REFERRAL_WEEKLY_OWNER_REWARD = 4;
@@ -9060,7 +9062,7 @@ async function openRewardedAd() {
   // Coins are never minted in the browser after a click. This becomes active
   // only when an ad provider returns a server-verifiable completion receipt.
   // Until then the UI stays honest instead of pretending that an ad was shown.
-  showToast(`Відеонагорода +${REWARDED_COIN_AMOUNT} PC буде увімкнена після підключення та перевірки рекламного слоту.`, 'info');
+  showToast(`Рекламний слот ще не підключено. Налаштовано +${formatCredits(REWARDED_COIN_AMOUNT)} за завершений перегляд без денного ліміту. PC зараз не нараховуються.`, 'info');
 }
 
 const topupWatchAd = openRewardedAd;
@@ -9086,6 +9088,8 @@ function topupLevelReward() {
 }
 
 function updateTopupUI() {
+  const adReward = document.getElementById('topupAdRewardLabel');
+  if (adReward) adReward.textContent = `+${formatCredits(REWARDED_COIN_AMOUNT)} · ${REWARDED_DAILY_LIMIT === null ? 'без ліміту' : `до ${REWARDED_DAILY_LIMIT}/день`}`;
   const el = document.getElementById('topupLevelRewardLabel');
   if (el) el.textContent = `+${formatCredits(roundPc(Math.min(4, 0.5 + Math.max(0, getPlayerLevel() - 1) * 0.1)))}`;
   const referral = document.getElementById('topupReferralRewardLabel');
